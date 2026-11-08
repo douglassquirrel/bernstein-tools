@@ -169,7 +169,7 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
 - **`dormant`** puts a running session to sleep without a handover, for a pause such as overnight:
   it mails a Dormant message (keep running, keep everything as it is, do not hand over, stop watching
   mail and run no mail checks; when Squirrel next speaks to you, set the pace back to normal and
-  watch again) and then sets the mailbox's pace to `relaxed`, at which a session reads mail only at
+  watch again; until then, ask Squirrel nothing) and then sets the mailbox's pace to `relaxed`, at which a session reads mail only at
   the end of a turn. Only sessions fresh on duty; `--all` is every one but bernstein's. The session's
   duty goes stale after 45 minutes, which is what dormant means.
 - **`wake`** is the way back when Squirrel would rather not speak to each session: it sets the pace to
@@ -182,7 +182,8 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
   in the project's `dreams/`, changing nothing else. The Dream message carries the whole routine, with the
   finish time in UTC (the subject is `Dream: until HH:MM UTC`). While dreaming the session watches for
   bernstein's mail only (`lobster-mail wait --from bernstein`) and leaves the rest unclaimed. At the end
-  it replies and goes dormant, or with `--then stop` hands over and stops. `conduct` sets no pace for a
+  it replies, tells Squirrel in a line with no question, and goes dormant, asking nothing until he next
+  speaks to it; or with `--then stop` hands over and stops. `conduct` sets no pace for a
   dream. Only sessions fresh on duty; `--all` is every one but bernstein's.
 - **`--dry-run`** shows the message and the link, and sends and opens nothing (for `dormant` and
   `wake`, sets nothing either).
@@ -309,6 +310,8 @@ Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a set
   dormant (or hand over with `--then stop`). `conform` also checks the wording of the template's new
   "Dreams" section, and the template's Mail section now says a request from bernstein for a tool waits
   for Squirrel's OK, so a pair that was in line will show these as gaps.
+- 8 November 2026: a dormant session, after `conduct dormant` or a dream, asks Squirrel nothing (no question,
+  offer or reminder) until he next speaks to it.
 
 ## Contributing
 

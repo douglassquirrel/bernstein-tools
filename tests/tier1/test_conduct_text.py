@@ -104,9 +104,10 @@ def test_the_dormant_message_says_keep_running_stop_watching_and_how_to_wake():
         "Squirrel has asked this session to go dormant until he comes back: keep running, keep\n"
         "everything as it is, and do not hand over. Stop watching mail now (stop the background wait, or\n"
         "the check-in chain) and run no mail checks; this mailbox's pace is being set to relaxed, so\n"
-        "lobster-mail pace --as recipes shows it. When Squirrel next speaks to you, run\n"
-        "lobster-mail pace --as recipes normal, start watching again as that prints, read the mail that\n"
-        "arrived meanwhile, and tell him you are back. Nothing else changes.\n")
+        "lobster-mail pace --as recipes shows it. Ask Squirrel nothing until he next speaks to you: no\n"
+        "question, no offer, no reminder. When he does, run lobster-mail pace --as recipes normal, start\n"
+        "watching again as that prints, read the mail that arrived meanwhile, and tell him you are back.\n"
+        "Nothing else changes.\n")
 
 
 def test_the_wake_message_says_to_watch_again():
@@ -148,8 +149,9 @@ DREAM_DORMANT = (
     "   PLAN.md or any other rule, no request sent, no ticket, no commit; dreams/ stays out of git.\n"
     "5. Check the time (date -u) between steps and stop by 10:40 UTC, sooner if you run out of ideas.\n"
     "6. At the end, reply to this message with the files written and a line on each, and tell Squirrel in\n"
-    "   chat. Then go dormant: run lobster-mail pace --as recipes relaxed, run no watch or check-in, and do\n"
-    "   not hand over. When Squirrel next speaks to you, run lobster-mail pace --as recipes normal, start\n"
+    "   chat, in a line, with no question. Then go dormant: run lobster-mail pace --as recipes relaxed, run\n"
+    "   no watch or check-in, do not hand over, and ask Squirrel nothing until he next speaks to you: no\n"
+    "   question, no offer, no reminder. When he does, run lobster-mail pace --as recipes normal, start\n"
     "   watching again as that prints, read the mail that arrived meanwhile, and offer to go through the\n"
     "   dreams.\n")
 
@@ -163,9 +165,10 @@ def test_the_dream_message_with_then_stop_hands_over_at_the_end_instead():
     from bernstein.conduct import dream_message
     text = dream_message("recipes", MORNING, 60, "stop")
     assert text.startswith(DREAM_DORMANT.split("6. At the end")[0])
+    assert "ask Squirrel nothing" not in text
     assert text.endswith(
         "6. At the end, reply to this message with the files written and a line on each, and tell Squirrel in\n"
-        "   chat. Then hand over and stop: bring the record up to date, send the handover with lobster-mail\n"
+        "   chat, in a line, with no question. Then hand over and stop: bring the record up to date, send the handover with lobster-mail\n"
         "   handover, stop watching mail, and tell Squirrel you have stopped.\n")
 
 

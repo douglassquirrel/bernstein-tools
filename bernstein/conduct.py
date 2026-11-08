@@ -63,9 +63,10 @@ def dormant_message(project, today):
             "Squirrel has asked this session to go dormant until he comes back: keep running, keep\n"
             "everything as it is, and do not hand over. Stop watching mail now (stop the background wait, or\n"
             "the check-in chain) and run no mail checks; this mailbox's pace is being set to relaxed, so\n"
-            f"lobster-mail pace --as {project} shows it. When Squirrel next speaks to you, run\n"
-            f"lobster-mail pace --as {project} normal, start watching again as that prints, read the mail that\n"
-            "arrived meanwhile, and tell him you are back. Nothing else changes.\n")
+            f"lobster-mail pace --as {project} shows it. Ask Squirrel nothing until he next speaks to you: no\n"
+            f"question, no offer, no reminder. When he does, run lobster-mail pace --as {project} normal, start\n"
+            "watching again as that prints, read the mail that arrived meanwhile, and tell him you are back.\n"
+            "Nothing else changes.\n")
 
 
 def wake_message(project, today):
@@ -114,15 +115,16 @@ and write down proposals for him to review. Proposals only: change nothing else.
    PLAN.md or any other rule, no request sent, no ticket, no commit; dreams/ stays out of git.
 5. Check the time (date -u) between steps and stop by {until}, sooner if you run out of ideas.
 6. At the end, reply to this message with the files written and a line on each, and tell Squirrel in
-"""
+   chat, in a line, with no question. Then """
 
 DREAM_ENDS = {
-    "dormant": """   chat. Then go dormant: run lobster-mail pace --as {project} relaxed, run no watch or check-in, and do
-   not hand over. When Squirrel next speaks to you, run lobster-mail pace --as {project} normal, start
+    "dormant": """go dormant: run lobster-mail pace --as {project} relaxed, run
+   no watch or check-in, do not hand over, and ask Squirrel nothing until he next speaks to you: no
+   question, no offer, no reminder. When he does, run lobster-mail pace --as {project} normal, start
    watching again as that prints, read the mail that arrived meanwhile, and offer to go through the
    dreams.
 """,
-    "stop": """   chat. Then hand over and stop: bring the record up to date, send the handover with lobster-mail
+    "stop": """hand over and stop: bring the record up to date, send the handover with lobster-mail
    handover, stop watching mail, and tell Squirrel you have stopped.
 """,
 }
