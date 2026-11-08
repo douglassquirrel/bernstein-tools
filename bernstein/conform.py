@@ -26,7 +26,7 @@ from bernstein.settings import SettingsRefused, read_settings
 # A template heading with one of these names the pair, so every pair's CLAUDE.md must have it.
 PAIR_NAMES = {"NAME", "TOOLS", "SELF", "SISTER"}
 # The shared sections whose wording the template fixes; the others carry a date or a project's own lines.
-FIXED_WORDING = {"sections/inbox.md", "sections/mail.md"}
+FIXED_WORDING = {"sections/inbox.md", "sections/mail.md", "sections/dreaming.md"}
 
 
 def hook_has_root(text, root):

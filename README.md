@@ -147,10 +147,12 @@ conduct start   <project> [--brief FILE] [--pace eager|normal|relaxed] [--dry-ru
 conduct stop    <project> | --all  [--wait SECONDS] [--dry-run]
 conduct dormant <project> | --all  [--dry-run]
 conduct wake    <project> | --all  [--dry-run]
+conduct dream   <project> | --all  [--minutes N] [--then dormant|stop] [--dry-run]
 ```
 
 `conduct` talks to a lobster project's session by mail, as `bernstein`; each project's guidance
-says to act on bernstein's mail at once. It reads who is on duty with `lobster-mail duty status
+says to act on bernstein's mail at once (since 8 November 2026, apart from a request for a tool,
+which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty status
 --all`, and never writes in a project's folder.
 
 - **`start`** refuses if a session is already on duty for the project. Otherwise it sets the mail
@@ -174,6 +176,14 @@ says to act on bernstein's mail at once. It reads who is on duty with `lobster-m
   `normal` and mails a Wake message (watch mail again, read what arrived, carry on). A dormant
   session reads it at the end of its next turn, so it takes effect when the session is next used;
   stale duties count, since a dormant session's does go stale.
+- **`dream`** asks a running session to spend a while, 60 minutes unless `--minutes` says otherwise (5 to
+  240), looking back over its recent work and writing proposals for Squirrel: rules to merge so that less
+  has to be read at startup, repeated actions to make into tools, and any other idea, one file per topic
+  in the project's `dreams/`, changing nothing else. The Dream message carries the whole routine, with the
+  finish time in UTC (the subject is `Dream: until HH:MM UTC`). While dreaming the session watches for
+  bernstein's mail only (`lobster-mail wait --from bernstein`) and leaves the rest unclaimed. At the end
+  it replies and goes dormant, or with `--then stop` hands over and stops. `conduct` sets no pace for a
+  dream. Only sessions fresh on duty; `--all` is every one but bernstein's.
 - **`--dry-run`** shows the message and the link, and sends and opens nothing (for `dormant` and
   `wake`, sets nothing either).
 
@@ -198,8 +208,8 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 
 | Code | Meaning |
 |---|---|
-| 0 | Sent (and, with `--wait`, handed over); or, for `stop`, nobody on duty |
-| 2 | Bad arguments or settings |
+| 0 | Sent (and, with `--wait`, handed over); or, for `stop`, `dormant`, `wake` and `dream`, nobody on duty |
+| 2 | Bad arguments or settings, or `--minutes` outside 5 to 240 |
 | 3 | No such project or mailbox, or the project lacks a part `start` needs; or, for `start`, a session is already on duty |
 | 4 | A program failed, or the duty listing could not be read |
 | 5 | `--wait` ran out before the handover arrived |
@@ -295,6 +305,10 @@ Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a set
   check lists a claw that is missing.
 - 1 November 2026: `conform` also lists a start hook without this mail root's `--root`, and an Inbox or
   Mail section whose wording is not the template's. A pair that was in line may now show new gaps.
+- 8 November 2026: `conduct dream` asks a session to write proposals in its `dreams/` for a while, then go
+  dormant (or hand over with `--then stop`). `conform` also checks the wording of the template's new
+  "Dreams" section, and the template's Mail section now says a request from bernstein for a tool waits
+  for Squirrel's OK, so a pair that was in line will show these as gaps.
 
 ## Contributing
 

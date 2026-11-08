@@ -6,6 +6,7 @@ arguments or settings, 3 no such project or mailbox (or, for start, a session al
 """
 
 import argparse
+import datetime
 import json
 import os
 import subprocess
@@ -73,6 +74,64 @@ def wake_message(project, today):
             f"Squirrel is back: this mailbox's pace is normal again. Run lobster-mail pace --as {project} and\n"
             "do what it prints (start the background wait, or the check-in chain), read the mail that\n"
             "arrived while you were dormant, report it, and carry on.\n")
+
+
+def until(now, minutes):
+    """When a dream that starts now ends: "HH:MM UTC", with the day when it is not today's."""
+    end = now + datetime.timedelta(minutes=minutes)
+    text = f"{end:%H:%M} UTC"
+    return text if end.date() == now.date() else f"{text} on {day(end)}"
+
+
+def dream_subject(now, minutes):
+    return f"Dream: until {until(now, minutes)}"
+
+
+DREAM_BODY = """Squirrel has asked this session to dream until {until} ({minutes} minutes): to look back over its recent work
+and write down proposals for him to review. Proposals only: change nothing else.
+
+1. Mail while dreaming. Stop the background wait or the check-in chain, and watch for bernstein only:
+   lobster-mail wait --as {project} --session <your session> --from bernstein in the background, or
+   lobster-mail checkin --as {project} --session <your session> --from bernstein between steps where a
+   background command cannot run. Claim and act on bernstein's mail only; leave every other message
+   unclaimed and unread until the dream is over. A Stop from bernstein ends the dream early: write what
+   you have, then do the Stop.
+2. Read what has happened since your last dream (the newest file in dreams/, dreams/done/ or
+   dreams/discarded/), or in the last seven days if there is none: the diary's log, your handovers and
+   finished mail, the git log, inbox/done/, and your own rules (CLAUDE.md, START-HERE.txt, PLAN.md's
+   decisions).
+3. Look for anything that would make this project work better or faster: rules to merge (one concise rule
+   is better than two or more verbose ones, and shorter reading at startup is a main aim), repeated
+   actions to make into tools, corrections Squirrel has given more than once, surprises that keep coming
+   back, and anything else. Be expansive and creative: a few silly ideas are better than filtering out a
+   good one that seems extravagant at first. In a non-code project, draft each tool idea as a request to
+   its tools project or a claw, in the usual form (the need, the ask, test ideas), but do not send it.
+4. Write one file per topic in dreams/ in this project's folder, named {date}-<topic>.md: what you
+   propose, why (with evidence: diary dates, message ids), the exact change (the full text of a new or
+   merged rule, the request as it would be sent), and how many words it adds to or takes off what a
+   session reads at startup. A file holds everything that belongs together, such as a tool request and
+   the startup step that would use it. Write nothing else: no change to CLAUDE.md, START-HERE.txt,
+   PLAN.md or any other rule, no request sent, no ticket, no commit; dreams/ stays out of git.
+5. Check the time (date -u) between steps and stop by {until}, sooner if you run out of ideas.
+6. At the end, reply to this message with the files written and a line on each, and tell Squirrel in
+"""
+
+DREAM_ENDS = {
+    "dormant": """   chat. Then go dormant: run lobster-mail pace --as {project} relaxed, run no watch or check-in, and do
+   not hand over. When Squirrel next speaks to you, run lobster-mail pace --as {project} normal, start
+   watching again as that prints, read the mail that arrived meanwhile, and offer to go through the
+   dreams.
+""",
+    "stop": """   chat. Then hand over and stop: bring the record up to date, send the handover with lobster-mail
+   handover, stop watching mail, and tell Squirrel you have stopped.
+""",
+}
+
+
+def dream_message(project, now, minutes, then):
+    """The body of the Dream message: the whole routine, so a project whose rules predate dreaming can follow it."""
+    fields = {"until": until(now, minutes), "minutes": minutes, "project": project, "date": f"{now:%Y-%m-%d}"}
+    return f"Dream (from bernstein, {day(now)}).\n\n" + (DREAM_BODY + DREAM_ENDS[then]).format(**fields)
 
 
 def read_conf_file(path):
@@ -226,7 +285,8 @@ def parser():
                epilog="conduct start <project> [--brief FILE] [--pace LEVEL] [--dry-run]\n"
                       "conduct stop <project> | --all [--wait SECONDS] [--dry-run]\n"
                       "conduct dormant <project> | --all [--dry-run]\n"
-                      "conduct wake <project> | --all [--dry-run]",
+                      "conduct wake <project> | --all [--dry-run]\n"
+                      "conduct dream <project> | --all [--minutes N] [--then dormant|stop] [--dry-run]",
                formatter_class=argparse.RawDescriptionHelpFormatter)
     verbs = p.add_subparsers(dest="verb", parser_class=Parser)
     s = verbs.add_parser("start", help="send a Start message and open the project's session")
@@ -249,6 +309,14 @@ def parser():
     w.add_argument("--all", action="store_true", help="every mailbox with a session on duty, fresh or stale, "
                    "except bernstein's")
     w.add_argument("--dry-run", action="store_true", help="show the message; send and set nothing")
+    r = verbs.add_parser("dream", help="ask a running session to spend a while writing proposals for Squirrel, "
+                         "then go dormant (or hand over)")
+    r.add_argument("project", nargs="?")
+    r.add_argument("--all", action="store_true", help="every session on duty except bernstein's")
+    r.add_argument("--minutes", type=int, default=60, metavar="N", help="how long to dream, 5 to 240 (default 60)")
+    r.add_argument("--then", choices=("dormant", "stop"), default="dormant",
+                   help="what the session does after: go dormant (default) or hand over and stop")
+    r.add_argument("--dry-run", action="store_true", help="show the message; send nothing")
     return p
 
 
@@ -443,8 +511,29 @@ def wake(a, s, env, today, out, err, sleep):
         out.write(f"Set the pace of {name} to normal and sent the Wake message.\n")
 
 
+def dream(a, s, env, now, out, err, sleep):
+    """Send each session on duty the Dream message. It sets no pace: the session goes dormant itself at the end."""
+    if not 5 <= a.minutes <= 240:
+        raise Stop(2, f"--minutes must be from 5 to 240, not {a.minutes}")
+    found, nothing = targets_for(a, s, env, sleep, "dream")
+    if nothing:
+        out.write(nothing)
+        return
+    subject = dream_subject(now, a.minutes)
+    if a.dry_run:
+        for name in found:
+            out.write(f"Would send to {name}, as bernstein, subject \"{subject}\":\n\n"
+                      f"{dream_message(name, now, a.minutes, a.then)}\n")
+        out.write("Dry run: nothing was sent.\n")
+        return
+    after = "dormant" if a.then == "dormant" else "hand over and stop"
+    for name in found:
+        send(s, env, name, subject, dream_message(name, now, a.minutes, a.then), err)
+        out.write(f"Sent the Dream message to {name}: until {until(now, a.minutes)}, then {after}.\n")
+
+
 def main(argv, env, today, out, err, sleep):
-    """Run conduct; return its exit code."""
+    """Run conduct; return its exit code. today is a datetime in UTC (a dream needs the time of day)."""
     if argv[:1] in (["-h"], ["--help"]) or (len(argv) == 2 and argv[1] in ("-h", "--help")):
         out.write(parser().format_help())
         return 0
@@ -463,8 +552,9 @@ def main(argv, env, today, out, err, sleep):
         except SettingsRefused as why:
             raise Stop(2, f"{why} (conduct --help shows the form)")
         if a.verb is None:
-            raise Stop(2, "say start, stop, dormant or wake (conduct --help shows the form)")
-        {"start": start, "stop": stop, "dormant": dormant, "wake": wake}[a.verb](a, s, env, today, out, err, sleep)
+            raise Stop(2, "say start, stop, dormant, wake or dream (conduct --help shows the form)")
+        verbs = {"start": start, "stop": stop, "dormant": dormant, "wake": wake, "dream": dream}
+        verbs[a.verb](a, s, env, today, out, err, sleep)
     except Stop as stopped:
         err.write(f"conduct: {stopped.message}\n")
         return stopped.code

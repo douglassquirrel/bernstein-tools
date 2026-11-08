@@ -85,6 +85,10 @@ def tree(root):
     return found
 
 
+# conduct's clock: the date for every verb, and the time of day for a dream's finish time.
+NOW = datetime.datetime(2026, 10, 18, 9, 40, tzinfo=datetime.timezone.utc)
+
+
 class World:
     def __init__(self, base):
         self.home = os.path.join(base, "home sq")          # a space, on purpose
@@ -154,7 +158,7 @@ class World:
         from bernstein import conduct
         out, err = io.StringIO(), io.StringIO()
         env = {"PATH": self.bin + os.pathsep + "/usr/bin:/bin", "HOME": self.home, "BERNSTEIN_CONF": self.conf}
-        code = conduct.main(list(argv), env=env, today=datetime.date(2026, 10, 18), out=out, err=err,
+        code = conduct.main(list(argv), env=env, today=NOW, out=out, err=err,
                             sleep=sleep or (lambda seconds: None))
         return code, out.getvalue(), err.getvalue()
 

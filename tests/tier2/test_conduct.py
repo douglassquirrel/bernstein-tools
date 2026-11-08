@@ -1,5 +1,10 @@
 import os
 
+import pytest
+from conftest import NOW
+
+from bernstein.conduct import dream_message
+
 
 def sent(world):
     return [c for c in world.calls() if c["prog"] == "lobster-mail" and c["args"][:1] == ["send"]]
@@ -478,3 +483,83 @@ def test_wake_dry_run_shows_the_message_and_sets_nothing(world):
     world.duty({"recipes": None})
     code, out, _err = world.conduct("wake", "recipes")
     assert (code, out) == (0, "Nobody is on duty for recipes: nothing to wake.\n")
+
+
+def test_help_names_the_dream_verb_and_its_options(world):
+    code, out, _err = world.conduct("--help")
+    assert code == 0
+    assert "conduct dream <project> | --all [--minutes N] [--then dormant|stop] [--dry-run]" in out
+
+
+def test_dream_sends_the_dream_message_to_each_session_fresh_on_duty_and_sets_no_pace(world):
+    world.duty({"bernstein": "fresh", "recipes": "fresh", "audio": "stale", "video-tools": "fresh", "old": None})
+    code, out, err = world.conduct("dream", "--all")
+    assert (code, err) == (0, "")
+    assert [m["args"][4] for m in sent(world)] == ["recipes", "video-tools"]
+    assert [m["args"][6] for m in sent(world)] == ["Dream: until 10:40 UTC"] * 2
+    assert sent(world)[0]["stdin"] == dream_message("recipes", NOW, 60, "dormant")
+    assert sent(world)[1]["stdin"] == dream_message("video-tools", NOW, 60, "dormant")
+    assert paces(world) == []
+    assert out == ("Sent the Dream message to recipes: until 10:40 UTC, then dormant.\n"
+                   "Sent the Dream message to video-tools: until 10:40 UTC, then dormant.\n")
+
+
+def test_dream_takes_its_length_and_its_ending_from_the_options(world):
+    world.duty({"recipes": "fresh"})
+    code, out, err = world.conduct("dream", "recipes", "--minutes", "90", "--then", "stop")
+    assert (code, err) == (0, "")
+    assert sent(world)[0]["args"][6] == "Dream: until 11:10 UTC"
+    assert sent(world)[0]["stdin"] == dream_message("recipes", NOW, 90, "stop")
+    assert out == "Sent the Dream message to recipes: until 11:10 UTC, then hand over and stop.\n"
+
+
+@pytest.mark.parametrize("minutes", ["4", "241", "0", "-5"])
+def test_dream_refuses_a_length_outside_5_to_240_minutes_with_exit_2_and_sends_nothing(world, minutes):
+    world.duty({"recipes": "fresh"})
+    code, out, err = world.conduct("dream", "recipes", "--minutes", minutes)
+    assert (code, out) == (2, "")
+    assert err == f"conduct: --minutes must be from 5 to 240, not {minutes}\n"
+    assert sent(world) == []
+
+
+def test_dream_refuses_a_length_that_is_not_a_whole_number_or_an_unknown_ending(world):
+    world.duty({"recipes": "fresh"})
+    code, _out, err = world.conduct("dream", "recipes", "--minutes", "an hour")
+    assert code == 2 and "--minutes" in err and err.endswith("(conduct --help shows the form)\n")
+    code, _out, err = world.conduct("dream", "recipes", "--then", "sleep")
+    assert code == 2 and "--then" in err and err.endswith("(conduct --help shows the form)\n")
+    assert sent(world) == []
+
+
+def test_dream_with_nobody_on_duty_sends_nothing(world):
+    world.duty({"recipes": "stale"})
+    code, out, _err = world.conduct("dream", "recipes")
+    assert (code, out) == (0, "Nobody is on duty for recipes: nothing to dream.\n")
+    code, out, _err = world.conduct("dream", "--all")
+    assert (code, out) == (0, "Nobody is on duty anywhere but bernstein: nothing to dream.\n")
+    assert sent(world) == []
+
+
+def test_dream_dry_run_shows_the_message_and_sends_nothing(world):
+    world.duty({"recipes": "fresh"})
+    code, out, err = world.conduct("dream", "recipes", "--dry-run")
+    assert (code, err) == (0, "")
+    assert out == ("Would send to recipes, as bernstein, subject \"Dream: until 10:40 UTC\":\n\n"
+                   + dream_message("recipes", NOW, 60, "dormant") + "\nDry run: nothing was sent.\n")
+    assert sent(world) == []
+
+
+def test_dream_needs_a_project_or_all_and_refuses_an_unknown_mailbox(world):
+    world.duty({"recipes": "fresh"})
+    code, _out, err = world.conduct("dream")
+    assert (code, err) == (2, "conduct: name one project, or give --all\n")
+    code, _out, err = world.conduct("dream", "recipes", "--all")
+    assert (code, err) == (2, "conduct: name one project, or give --all\n")
+    code, _out, err = world.conduct("dream", "salads")
+    assert (code, err) == (3, f"conduct: there is no mailbox salads in {world.mail}\n")
+    assert sent(world) == []
+
+
+def test_no_verb_names_all_five_verbs(world):
+    code, _out, err = world.conduct()
+    assert (code, err) == (2, "conduct: say start, stop, dormant, wake or dream (conduct --help shows the form)\n")

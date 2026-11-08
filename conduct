@@ -9,4 +9,5 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from bernstein.conduct import main  # noqa: E402
 
-sys.exit(main(sys.argv[1:], dict(os.environ), datetime.date.today(), sys.stdout, sys.stderr, time.sleep))
+sys.exit(main(sys.argv[1:], dict(os.environ), datetime.datetime.now(datetime.timezone.utc), sys.stdout, sys.stderr,
+              time.sleep))

@@ -346,3 +346,22 @@ def test_a_home_claw_that_is_a_lone_claw_is_checked_as_one_not_as_the_pairs_code
     write(nc, {"CLAUDE.md": "# recipes\n\n## Mail\n\nOurs.\n"})
     code, out, _err = world.conform("recipes", "recipes-tools")
     assert code == 1 and "  missing: the section \"## The pair: recipes and recipes-tools\" in CLAUDE.md\n" in out
+
+
+def test_the_dreams_section_has_fixed_wording_too(world):
+    nc, outer, _checkout = pair_with_worded_sections(world)
+    write(world.template, {"common/sections/dreaming.md": "## Dreams\n\nReview the dreams of {{SELF}}.\n",
+                           "non-code/CLAUDE.md": WORDED["non-code/CLAUDE.md"] + "\n{{> sections/dreaming.md}}\n"})
+    with open(os.path.join(nc, "CLAUDE.md"), "a") as f:
+        f.write("\n## Dreams\n\nSomething older.\n")
+    code, out, _err = world.conform("recipes", "recipes-tools")
+    assert code == 1
+    assert out == (f"recipes (non-code): {nc}\n"
+                   "  missing: the template's wording of the section \"## Dreams\" in CLAUDE.md\n"
+                   f"recipes-tools (code): {outer}\n  in line\n"
+                   "1 thing to bring into line.\n")
+    with open(os.path.join(nc, "CLAUDE.md")) as f:
+        claude = f.read()
+    write(nc, {"CLAUDE.md": claude.replace("Something older.", "Review the dreams of recipes.")})
+    code, out, _err = world.conform("recipes", "recipes-tools")
+    assert (code, out.splitlines()[-1]) == (0, "Both halves are in line.")

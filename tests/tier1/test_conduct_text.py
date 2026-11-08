@@ -116,3 +116,70 @@ def test_the_wake_message_says_to_watch_again():
         "Squirrel is back: this mailbox's pace is normal again. Run lobster-mail pace --as recipes and\n"
         "do what it prints (start the background wait, or the check-in chain), read the mail that\n"
         "arrived while you were dormant, report it, and carry on.\n")
+
+
+MORNING = datetime.datetime(2026, 10, 18, 9, 40, tzinfo=datetime.timezone.utc)
+
+DREAM_DORMANT = (
+    "Dream (from bernstein, 18 October 2026).\n\n"
+    "Squirrel has asked this session to dream until 10:40 UTC (60 minutes): to look back over its recent work\n"
+    "and write down proposals for him to review. Proposals only: change nothing else.\n\n"
+    "1. Mail while dreaming. Stop the background wait or the check-in chain, and watch for bernstein only:\n"
+    "   lobster-mail wait --as recipes --session <your session> --from bernstein in the background, or\n"
+    "   lobster-mail checkin --as recipes --session <your session> --from bernstein between steps where a\n"
+    "   background command cannot run. Claim and act on bernstein's mail only; leave every other message\n"
+    "   unclaimed and unread until the dream is over. A Stop from bernstein ends the dream early: write what\n"
+    "   you have, then do the Stop.\n"
+    "2. Read what has happened since your last dream (the newest file in dreams/, dreams/done/ or\n"
+    "   dreams/discarded/), or in the last seven days if there is none: the diary's log, your handovers and\n"
+    "   finished mail, the git log, inbox/done/, and your own rules (CLAUDE.md, START-HERE.txt, PLAN.md's\n"
+    "   decisions).\n"
+    "3. Look for anything that would make this project work better or faster: rules to merge (one concise rule\n"
+    "   is better than two or more verbose ones, and shorter reading at startup is a main aim), repeated\n"
+    "   actions to make into tools, corrections Squirrel has given more than once, surprises that keep coming\n"
+    "   back, and anything else. Be expansive and creative: a few silly ideas are better than filtering out a\n"
+    "   good one that seems extravagant at first. In a non-code project, draft each tool idea as a request to\n"
+    "   its tools project or a claw, in the usual form (the need, the ask, test ideas), but do not send it.\n"
+    "4. Write one file per topic in dreams/ in this project's folder, named 2026-10-18-<topic>.md: what you\n"
+    "   propose, why (with evidence: diary dates, message ids), the exact change (the full text of a new or\n"
+    "   merged rule, the request as it would be sent), and how many words it adds to or takes off what a\n"
+    "   session reads at startup. A file holds everything that belongs together, such as a tool request and\n"
+    "   the startup step that would use it. Write nothing else: no change to CLAUDE.md, START-HERE.txt,\n"
+    "   PLAN.md or any other rule, no request sent, no ticket, no commit; dreams/ stays out of git.\n"
+    "5. Check the time (date -u) between steps and stop by 10:40 UTC, sooner if you run out of ideas.\n"
+    "6. At the end, reply to this message with the files written and a line on each, and tell Squirrel in\n"
+    "   chat. Then go dormant: run lobster-mail pace --as recipes relaxed, run no watch or check-in, and do\n"
+    "   not hand over. When Squirrel next speaks to you, run lobster-mail pace --as recipes normal, start\n"
+    "   watching again as that prints, read the mail that arrived meanwhile, and offer to go through the\n"
+    "   dreams.\n")
+
+
+def test_the_dream_message_gives_the_finish_time_the_routine_and_dormant_afterwards():
+    from bernstein.conduct import dream_message
+    assert dream_message("recipes", MORNING, 60, "dormant") == DREAM_DORMANT
+
+
+def test_the_dream_message_with_then_stop_hands_over_at_the_end_instead():
+    from bernstein.conduct import dream_message
+    text = dream_message("recipes", MORNING, 60, "stop")
+    assert text.startswith(DREAM_DORMANT.split("6. At the end")[0])
+    assert text.endswith(
+        "6. At the end, reply to this message with the files written and a line on each, and tell Squirrel in\n"
+        "   chat. Then hand over and stop: bring the record up to date, send the handover with lobster-mail\n"
+        "   handover, stop watching mail, and tell Squirrel you have stopped.\n")
+
+
+def test_a_dream_past_midnight_names_the_day_it_ends_and_its_own_length():
+    from bernstein.conduct import dream_message
+    late = datetime.datetime(2026, 10, 18, 23, 30, tzinfo=datetime.timezone.utc)
+    text = dream_message("recipes", late, 90, "dormant")
+    assert "dream until 01:00 UTC on 19 October 2026 (90 minutes)" in text
+    assert "stop by 01:00 UTC on 19 October 2026, sooner" in text
+    assert "named 2026-10-18-<topic>.md" in text
+
+
+def test_the_dream_subject_names_the_finish_time():
+    from bernstein.conduct import dream_subject
+    assert dream_subject(MORNING, 60) == "Dream: until 10:40 UTC"
+    assert dream_subject(datetime.datetime(2026, 10, 18, 23, 30, tzinfo=datetime.timezone.utc), 90) == \
+        "Dream: until 01:00 UTC on 19 October 2026"
