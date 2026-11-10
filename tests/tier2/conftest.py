@@ -3,7 +3,8 @@
 Each stub records its arguments and working folder as one JSON line in calls.jsonl. A stub
 fails when its name is listed in the file `fail` in the stub folder, as `name`, `name:verb` (only that
 first argument) or `name:verb:code` (that exit code; 1 otherwise). The lobster-mail stub's
-`duty status --all --json` prints the JSON in `duty.json` (default: no mailboxes).
+`duty status --all --json` prints the JSON in `duty.json` (default: no mailboxes). The conduct stub's
+`status` prints the text in `status.json` (default: no mailboxes).
 """
 
 import datetime
@@ -37,6 +38,10 @@ STUB = textwrap.dedent('''\
     if name == "lobster-mail" and args[:3] == ["duty", "status", "--all"]:
         duty = os.path.join(here, "duty.json")
         print(open(duty).read() if os.path.exists(duty) else json.dumps({{"root": "", "mailboxes": [], "skipped": []}}))
+    if name == "conduct" and args[:1] == ["status"]:
+        status = os.path.join(here, "status.json")
+        sys.stdout.write(open(status).read() if os.path.exists(status) else
+                         json.dumps({{"root": "", "mailboxes": [], "skipped": []}}))
     if name == "python3" and args[:2] == ["-m", "venv"]:
         os.makedirs(os.path.join(args[2], "bin"))
         pip = os.path.join(args[2], "bin", "pip")
@@ -100,7 +105,7 @@ class World:
         for d in (self.home, self.bin, self.non_code, self.code, self.mail):
             os.makedirs(d, exist_ok=True)
         write_tree(self.template, TEMPLATE)
-        for prog in ("git", "backlog", "lobster-mail", "python3", "open"):
+        for prog in ("git", "backlog", "lobster-mail", "python3", "open", "conduct"):
             p = os.path.join(self.bin, prog)
             with open(p, "w") as f:
                 f.write(STUB.format(python=sys.executable, bin=self.bin))
@@ -165,6 +170,23 @@ class World:
         env = {"PATH": self.bin + os.pathsep + "/usr/bin:/bin", "HOME": self.home, "BERNSTEIN_CONF": self.conf}
         code = conduct.main(list(argv), env=env, today=NOW, out=out, err=err,
                             sleep=sleep or (lambda seconds: None))
+        return code, out.getvalue(), err.getvalue()
+
+    def status(self, text):
+        """What the conduct stub prints for status --json (default: no mailboxes)."""
+        with open(os.path.join(self.bin, "status.json"), "w") as f:
+            f.write(text)
+
+    def podium(self, *argv, **injected):
+        """Run podium's main against the conduct stub. Without serve= it serves nothing and returns at once."""
+        from bernstein import podium
+        out, err = io.StringIO(), io.StringIO()
+        env = {"PATH": self.bin + os.pathsep + "/usr/bin:/bin", "HOME": self.home, "BERNSTEIN_CONF": self.conf}
+        injected.setdefault("conduct", os.path.join(self.bin, "conduct"))
+        injected.setdefault("token", "tok-en")
+        injected.setdefault("serve", lambda server: None)
+        injected.setdefault("clock", lambda: NOW)
+        code = podium.main(list(argv), env=env, out=out, err=err, **injected)
         return code, out.getvalue(), err.getvalue()
 
     def conform(self, *argv):

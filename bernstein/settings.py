@@ -22,6 +22,7 @@ DEFAULTS = {
     "LOBSTER_MAIL": "~/projects/code/lobster-tools-code/lobster-tools/lobster-mail",
     "MAIL_ROOT": "~/projects/mail",
     "PYTHON": "/usr/bin/python3",
+    "PODIUM_PORT": "8417",
 }
 
 PATHS = ("TEMPLATE", "NON_CODE_DIR", "CODE_DIR", "LOBSTER_MAIL", "MAIL_ROOT", "PYTHON")
@@ -52,6 +53,12 @@ def check_model(model, where):
         raise SettingsRefused(f"{where} must be one word, such as opus or sonnet")
 
 
+def check_port(port, where, shown=False):
+    """A TCP port as text: a whole number from 0 (any free port) to 65535."""
+    if not re.fullmatch(r"[0-9]{1,5}", port) or int(port) > 65535:
+        raise SettingsRefused(f"{where} must be a whole number from 0 to 65535" + (f", not {port}" if shown else ""))
+
+
 def read_settings(text, home):
     """The settings from a ~/.bernstein.conf text, over the defaults, with ~ filled in."""
     found = dict(DEFAULTS)
@@ -69,6 +76,8 @@ def read_settings(text, home):
             check_effort(value, f"line {number}: EFFORT")
         if key == "MODEL":
             check_model(value, f"line {number}: MODEL")
+        if key == "PODIUM_PORT":
+            check_port(value, f"line {number}: PODIUM_PORT")
         found[key] = value
     for key in PATHS:
         found[key] = expand(found[key], home)

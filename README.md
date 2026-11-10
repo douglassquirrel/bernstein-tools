@@ -4,7 +4,8 @@ Tools that set up and run "lobster" projects: pairs of projects worked on with C
 non-code project does the work and asks a companion tools project, by mail, for every routine task
 as a tested command. `new-lobster` makes such a pair in one step: both folders from a template,
 git, a Backlog issue tracker, a mailbox each, and the first commits. `conduct` starts a project's
-session and asks a running one to hand over. They are for one person's Mac and their own
+session and asks a running one to hand over, and `podium` shows every session on a page in your
+browser. They are for one person's Mac and their own
 projects; the projects talk by `lobster-mail`, from the
 [lobster-tools](https://github.com/douglassquirrel/lobster-tools) repository.
 
@@ -253,6 +254,50 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 | 4 | A program failed, or the duty listing could not be read |
 | 5 | `--wait` ran out before the handover arrived |
 
+## podium: a page showing every session
+
+```
+podium [--port N] [--no-open]
+```
+
+`podium` shows what `conduct status` shows, as a page in your browser: one card for each non-code
+project with the tools projects it works with under it (its sister as "home claw", the rest as "claw"),
+then the tools projects that serve no one ("lone claws"), then mailboxes whose project `conduct` could
+not start, each with the reason, then bernstein's own. Each line has the session's state as a coloured
+badge, who is on duty and how long ago it checked in, the pace, the mail waiting and claimed, and the
+project's model and effort. A running session that reports a status shows that in the badge (`dreaming
+until 10:20 UTC`), and `overdue since` once its finish time has passed. The page makes itself again
+every 15 seconds and when you press Refresh, follows your light or dark setting, and works at the
+width of a phone. This first version only shows; it has no buttons that act.
+
+```
+$ ./podium
+podium is serving at http://127.0.0.1:8417/?t=<a fresh token each run>
+It runs only while this command runs: stop it with Ctrl-C.
+```
+
+- It is a small web server on this machine only (`127.0.0.1`), for as long as the command runs in
+  your Terminal: Ctrl-C or closing the window stops it. Nothing starts at login and nothing is left
+  running.
+- Every address needs the token in the link, which is new each run, so no other page in your browser
+  and no other program can read it without the link. Without the token the answer is 403.
+- It only ever runs `conduct status --json` (the `conduct` beside it), once for each time the page is
+  made. It never runs `lobster-mail`, sends nothing and writes nothing.
+- `--port N` (or the setting `PODIUM_PORT`, 8417 unless set; 0 for any free port) says where to serve.
+  If that port is in use, a free one is used and podium says so.
+- `--no-open` prints the link without opening the browser. If the browser cannot be opened, podium
+  says so and serves all the same.
+- If `conduct status` fails, the page shows its message in place of the cards and tries again at the
+  next refresh; if podium itself has stopped, the page says so.
+- Addresses: `/` the page, `/view` the part that is made again, `/status` what `conduct status --json`
+  printed (502 with the reason when it failed), each with `?t=<token>`. Only GET is answered.
+
+| Code | Meaning |
+|---|---|
+| 0 | Stopped (Ctrl-C), having served |
+| 2 | Bad arguments or settings |
+| 4 | It could not start serving (the message says why) |
+
 ## conform: what an existing pair or claw lacks
 
 ```
@@ -308,14 +353,17 @@ Every failure is one line on standard error starting `new-lobster:`, saying what
 
 `tests/tier1/` tests the pure parts (names, settings, rendering) against small invented templates;
 `tests/tier2/` runs `new-lobster` end to end against stubs of `git`, `backlog`, `lobster-mail` and
-Python placed on `PATH`, `conduct` against stubs of `lobster-mail` and `open`, and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
+Python placed on `PATH`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
+handling as a plain function; three tests fetch the page from a real socket on `127.0.0.1`, which is this
+machine and not the network), and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
 that appears while `new-lobster` is running, a race the tests cannot stage.
 
 Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a settings file whose
 `NON_CODE_DIR`, `CODE_DIR` and `MAIL_ROOT` are scratch folders, then run `./new-lobster --dry-run
 <name>` and `./new-lobster <name>`, and look at what was made.
 `./conduct status` and `./conduct status --json` read only, so they are run against the real mail root
-and projects as they are.
+and projects as they are. So is `./podium`: open its link, look at the page at full and at phone width,
+in light and dark, press Refresh, then stop it with Ctrl-C and press Refresh again to see the page say so.
 
 ## Known limitations and non-goals
 
@@ -354,6 +402,8 @@ and projects as they are.
   offer or reminder) until he next speaks to it.
 - 10 November 2026: `conduct status [--json]` shows what every mailbox's session is doing. It reads only.
   The state `dormant` and the reported status need a `lobster-tools` that has `lobster-mail status`.
+- 10 November 2026: `podium` shows the same on a page in your browser, served on this machine only while
+  its command runs. A new setting, `PODIUM_PORT` (8417 unless set). It only shows; it does not act yet.
 - 10 November 2026: the Dormant and Dream messages now tell a session to report `dormant` or `dreaming`
   with `lobster-mail status` and to clear it on waking; the Wake message tells it to clear it; the Start
   message tells a new session to clear a status an earlier one left. A session made dormant before this

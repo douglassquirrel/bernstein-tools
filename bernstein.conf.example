@@ -16,3 +16,5 @@
 #MAIL_ROOT=~/projects/mail
 # The Python that makes each tools project's .venv.
 #PYTHON=/usr/bin/python3
+# The port podium serves its page on, on this machine only (0: any free port).
+#PODIUM_PORT=8417

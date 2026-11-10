@@ -15,6 +15,7 @@ def test_an_empty_file_gives_the_defaults_with_home_filled_in():
         "LOBSTER_MAIL": "/home/sq/projects/code/lobster-tools-code/lobster-tools/lobster-mail",
         "MAIL_ROOT": "/home/sq/projects/mail",
         "PYTHON": "/usr/bin/python3",
+        "PODIUM_PORT": "8417",
     }
 
 
@@ -38,6 +39,11 @@ def test_a_path_with_spaces_and_non_ascii_letters_is_kept_whole():
         ("EFFORT=extreme\n", "line 1: EFFORT must be one of low, medium, high, xhigh, max"),
         ("MODEL=\n", "line 1: MODEL is empty"),
         ("MODEL=opus 5\n", "line 1: MODEL must be one word, such as opus or sonnet"),
+        ("PODIUM_PORT=web\n", "line 1: PODIUM_PORT must be a whole number from 0 to 65535"),
+        ("# c\nPODIUM_PORT=65536\n", "line 2: PODIUM_PORT must be a whole number from 0 to 65535"),
+        ("PODIUM_PORT=-1\n", "line 1: PODIUM_PORT must be a whole number from 0 to 65535"),
+        ("PODIUM_PORT=80.5\n", "line 1: PODIUM_PORT must be a whole number from 0 to 65535"),
+        ("PODIUM_PORT=\n", "line 1: PODIUM_PORT must be a whole number from 0 to 65535"),
     ],
 )
 def test_refuses_a_bad_settings_line_naming_it(text, why):
@@ -103,3 +109,9 @@ def test_claws_lists_the_further_claws_a_non_code_project_uses_and_needs_render_
     with pytest.raises(SettingsRefused) as refused:
         options_for_new_lobster(["--render-into", "/d", "--claws", "word-tools", "--claw", "x-tools"], read_settings("", HOME))
     assert str(refused.value) == "--claws cannot be used with --claw, which has no non-code half"
+
+
+def test_the_podium_port_setting_is_kept_when_it_is_a_port_number():
+    assert read_settings("PODIUM_PORT=9000\n", HOME)["PODIUM_PORT"] == "9000"
+    assert read_settings('PODIUM_PORT="0"\n', HOME)["PODIUM_PORT"] == "0"
+    assert read_settings("PODIUM_PORT=65535\n", HOME)["PODIUM_PORT"] == "65535"
