@@ -278,6 +278,11 @@ input[type="number"] { width: 6rem; }
   margin: 0 0 12px; }
 .shown code { display: block; color: var(--ink); margin: 0 0 6px; }
 .note { margin: 0 0 12px; }
+.progress { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-variant-numeric: tabular-nums; }
+.spin { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line);
+  border-top-color: var(--ink); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--muted); } }
 .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 #act-go { background: var(--ink); color: var(--card); border-color: var(--ink); }
 button:disabled { opacity: 0.5; cursor: default; }
@@ -299,6 +304,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 <h2 id="act-title"></h2>
 <div id="act-options"></div>
 <div id="act-shown" class="shown" hidden><code id="act-command"></code><pre id="act-output"></pre></div>
+<p id="act-progress" class="progress" role="status" hidden><span class="spin"></span><span id="act-progress-text"></span></p>
 <p id="act-note" class="note" hidden></p>
 <p id="act-problem" class="error" hidden></p>
 <div class="buttons"><button type="button" id="act-cancel">Cancel</button><button type="button" id="act-go">Preview</button></div>
@@ -314,6 +320,9 @@ button:disabled { opacity: 0.5; cursor: default; }
   var command = document.getElementById("act-command");
   var output = document.getElementById("act-output");
   var note = document.getElementById("act-note");
+  var progress = document.getElementById("act-progress");
+  var progressText = document.getElementById("act-progress-text");
+  var ticking = null;    // the timer that counts the seconds while conduct runs
   var problem = document.getElementById("act-problem");
   var cancel = document.getElementById("act-cancel");
   var go = document.getElementById("act-go");
@@ -439,18 +448,29 @@ button:disabled { opacity: 0.5; cursor: default; }
     problem.hidden = !text;
   }
 
-  function working(yes) {
-    go.disabled = yes;
-    cancel.disabled = yes;
-    if (yes) { go.textContent = "Working\u2026"; }
+  function working(what) {
+    // what: words for what conduct is doing now, shown with the seconds so far; nothing when it has finished
+    var began = Date.now();
+    function tick() {
+      var seconds = Math.floor((Date.now() - began) / 1000);
+      progressText.textContent = what + "\u2026 " + seconds + " s";
+    }
+    if (ticking !== null) { clearInterval(ticking); ticking = null; }
+    go.disabled = Boolean(what);
+    cancel.disabled = Boolean(what);
+    progress.hidden = !what;
+    if (what) {
+      tick();
+      ticking = setInterval(tick, 1000);
+    }
   }
 
   function preview() {
     var action = actionNow();
-    working(true);
+    working("Asking conduct what it would do");
     trouble("");
     post("/preview", {action: action}).then(function (got) {
-      working(false);
+      working("");
       if (!got.ok) {
         go.textContent = "Preview";
         trouble(got.said.error || "podium refused that");
@@ -475,9 +495,14 @@ button:disabled { opacity: 0.5; cursor: default; }
   }
 
   function send() {
-    working(true);
+    var sending = command.textContent.replace(/ --dry-run$/, "");
+    var waits = /--wait ([0-9]+)/.exec(sending);
+    command.textContent = sending;       // what is running now, in place of the dry run just read
+    output.textContent = "";
+    note.hidden = true;
+    working("Sending: " + sending + (waits ? " (it waits up to " + waits[1] + " s for the handover)" : ""));
     post("/run", {ticket: ticket}).then(function (got) {
-      working(false);
+      working("");
       step = "done";
       go.hidden = true;
       cancel.textContent = "Close";
@@ -509,9 +534,8 @@ button:disabled { opacity: 0.5; cursor: default; }
     shown.hidden = true;
     note.hidden = true;
     trouble("");
+    working("");
     go.hidden = false;
-    go.disabled = false;
-    cancel.disabled = false;
     go.textContent = "Preview";
     cancel.textContent = "Cancel";
     dialog.showModal();

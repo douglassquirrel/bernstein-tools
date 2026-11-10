@@ -285,6 +285,9 @@ Nothing happens at one press:
 3. **Send** runs exactly what was previewed, once, and shows what `conduct` printed and its exit code.
    After a Start it reminds you what only you can do in the desktop app. Cancel sends nothing.
 
+While `conduct` is running, for a preview or a send, the dialog says what it is waiting for and counts
+the seconds ("Sending: conduct stop recipes… 4 s"); `conduct`'s own output appears when it has finished.
+
 What podium has run since it started is listed under "Activity" at the foot of the page, and each run
 is added to a log file (the setting `PODIUM_LOG`, `~/.bernstein/podium.log` unless set; its folder is
 made if missing): the time, the command, the exit code and the output. A preview is not a run and is
@@ -436,6 +439,7 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 - 10 November 2026: `podium` has buttons for `conduct`'s verbs. Each shows a preview (the dry run) before
   anything is sent. Every run is added to a log, `~/.bernstein/podium.log` unless the new setting
   `PODIUM_LOG` says otherwise.
+- 10 November 2026: podium's dialog shows what it is waiting for, and for how long, while `conduct` runs.
 - 10 November 2026: the Dormant and Dream messages now tell a session to report `dormant` or `dreaming`
   with `lobster-mail status` and to clear it on waking; the Wake message tells it to clear it; the Start
   message tells a new session to clear a status an earlier one left. A session made dormant before this

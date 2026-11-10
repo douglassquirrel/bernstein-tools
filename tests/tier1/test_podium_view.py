@@ -269,3 +269,13 @@ def test_the_page_has_one_dialog_that_previews_then_sends_with_the_token_in_the_
     assert "if (!dialog.open) { refresh(); }" in html       # the page does not change under an open dialog
     assert html.count("innerHTML") == 1                     # only the view, which podium itself made, is put in whole
     assert "http://" not in html and "https://" not in html
+
+
+def test_the_dialog_says_what_it_is_waiting_for_and_for_how_long_while_conduct_runs():
+    html = podium.page("<p>THE VIEW</p>")
+    assert ('<p id="act-progress" class="progress" role="status" hidden><span class="spin"></span>'
+            '<span id="act-progress-text"></span></p>') in html
+    assert '"Asking conduct what it would do"' in html and '"Sending: "' in html
+    assert "setInterval(tick, 1000)" in html and "clearInterval(ticking)" in html
+    assert "@keyframes spin" in html and "prefers-reduced-motion: reduce" in html
+    assert '"Working' not in html                     # the button no longer carries the only sign of life
