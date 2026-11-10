@@ -157,8 +157,9 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
 --all`, and never writes in a project's folder.
 
 - **`start`** refuses if a session is already on duty for the project. Otherwise it sets the mail
-  pace if `--pace` is given, mails a Start message (follow `START-HERE.txt` from the top, then the
-  brief from `--brief FILE`, or wait), and opens the session in the Claude desktop app with the
+  pace if `--pace` is given, mails a Start message (follow `START-HERE.txt` from the top, clear any
+  status an earlier session left reported for the mailbox, then the brief from `--brief FILE`, or
+  wait), and opens the session in the Claude desktop app with the
   documented link: a Claude session for a non-code project, with its folder, the mail root, its
   home claw, each further claw in `CLAWS`, each claw's `<claw>-secrets` folder when there is one
   beside it, and `lobster-tools` connected; a Claude Code session for a tools project. You
@@ -168,13 +169,15 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
   session on duty except bernstein's. `--wait SECONDS` waits for each handover, looking every 10
   seconds.
 - **`dormant`** puts a running session to sleep without a handover, for a pause such as overnight:
-  it mails a Dormant message (keep running, keep everything as it is, do not hand over, stop watching
-  mail and run no mail checks; when Squirrel next speaks to you, set the pace back to normal and
-  watch again; until then, ask Squirrel nothing) and then sets the mailbox's pace to `relaxed`, at which a session reads mail only at
+  it mails a Dormant message (keep running, keep everything as it is, do not hand over, report
+  `dormant` with `lobster-mail status`, stop watching mail and run no mail checks; when Squirrel next
+  speaks to you, clear that status, set the pace back to normal and watch again; until then, ask
+  Squirrel nothing) and then sets the mailbox's pace to `relaxed`, at which a session reads mail only at
   the end of a turn. Only sessions fresh on duty; `--all` is every one but bernstein's. The session's
-  duty goes stale after 45 minutes, which is what dormant means.
+  duty goes stale after 45 minutes; `conduct status` shows it as `dormant` from the moment it reports so.
 - **`wake`** is the way back when Squirrel would rather not speak to each session: it sets the pace to
-  `normal` and mails a Wake message (watch mail again, read what arrived, carry on). A dormant
+  `normal` and mails a Wake message (clear the `dormant` status, watch mail again, read what arrived,
+  carry on). A dormant
   session reads it at the end of its next turn, so it takes effect when the session is next used;
   stale duties count, since a dormant session's does go stale.
 - **`dream`** asks a running session to spend a while, 60 minutes unless `--minutes` says otherwise (5 to
@@ -182,7 +185,9 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
   has to be read at startup, repeated actions to make into tools, and any other idea, one file per topic
   in the project's `dreams/`, changing nothing else. The Dream message carries the whole routine, with the
   finish time in UTC (the subject is `Dream: until HH:MM UTC`). While dreaming the session watches for
-  bernstein's mail only (`lobster-mail wait --from bernstein`) and leaves the rest unclaimed. At the end
+  bernstein's mail only (`lobster-mail wait --from bernstein`) and leaves the rest unclaimed, and it
+  reports `dreaming` with the finish time (`lobster-mail status … dreaming --until …`), which `conduct
+  status` shows; going dormant at the end it reports `dormant` instead, and a handover ends the status. At the end
   it replies, tells Squirrel in a line with no question, and goes dormant, asking nothing until he next
   speaks to it; or with `--then stop` hands over and stops. `conduct` sets no pace for a
   dream. Only sessions fresh on duty; `--all` is every one but bernstein's.
@@ -349,6 +354,10 @@ and projects as they are.
   offer or reminder) until he next speaks to it.
 - 10 November 2026: `conduct status [--json]` shows what every mailbox's session is doing. It reads only.
   The state `dormant` and the reported status need a `lobster-tools` that has `lobster-mail status`.
+- 10 November 2026: the Dormant and Dream messages now tell a session to report `dormant` or `dreaming`
+  with `lobster-mail status` and to clear it on waking; the Wake message tells it to clear it; the Start
+  message tells a new session to clear a status an earlier one left. A session made dormant before this
+  date shows as `quiet` once its duty is stale.
 
 ## Contributing
 

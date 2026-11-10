@@ -42,7 +42,8 @@ def start_message(brief, today):
     text = (f"Start (from bernstein, {day(today)}).\n\n"
             "Squirrel has started this session through bernstein. Follow START-HERE.txt in this\n"
             "project's folder from the top: step 0 (the model and effort question) first, then the\n"
-            "mail and the rest.\n\n")
+            "mail and the rest. If lobster-mail start says a status is being reported for this mailbox, an\n"
+            "earlier session left it: clear it with the command start prints.\n\n")
     if brief is None:
         return text + "Then wait for Squirrel.\n"
     return text + "Then this brief, from Squirrel:\n\n" + brief
@@ -61,20 +62,23 @@ def dormant_message(project, today):
     """The body of the Dormant message: keep running, stop watching mail, no handover."""
     return (f"Dormant (from bernstein, {day(today)}).\n\n"
             "Squirrel has asked this session to go dormant until he comes back: keep running, keep\n"
-            "everything as it is, and do not hand over. Stop watching mail now (stop the background wait, or\n"
-            "the check-in chain) and run no mail checks; this mailbox's pace is being set to relaxed, so\n"
+            f"everything as it is, and do not hand over. First say so: run lobster-mail status --as {project}\n"
+            "--session <your session> dormant. Then stop watching mail (stop the background wait, or the\n"
+            "check-in chain) and run no mail checks; this mailbox's pace is being set to relaxed, so\n"
             f"lobster-mail pace --as {project} shows it. Ask Squirrel nothing until he next speaks to you: no\n"
-            f"question, no offer, no reminder. When he does, run lobster-mail pace --as {project} normal, start\n"
-            "watching again as that prints, read the mail that arrived meanwhile, and tell him you are back.\n"
+            f"question, no offer, no reminder. When he does, run lobster-mail status --as {project} --session\n"
+            f"<your session> --clear and lobster-mail pace --as {project} normal, start watching again as that\n"
+            "prints, read the mail that arrived meanwhile, and tell him you are back.\n"
             "Nothing else changes.\n")
 
 
 def wake_message(project, today):
     """The body of the Wake message: the pace is normal again, watch mail again."""
     return (f"Wake (from bernstein, {day(today)}).\n\n"
-            f"Squirrel is back: this mailbox's pace is normal again. Run lobster-mail pace --as {project} and\n"
-            "do what it prints (start the background wait, or the check-in chain), read the mail that\n"
-            "arrived while you were dormant, report it, and carry on.\n")
+            f"Squirrel is back: this mailbox's pace is normal again. Run lobster-mail status --as {project}\n"
+            "--session <your session> --clear, so you no longer report dormant; then lobster-mail pace --as\n"
+            f"{project}, and do what it prints (start the background wait, or the check-in chain), read the\n"
+            "mail that arrived while you were dormant, report it, and carry on.\n")
 
 
 def until(now, minutes):
@@ -91,7 +95,9 @@ def dream_subject(now, minutes):
 DREAM_BODY = """Squirrel has asked this session to dream until {until} ({minutes} minutes): to look back over its recent work
 and write down proposals for him to review. Proposals only: change nothing else.
 
-1. Mail while dreaming. Stop the background wait or the check-in chain, and watch for bernstein only:
+1. Say so, then mail while dreaming. Run lobster-mail status --as {project} --session <your session>
+   dreaming --until {stamp}. Stop the background wait or the check-in chain, and watch for
+   bernstein only:
    lobster-mail wait --as {project} --session <your session> --from bernstein in the background, or
    lobster-mail checkin --as {project} --session <your session> --from bernstein between steps where a
    background command cannot run. Claim and act on bernstein's mail only; leave every other message
@@ -118,21 +124,25 @@ and write down proposals for him to review. Proposals only: change nothing else.
    chat, in a line, with no question. Then """
 
 DREAM_ENDS = {
-    "dormant": """go dormant: run lobster-mail pace --as {project} relaxed, run
-   no watch or check-in, do not hand over, and ask Squirrel nothing until he next speaks to you: no
-   question, no offer, no reminder. When he does, run lobster-mail pace --as {project} normal, start
-   watching again as that prints, read the mail that arrived meanwhile, and offer to go through the
-   dreams.
+    "dormant": """go dormant: run lobster-mail status --as {project} --session
+   <your session> dormant (it replaces dreaming) and lobster-mail pace --as {project} relaxed, run no
+   watch or check-in, do not hand over, and ask Squirrel nothing until he next speaks to you: no
+   question, no offer, no reminder. When he does, run lobster-mail status --as {project} --session
+   <your session> --clear and lobster-mail pace --as {project} normal, start watching again as that
+   prints, read the mail that arrived meanwhile, and offer to go through the dreams.
 """,
     "stop": """hand over and stop: bring the record up to date, send the handover with lobster-mail
-   handover, stop watching mail, and tell Squirrel you have stopped.
+   handover (it ends the dreaming status with the duty), stop watching mail, and tell Squirrel you
+   have stopped.
 """,
 }
 
 
 def dream_message(project, now, minutes, then):
     """The body of the Dream message: the whole routine, so a project whose rules predate dreaming can follow it."""
-    fields = {"until": until(now, minutes), "minutes": minutes, "project": project, "date": f"{now:%Y-%m-%d}"}
+    end = now + datetime.timedelta(minutes=minutes)
+    fields = {"until": until(now, minutes), "minutes": minutes, "project": project, "date": f"{now:%Y-%m-%d}",
+              "stamp": f"{end:%Y-%m-%dT%H:%M:%SZ}"}
     return f"Dream (from bernstein, {day(now)}).\n\n" + (DREAM_BODY + DREAM_ENDS[then]).format(**fields)
 
 
