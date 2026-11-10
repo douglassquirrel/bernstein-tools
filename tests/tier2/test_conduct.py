@@ -560,6 +560,6 @@ def test_dream_needs_a_project_or_all_and_refuses_an_unknown_mailbox(world):
     assert sent(world) == []
 
 
-def test_no_verb_names_all_five_verbs(world):
+def test_no_verb_names_all_six_verbs(world):
     code, _out, err = world.conduct()
-    assert (code, err) == (2, "conduct: say start, stop, dormant, wake or dream (conduct --help shows the form)\n")
+    assert (code, err) == (2, "conduct: say start, stop, dormant, wake, dream or status (conduct --help shows the form)\n")

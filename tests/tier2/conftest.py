@@ -135,6 +135,11 @@ class World:
         with open(os.path.join(self.bin, "duty.json"), "w") as f:
             json.dump({"root": self.mail, "mailboxes": listing, "skipped": []}, f)
 
+    def listing(self, entries, skipped=()):
+        """Set the duty listing to these mailbox entries, as lobster-mail would print them."""
+        with open(os.path.join(self.bin, "duty.json"), "w") as f:
+            json.dump({"root": self.mail, "mailboxes": entries, "skipped": list(skipped)}, f)
+
     def project(self, name, kind, public=False, under="", sister=None, claws=()):
         """A project folder with its lobster.conf, as new-lobster makes it, perhaps in a subfolder. A code
         project with sister "" is a lone claw; a non-code project's claws are its further claws."""

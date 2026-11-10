@@ -148,6 +148,7 @@ conduct stop    <project> | --all  [--wait SECONDS] [--dry-run]
 conduct dormant <project> | --all  [--dry-run]
 conduct wake    <project> | --all  [--dry-run]
 conduct dream   <project> | --all  [--minutes N] [--then dormant|stop] [--dry-run]
+conduct status  [--json]
 ```
 
 `conduct` talks to a lobster project's session by mail, as `bernstein`; each project's guidance
@@ -187,6 +188,38 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
   dream. Only sessions fresh on duty; `--all` is every one but bernstein's.
 - **`--dry-run`** shows the message and the link, and sends and opens nothing (for `dormant` and
   `wake`, sets nothing either).
+- **`status`** shows every mailbox under the mail root, one line each: what its session is doing, the
+  project's kind, who is on duty and when it last checked in, the mail waiting (`new`) and claimed
+  (`open`), the pace, the status the session reports about itself if it has set one (`lobster-mail
+  status`; marked `(overdue)` once its finish time has passed), and, where `start` would refuse the
+  project, why. It reads one duty listing and each project's `lobster.conf`; it sends, sets, opens and
+  writes nothing, so it has no `--dry-run`.
+
+  ```
+  $ ./conduct status
+  recipes        running      non-code  on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)  new 2  open 0  pace normal  reporting "dreaming" until 2026-10-18T10:20:00Z
+  recipes-tools  handed-over  code      nobody on duty  new 0  open 0  pace normal
+  video-tools    quiet        code      on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)  new 0  open 0  pace relaxed
+  ```
+
+  The second word is the state, the first of these that fits:
+
+  | State | When |
+  |---|---|
+  | `dormant` | a session is on duty and has reported `dormant` |
+  | `running` | a session is on duty and has checked in within 45 minutes, at any pace |
+  | `quiet` | on duty at pace relaxed with no check-in for 45 minutes: waiting to be spoken to, or gone |
+  | `stale` | on duty at any other pace with no check-in for 45 minutes: it probably died, or the Mac slept |
+  | `handed-over` | nobody on duty, and the last session's handover is waiting for the next |
+  | `off` | nobody on duty |
+
+  `--json` prints `root`, `skipped` (as `lobster-mail` gives them) and `mailboxes`, each with `mailbox`,
+  `state`, `kind` (`non-code`, `code`, or `null` when the project cannot be read), `folder`, `model`,
+  `effort`, `sister`, `claws` (for a non-code project, the tools projects it works with, its sister
+  first), `serves` (for a tools project, the non-code projects that name it), `refused` (why `start`
+  would refuse, or `null`), and `duty`, `pace`, `new`, `open`, `handover_waiting` and `reported` as
+  `lobster-mail duty status --all --json` gives them. `reported` needs a `lobster-tools` with the
+  `status` verb (10 November 2026); with an older one it is always `null`.
 
 `start` checks the project before it sends or opens anything, and refuses (exit 3) with a message
 saying what to fix when any part a lobster project has is missing: the folder (`<CODE_DIR>/<name>`
@@ -209,7 +242,7 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 
 | Code | Meaning |
 |---|---|
-| 0 | Sent (and, with `--wait`, handed over); or, for `stop`, `dormant`, `wake` and `dream`, nobody on duty |
+| 0 | Sent (and, with `--wait`, handed over); or, for `stop`, `dormant`, `wake` and `dream`, nobody on duty; or, for `status`, shown |
 | 2 | Bad arguments or settings, or `--minutes` outside 5 to 240 |
 | 3 | No such project or mailbox, or the project lacks a part `start` needs; or, for `start`, a session is already on duty |
 | 4 | A program failed, or the duty listing could not be read |
@@ -276,6 +309,8 @@ that appears while `new-lobster` is running, a race the tests cannot stage.
 Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a settings file whose
 `NON_CODE_DIR`, `CODE_DIR` and `MAIL_ROOT` are scratch folders, then run `./new-lobster --dry-run
 <name>` and `./new-lobster <name>`, and look at what was made.
+`./conduct status` and `./conduct status --json` read only, so they are run against the real mail root
+and projects as they are.
 
 ## Known limitations and non-goals
 
@@ -312,6 +347,8 @@ Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a set
   for Squirrel's OK, so a pair that was in line will show these as gaps.
 - 8 November 2026: a dormant session, after `conduct dormant` or a dream, asks Squirrel nothing (no question,
   offer or reminder) until he next speaks to it.
+- 10 November 2026: `conduct status [--json]` shows what every mailbox's session is doing. It reads only.
+  The state `dormant` and the reported status need a `lobster-tools` that has `lobster-mail status`.
 
 ## Contributing
 

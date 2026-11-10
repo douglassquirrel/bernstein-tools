@@ -244,6 +244,7 @@ def find_project(name, non_code_dir, code_dir):
                                  f"add a line such as {key}={example}")
     sister = settings.get("SISTER", "")
     claws = []  # (checkout, secrets folder or None), the home claw first
+    claw_names = []
     if kind == "non-code":
         if not sister:
             raise ProjectRefused(f"{conf} has no SISTER, the tools project a non-code session works with: "
@@ -251,8 +252,10 @@ def find_project(name, non_code_dir, code_dir):
         claws.append(claw_folders(sister, code_dir, conf, "SISTER"))
         for claw in settings.get("CLAWS", "").split():
             claws.append(claw_folders(claw, code_dir, conf, "CLAWS"))
+        claw_names = [sister] + settings.get("CLAWS", "").split()
     return SimpleNamespace(name=name, kind=kind, folder=folder, checkout=checkout, sister=sister, claws=claws,
-                           model=settings.get("MODEL", ""), effort=settings.get("EFFORT", ""))
+                           claw_names=claw_names, model=settings.get("MODEL", ""),
+                           effort=settings.get("EFFORT", ""))
 
 
 def encode(params):
@@ -288,7 +291,8 @@ def parser():
                       "conduct stop <project> | --all [--wait SECONDS] [--dry-run]\n"
                       "conduct dormant <project> | --all [--dry-run]\n"
                       "conduct wake <project> | --all [--dry-run]\n"
-                      "conduct dream <project> | --all [--minutes N] [--then dormant|stop] [--dry-run]",
+                      "conduct dream <project> | --all [--minutes N] [--then dormant|stop] [--dry-run]\n"
+                      "conduct status [--json]",
                formatter_class=argparse.RawDescriptionHelpFormatter)
     verbs = p.add_subparsers(dest="verb", parser_class=Parser)
     s = verbs.add_parser("start", help="send a Start message and open the project's session")
@@ -319,6 +323,8 @@ def parser():
     r.add_argument("--then", choices=("dormant", "stop"), default="dormant",
                    help="what the session does after: go dormant (default) or hand over and stop")
     r.add_argument("--dry-run", action="store_true", help="show the message; send nothing")
+    u = verbs.add_parser("status", help="show every mailbox's session: what it is doing, its project and its mail")
+    u.add_argument("--json", action="store_true", help="print the rows as JSON")
     return p
 
 
@@ -336,17 +342,22 @@ def run(argv, env, what, stdin=None, also_fine=()):
     return done.stdout
 
 
-def listing(s, env, sleep):
-    """The duty listing by mailbox, looking again while a duty is caught changing."""
+def listing(s, env, sleep, skipped=None):
+    """The duty listing by mailbox, looking again while a duty is caught changing. The folders lobster-mail
+    says it skipped are added to the list skipped, when one is given."""
     for tries in range(CHANGING_TRIES + 1):
         text = run([s["LOBSTER_MAIL"], "duty", "status", "--all", "--json", "--root", s["MAIL_ROOT"]],
                    env, "lobster-mail duty status --all")
         try:
-            boxes = {m["mailbox"]: m for m in json.loads(text)["mailboxes"]}
-        except (ValueError, KeyError, TypeError):
+            listed = json.loads(text)
+            boxes = {m["mailbox"]: m for m in listed["mailboxes"]}
+            passed_over = list(listed.get("skipped") or [])
+        except (ValueError, KeyError, TypeError, AttributeError):
             raise Stop(4, "lobster-mail duty status --all --json did not print the expected JSON")
         changing = [n for n, m in boxes.items() if m.get("duty_changing")]
         if not changing:
+            if skipped is not None:
+                skipped.extend(passed_over)
             return boxes
         if tries == CHANGING_TRIES:
             raise Stop(4, f"the duty of {', '.join(changing)} kept changing while it was read; run conduct again")
@@ -357,6 +368,73 @@ def listing(s, env, sleep):
 def fresh(entry):
     duty = entry.get("duty")
     return duty is not None and not duty.get("stale")
+
+
+def state_of(entry):
+    """What a session is doing, from its mailbox's line in the duty listing. First match wins."""
+    duty = entry.get("duty")
+    if duty is None:
+        return "handed-over" if entry.get("handover_waiting") else "off"
+    reported = entry.get("reported") or {}
+    if str(reported.get("status", "")).strip().lower() == "dormant":
+        return "dormant"
+    if not duty.get("stale"):
+        return "running"
+    return "quiet" if entry.get("pace") == "relaxed" else "stale"
+
+
+def status_rows(boxes, lookup):
+    """One row per mailbox in the duty listing, joined with what lookup(name) says of its project.
+    lookup gives what find_project gives, or raises ProjectRefused as conduct start would."""
+    rows = []
+    for name, entry in boxes.items():
+        row = {"mailbox": name, "state": state_of(entry), "kind": None, "folder": None, "model": None,
+               "effort": None, "sister": None, "claws": [], "serves": [], "refused": None,
+               "duty": entry.get("duty"), "pace": entry.get("pace") or "normal",
+               "new": entry.get("new", 0), "open": entry.get("open", 0),
+               "handover_waiting": bool(entry.get("handover_waiting")), "reported": entry.get("reported")}
+        try:
+            p = lookup(name)
+        except ProjectRefused as why:
+            row["refused"] = str(why)
+        else:
+            row.update(kind=p.kind, folder=p.folder, model=p.model, effort=p.effort, sister=p.sister,
+                       claws=list(p.claw_names))
+        rows.append(row)
+    for row in rows:
+        row["serves"] = [r["mailbox"] for r in rows if r["kind"] == "non-code" and row["mailbox"] in r["claws"]]
+    return rows
+
+
+def overdue(until_text, now):
+    """Whether a reported finish time is past. One that is not lobster-mail's UTC stamp is never judged."""
+    try:
+        when = datetime.datetime.strptime(until_text, "%Y-%m-%dT%H:%M:%SZ")
+    except (TypeError, ValueError):
+        return False
+    return when.replace(tzinfo=datetime.timezone.utc) < now
+
+
+def status_text(rows, now):
+    """The rows as text, one aligned line per mailbox, in the style of lobster-mail duty status --all."""
+    wide = max((len(r["mailbox"]) for r in rows), default=0)
+    states = max((len(r["state"]) for r in rows), default=0)
+    lines = []
+    for r in rows:
+        duty = r["duty"]
+        who = "nobody on duty" if duty is None else (
+            f"on duty {duty.get('holder')}, last beat {duty.get('last_beat')} ({duty.get('minutes')} minutes ago)")
+        line = (f"{r['mailbox'].ljust(wide)}  {r['state'].ljust(states)}  {(r['kind'] or '-').ljust(8)}  {who}"
+                f"  new {r['new']}  open {r['open']}  pace {r['pace']}")
+        said = r["reported"]
+        if said:
+            line += "  reporting " + json.dumps(str(said.get("status", "")), ensure_ascii=False)
+            if said.get("until"):
+                line += f" until {said['until']}" + (" (overdue)" if overdue(said["until"], now) else "")
+        if r["refused"]:
+            line += f"  cannot start: {r['refused']}"
+        lines.append(line + "\n")
+    return "".join(lines)
 
 
 def send(s, env, to, subject, body, err):
@@ -534,6 +612,20 @@ def dream(a, s, env, now, out, err, sleep):
         out.write(f"Sent the Dream message to {name}: until {until(now, a.minutes)}, then {after}.\n")
 
 
+def status(a, s, env, now, out, err, sleep):
+    """Print what every mailbox's session is doing, joined with its project. It reads only: one duty listing
+    from lobster-mail and each project's lobster.conf. Nothing is sent, set, opened or written."""
+    skipped = []
+    boxes = listing(s, env, sleep, skipped)
+    rows = status_rows(boxes, lambda name: find_project(name, s["NON_CODE_DIR"], s["CODE_DIR"]))
+    if a.json:
+        out.write(json.dumps({"root": s["MAIL_ROOT"], "mailboxes": rows, "skipped": skipped}, indent=1) + "\n")
+    elif not rows:
+        out.write(f"No mailboxes in {s['MAIL_ROOT']}.\n")
+    else:
+        out.write(status_text(rows, now))
+
+
 def main(argv, env, today, out, err, sleep):
     """Run conduct; return its exit code. today is a datetime in UTC (a dream needs the time of day)."""
     if argv[:1] in (["-h"], ["--help"]) or (len(argv) == 2 and argv[1] in ("-h", "--help")):
@@ -554,8 +646,8 @@ def main(argv, env, today, out, err, sleep):
         except SettingsRefused as why:
             raise Stop(2, f"{why} (conduct --help shows the form)")
         if a.verb is None:
-            raise Stop(2, "say start, stop, dormant, wake or dream (conduct --help shows the form)")
-        verbs = {"start": start, "stop": stop, "dormant": dormant, "wake": wake, "dream": dream}
+            raise Stop(2, "say start, stop, dormant, wake, dream or status (conduct --help shows the form)")
+        verbs = {"start": start, "stop": stop, "dormant": dormant, "wake": wake, "dream": dream, "status": status}
         verbs[a.verb](a, s, env, today, out, err, sleep)
     except Stop as stopped:
         err.write(f"conduct: {stopped.message}\n")
