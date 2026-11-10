@@ -123,7 +123,7 @@ def test_a_row_shows_its_kind_badge_duty_pace_mail_and_model():
                             open_=1, sister="recipes-tools", claws=["recipes-tools"]),
                         row("recipes-tools", "handed-over", sister="recipes", serves=["recipes"])], NOW)
     assert ('<div class="row"><div class="who"><span class="name">recipes</span> <span class="kind">non-code</span>'
-            '</div><span class="badge ok">running</span><ul class="facts"><li>mac, checked in 3 min ago</li>'
+            '</div><span class="badge ok">running</span><ul class="facts"><li>mac, 3 min ago</li>'
             '<li>pace eager</li><li class="new">2 new</li><li>1 open</li><li>opus, high</li></ul>'
             '<div class="acts"><button type="button" class="act" data-verb="stop" data-project="recipes">Stop</button>'
             '<button type="button" class="act" data-verb="dormant" data-project="recipes">Dormant</button>'
@@ -131,8 +131,7 @@ def test_a_row_shows_its_kind_badge_duty_pace_mail_and_model():
             ) in html
     assert ('<div class="row claw"><div class="who"><span class="name">recipes-tools</span> '
             '<span class="kind">home claw</span></div><span class="badge off">handed over</span>'
-            '<ul class="facts"><li>nobody on duty</li><li>pace normal</li><li>0 new</li><li>0 open</li>'
-            '<li>opus, high</li></ul><div class="acts"><button type="button" class="act" data-verb="start" '
+            '<ul class="facts"><li>opus, high</li></ul><div class="acts"><button type="button" class="act" data-verb="start" '
             'data-project="recipes-tools">Start</button></div></div>') in html
 
 
@@ -279,3 +278,29 @@ def test_the_dialog_says_what_it_is_waiting_for_and_for_how_long_while_conduct_r
     assert "setInterval(tick, 1000)" in html and "clearInterval(ticking)" in html
     assert "@keyframes spin" in html and "prefers-reduced-motion: reduce" in html
     assert '"Working' not in html                     # the button no longer carries the only sign of life
+
+
+def test_a_line_leaves_out_what_is_only_the_usual_no_mail_normal_pace_nobody_on_duty():
+    quiet = podium.view([row("lone-tools", "off")], NOW)
+    assert '<ul class="facts"><li>opus, high</li></ul>' in quiet
+    for usual in ("nobody on duty", "pace normal", "0 new", "0 open"):
+        assert usual not in quiet
+    busy = podium.view([row("lone-tools", "running", duty="mac", minutes=0, pace="relaxed", open_=3)], NOW)
+    assert '<ul class="facts"><li>mac, just now</li><li>pace relaxed</li><li>3 open</li><li>opus, high</li></ul>' in busy
+    bare = podium.view([row("old-thing", "off", kind=None, refused="no lobster.conf")], NOW)
+    assert '<span class="badge off">off</span><p class="refused">' in bare and "<ul" not in bare
+
+
+def test_the_page_wears_the_site_s_colours_typeface_and_roundel():
+    html = podium.page("<p>THE VIEW</p>")
+    for colour in ("#F4F0EE", "#FFFFFF", "#333333", "#6E6661", "#DED5CE", "#D15727", "#A6451F", "#F3D2C2", "#A51E22",
+                   "#3B7A55"):
+        assert colour in html
+    assert '"EB Garamond", Georgia, serif' in html
+    assert '<span class="mark" aria-hidden="true">P</span><h1>podium</h1>' in html
+    assert "url(" not in html and "@import" not in html        # no font or image is fetched from anywhere
+
+
+def test_a_hidden_part_of_the_page_stays_hidden_whatever_its_own_style_says():
+    # the progress line is laid out as a row, which would otherwise show it while it is marked hidden
+    assert "[hidden] { display: none !important; }" in podium.page("")

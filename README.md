@@ -264,11 +264,12 @@ podium [--port N] [--no-open]
 project with the tools projects it works with under it (its sister as "home claw", the rest as "claw"),
 then the tools projects that serve no one ("lone claws"), then mailboxes whose project `conduct` could
 not start, each with the reason, then bernstein's own. Each line has the session's state as a coloured
-badge, who is on duty and how long ago it checked in, the pace, the mail waiting and claimed, and the
-project's model and effort. A running session that reports a status shows that in the badge (`dreaming
+badge, who is on duty and how long ago it checked in, and the project's model and effort; the pace is
+shown only when it is not normal, and mail waiting or claimed only when there is some. A running session that reports a status shows that in the badge (`dreaming
 until 10:20 UTC`), and `overdue since` once its finish time has passed. The page makes itself again
 every 15 seconds and when you press Refresh, follows your light or dark setting, and works at the
-width of a phone.
+width of a phone. It is set in EB Garamond if that typeface is installed on the Mac, and in Georgia if
+not; nothing is fetched from anywhere, so no font is downloaded.
 
 Each line has buttons for what can be done to that session now: **Start** when nobody is on duty and
 `conduct` could start the project; **Stop**, **Dormant** and **Dream** when it is running; **Wake** when
@@ -440,6 +441,8 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
   anything is sent. Every run is added to a log, `~/.bernstein/podium.log` unless the new setting
   `PODIUM_LOG` says otherwise.
 - 10 November 2026: podium's dialog shows what it is waiting for, and for how long, while `conduct` runs.
+- 10 November 2026: podium's page is restyled (a cream page, white cards, an orange accent, a serif face) and
+  made more compact: a line no longer says "nobody on duty", "pace normal", "0 new" or "0 open".
 - 10 November 2026: the Dormant and Dream messages now tell a session to report `dormant` or `dreaming`
   with `lobster-mail status` and to clear it on waking; the Wake message tells it to clear it; the Start
   message tells a new session to clear a status an earlier one left. A session made dormant before this
