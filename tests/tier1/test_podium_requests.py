@@ -75,7 +75,7 @@ def test_an_address_podium_does_not_have_is_404_and_conduct_is_not_asked(target)
 def test_anything_but_get_is_405_and_conduct_is_not_asked(method):
     fetch = Fetch()
     assert podium.respond(method, "/?t=secret", "secret", fetch, NOW) == \
-        (405, "text/plain", "podium: this page is read only: it answers GET and nothing else\n")
+        (405, "text/plain", "podium: this address answers GET and nothing else\n")
     assert fetch.calls == 0
 
 
@@ -86,12 +86,95 @@ def test_a_token_with_awkward_characters_is_matched_as_data():
     assert podium.respond("GET", "/view?t=a", token, Fetch(), NOW)[0] == 403
 
 
+class FakePanel:
+    """Stands in for the panel: canned answers, and a record of what it was asked."""
+
+    def __init__(self, rows=ROWS, raw=RAW, error=None, entries=()):
+        self.answer, self.entries, self.asked = (rows, raw, error), list(entries), []
+
+    def listing(self):
+        self.asked.append("listing")
+        return self.answer
+
+    def preview(self, action):
+        self.asked.append(("preview", action))
+        return 200, {"command": "conduct stop recipes --dry-run", "exit": 0, "output": "Would…\n", "error": "",
+                     "ticket": "tick"}
+
+    def send(self, ticket):
+        self.asked.append(("send", ticket))
+        return 409, {"error": "that preview is no longer the latest one: preview again, then send"}
+
+
+def body(**fields):
+    return json.dumps(fields).encode("utf-8")
+
+
 def test_a_fault_inside_podium_is_a_plain_500_never_a_traceback():
-    def broken():
-        raise RuntimeError("boom")
-    assert podium.answer("GET", "/?t=secret", "secret", broken, NOW) == \
+    class Broken(FakePanel):
+        def listing(self):
+            raise RuntimeError("boom")
+
+    assert podium.answer("GET", "/?t=secret", b"", "secret", Broken(), NOW) == \
         (500, "text/plain", "podium: something went wrong inside podium (RuntimeError: boom); try Refresh\n")
-    assert podium.answer("GET", "/view?t=secret", "secret", Fetch(), NOW) == (200, "text/html", podium.view(ROWS, NOW))
+
+
+def test_a_get_goes_to_the_page_with_the_panel_s_listing_and_what_it_has_run():
+    run = {"time": "2026-10-18T09:38:00Z", "command": "conduct stop recipes", "exit": 0, "output": "Sent.\n",
+           "error": "", "reminder": None, "log_error": None}
+    panel = FakePanel(entries=[run])
+    assert podium.answer("GET", "/view?t=secret", b"", "secret", panel, NOW) == \
+        (200, "text/html", podium.view(ROWS, NOW, entries=[run]))
+    assert panel.asked == ["listing"]
+    assert podium.answer("PUT", "/view?t=secret", b"", "secret", panel, NOW)[0] == 405
+
+
+def test_post_preview_gives_the_action_to_the_panel_and_its_answer_as_json():
+    panel = FakePanel()
+    action = {"verb": "stop", "project": "recipes"}
+    code, kind, text = podium.answer("POST", "/preview", body(t="secret", action=action), "secret", panel, NOW)
+    assert (code, kind) == (200, "application/json")
+    assert json.loads(text) == {"command": "conduct stop recipes --dry-run", "exit": 0, "output": "Would…\n",
+                                "error": "", "ticket": "tick"}
+    assert panel.asked == [("preview", action)]
+
+
+def test_post_run_gives_the_ticket_to_the_panel_and_passes_its_status_on():
+    panel = FakePanel()
+    code, kind, text = podium.answer("POST", "/run", body(t="secret", ticket="tick"), "secret", panel, NOW)
+    assert (code, kind) == (409, "application/json")
+    assert json.loads(text) == {"error": "that preview is no longer the latest one: preview again, then send"}
+    assert panel.asked == [("send", "tick")]
+
+
+@pytest.mark.parametrize("sent", [
+    b"", b"not json", b"[]", b'"secret"', body(action={"verb": "stop"}), body(t="wrong", ticket="tick"),
+    body(t=["secret"]), body(t=None), body(T="secret"), b'{"t": "secret"', b"\xff\xfe",
+])
+def test_a_post_whose_body_does_not_carry_the_token_is_403_and_the_panel_is_not_asked(sent):
+    for path in ("/preview", "/run", "/run?t=secret", "/", "/nowhere"):
+        panel = FakePanel()
+        assert podium.answer("POST", path, sent, "secret", panel, NOW) == (
+            403, "text/plain", "podium: this address needs the token: open the link podium printed when it started\n")
+        assert panel.asked == []
+
+
+def test_a_post_with_the_token_to_any_other_address_is_404_and_a_body_too_big_is_413():
+    panel = FakePanel()
+    for path in ("/", "/view", "/status", "/preview/", "/run/x"):
+        assert podium.answer("POST", path, body(t="secret"), "secret", panel, NOW) == (
+            404, "text/plain", "podium: there is nothing to send to at this address\n")
+    big = b" " * (podium.BODY_LIMIT + 1)
+    assert podium.answer("POST", "/preview", big, "secret", panel, NOW) == (
+        413, "text/plain", "podium: that is more than podium takes in one request\n")
+    assert panel.asked == []
+
+
+def test_a_post_with_the_token_but_without_what_it_needs_goes_to_the_panel_to_refuse():
+    panel = FakePanel()
+    podium.answer("POST", "/preview", body(t="secret"), "secret", panel, NOW)
+    podium.answer("POST", "/run", body(t="secret"), "secret", panel, NOW)
+    assert panel.asked == [("preview", None), ("send", None)]
 
 
 def ran(returncode=0, stdout="", stderr=""):
@@ -147,3 +230,15 @@ def test_when_open_is_not_there_to_run_podium_says_so_and_carries_on(monkeypatch
     podium.open_in_browser("http://127.0.0.1:1/?t=x", {}, err)
     assert err.getvalue() == ("podium: the page could not be opened in the browser (No such file or directory); "
                               "open the link above yourself\n")
+
+
+def test_a_connection_that_breaks_mid_answer_prints_nothing_in_the_terminal(capsys):
+    server = podium.Server(("127.0.0.1", 0), podium.handler_for("secret", FakePanel(), lambda: NOW))
+    try:
+        try:
+            raise BrokenPipeError(32, "Broken pipe")
+        except BrokenPipeError:
+            server.handle_error(None, ("127.0.0.1", 1))
+    finally:
+        server.server_close()
+    assert capsys.readouterr() == ("", "")

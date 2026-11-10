@@ -16,6 +16,7 @@ def test_an_empty_file_gives_the_defaults_with_home_filled_in():
         "MAIL_ROOT": "/home/sq/projects/mail",
         "PYTHON": "/usr/bin/python3",
         "PODIUM_PORT": "8417",
+        "PODIUM_LOG": "/home/sq/.bernstein/podium.log",
     }
 
 
@@ -115,3 +116,8 @@ def test_the_podium_port_setting_is_kept_when_it_is_a_port_number():
     assert read_settings("PODIUM_PORT=9000\n", HOME)["PODIUM_PORT"] == "9000"
     assert read_settings('PODIUM_PORT="0"\n', HOME)["PODIUM_PORT"] == "0"
     assert read_settings("PODIUM_PORT=65535\n", HOME)["PODIUM_PORT"] == "65535"
+
+
+def test_the_podium_log_setting_is_a_path_with_home_filled_in():
+    assert read_settings("PODIUM_LOG=~/logs/my podium.log\n", HOME)["PODIUM_LOG"] == "/home/sq/logs/my podium.log"
+    assert read_settings("PODIUM_LOG=/var/tmp/p.log\n", HOME)["PODIUM_LOG"] == "/var/tmp/p.log"

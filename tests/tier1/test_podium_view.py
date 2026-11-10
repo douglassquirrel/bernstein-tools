@@ -124,11 +124,16 @@ def test_a_row_shows_its_kind_badge_duty_pace_mail_and_model():
                         row("recipes-tools", "handed-over", sister="recipes", serves=["recipes"])], NOW)
     assert ('<div class="row"><div class="who"><span class="name">recipes</span> <span class="kind">non-code</span>'
             '</div><span class="badge ok">running</span><ul class="facts"><li>mac, checked in 3 min ago</li>'
-            '<li>pace eager</li><li class="new">2 new</li><li>1 open</li><li>opus, high</li></ul></div>') in html
+            '<li>pace eager</li><li class="new">2 new</li><li>1 open</li><li>opus, high</li></ul>'
+            '<div class="acts"><button type="button" class="act" data-verb="stop" data-project="recipes">Stop</button>'
+            '<button type="button" class="act" data-verb="dormant" data-project="recipes">Dormant</button>'
+            '<button type="button" class="act" data-verb="dream" data-project="recipes">Dream</button></div></div>'
+            ) in html
     assert ('<div class="row claw"><div class="who"><span class="name">recipes-tools</span> '
             '<span class="kind">home claw</span></div><span class="badge off">handed over</span>'
             '<ul class="facts"><li>nobody on duty</li><li>pace normal</li><li>0 new</li><li>0 open</li>'
-            '<li>opus, high</li></ul></div>') in html
+            '<li>opus, high</li></ul><div class="acts"><button type="button" class="act" data-verb="start" '
+            'data-project="recipes-tools">Start</button></div></div>') in html
 
 
 def test_a_row_says_why_its_project_cannot_be_started_and_a_missing_claw_has_no_mailbox():
@@ -173,7 +178,7 @@ def test_the_page_wraps_the_view_with_its_own_styles_and_a_refresh_every_15_seco
     assert '<main id="view"><p>THE VIEW</p></main>' in html
     assert '<meta name="viewport" content="width=device-width, initial-scale=1">' in html
     assert "prefers-color-scheme: dark" in html and '<button id="refresh" type="button">Refresh</button>' in html
-    assert "setInterval(refresh, 15000)" in html and 'fetch("/view?t="' in html
+    assert "if (!dialog.open) { refresh(); } }, 15000);" in html and 'fetch("/view?t="' in html
     assert "http://" not in html and "https://" not in html      # nothing is loaded from anywhere else
 
 
@@ -182,3 +187,85 @@ def test_bernstein_s_own_row_does_not_say_it_cannot_be_started_since_conduct_nev
     own = html[html.index("<h2>bernstein</h2>"):]
     assert '<span class="name">bernstein</span>' in own and "Cannot start" not in own
     assert html.count("Cannot start") == 1          # old-thing still says why
+
+
+@pytest.mark.parametrize("state, verbs", [
+    ("off", ["start"]), ("handed-over", ["start"]), ("running", ["stop", "dormant", "dream"]),
+    ("dormant", ["wake"]), ("quiet", ["wake"]), ("stale", ["wake"]),
+])
+def test_the_buttons_a_row_offers_follow_its_state(state, verbs):
+    assert podium.buttons(row("recipes-tools", state, duty="mac")) == verbs
+
+
+def test_no_start_for_a_project_conduct_would_refuse_and_no_buttons_at_all_for_bernstein_or_a_missing_claw():
+    assert podium.buttons(row("old-thing", "off", kind=None, refused="no lobster.conf")) == []
+    assert podium.buttons(row("old-thing", "running", kind=None, duty="mac", refused="no lobster.conf")) == \
+        ["stop", "dormant", "dream"]                # a session that is running can still be asked to stop
+    assert podium.buttons(row("recipes-tools", "off", refused="no START-HERE.txt")) == []
+    assert podium.buttons(row("bernstein", "running", kind=None, duty="mac")) == []
+    assert podium.buttons({"mailbox": "gone-tools", "missing": True}) == []
+
+
+def test_the_buttons_for_everything_at_once_follow_what_any_session_but_bernstein_s_is_doing():
+    assert podium.buttons_for_all([row("bernstein", "running", kind=None, duty="mac"), row("a-tools", "off")]) == []
+    assert podium.buttons_for_all([row("a-tools", "running", duty="mac"), row("b-tools", "off")]) == \
+        ["stop", "dormant", "dream"]
+    assert podium.buttons_for_all([row("a-tools", "quiet", duty="mac")]) == ["wake"]
+    assert podium.buttons_for_all([row("a-tools", "running", duty="mac"), row("b-tools", "dormant", duty="mac")]) == \
+        ["stop", "dormant", "dream", "wake"]
+    assert podium.buttons_for_all([]) == []
+
+
+def test_the_view_has_a_bar_of_buttons_for_everything_at_once_only_when_one_applies():
+    html = podium.view(a_factory(), NOW)        # menus and recipes are running, video-tools is stale
+    assert ('<div class="all"><button type="button" class="act" data-verb="stop" data-all="1">Stop all</button>'
+            '<button type="button" class="act" data-verb="dormant" data-all="1">Dormant all</button>'
+            '<button type="button" class="act" data-verb="dream" data-all="1">Dream all</button>'
+            '<button type="button" class="act" data-verb="wake" data-all="1">Wake all</button></div>') in html
+    assert html.index('<div class="all">') < html.index('<section class="card">')
+    assert '<div class="all">' not in podium.view([row("lone-tools", "off")], NOW)
+
+
+def test_a_button_s_project_name_is_escaped_as_an_attribute():
+    html = podium.view([row('x" onclick="alert(1)', "off")], NOW)
+    assert 'data-project="x&quot; onclick=&quot;alert(1)"' in html and 'onclick="alert' not in html
+
+
+RUNS = [
+    {"time": "2026-10-18T09:38:00Z", "command": "conduct stop recipes", "exit": 0,
+     "output": "Sent the Stop message to recipes.\n", "error": "", "reminder": None, "log_error": None},
+    {"time": "2026-10-18T09:39:30Z", "command": "conduct start menus", "exit": 3, "output": "",
+     "error": "conduct: a session is already running for menus\n", "reminder": None,
+     "log_error": "the log /x/podium.log could not be written (Permission denied)"},
+]
+
+
+def test_the_view_lists_what_podium_has_run_newest_first_with_exit_code_and_output():
+    html = podium.view(a_factory(), NOW, entries=RUNS)
+    assert html.index("<h2>Activity</h2>") > html.index("<h2>bernstein</h2>")
+    assert html.index("conduct start menus") < html.index("conduct stop recipes")
+    assert ('<div class="run"><p class="what"><span class="time">09:38:00 UTC</span> <code>conduct stop recipes</code> '
+            '<span class="badge ok">exit 0</span></p><pre>Sent the Stop message to recipes.\n</pre></div>') in html
+    assert ('<span class="time">09:39:30 UTC</span> <code>conduct start menus</code> <span class="badge alert">exit 3'
+            '</span></p><pre>conduct: a session is already running for menus\n</pre>'
+            '<p class="refused">the log /x/podium.log could not be written (Permission denied)</p></div>') in html
+    assert "Activity" not in podium.view(a_factory(), NOW) and "Activity" not in podium.view(a_factory(), NOW, entries=[])
+
+
+def test_activity_is_shown_even_when_conduct_status_fails_and_its_text_is_escaped():
+    nasty = dict(RUNS[0], command="conduct </script>", output="<b>x</b>", exit=None, error="was not run")
+    html = podium.view([], NOW, error="conduct status failed", entries=[nasty])
+    assert "<h2>Activity</h2>" in html and "<b>" not in html and "</script>" not in html
+    assert '<span class="badge alert">not run</span>' in html and "&lt;b&gt;x&lt;/b&gt;was not run" in html
+
+
+def test_the_page_has_one_dialog_that_previews_then_sends_with_the_token_in_the_body():
+    html = podium.page("<p>THE VIEW</p>")
+    assert '<dialog id="act"' in html and '<button type="button" id="act-go">Preview</button>' in html
+    assert '<button type="button" id="act-cancel">Cancel</button>' in html
+    assert 'post("/preview", {action: action})' in html and 'post("/run", {ticket: ticket})' in html
+    assert 'method: "POST"' in html and "body.t = token" in html
+    assert "Dream first?" in html                           # asked before any Stop
+    assert "if (!dialog.open) { refresh(); }" in html       # the page does not change under an open dialog
+    assert html.count("innerHTML") == 1                     # only the view, which podium itself made, is put in whole
+    assert "http://" not in html and "https://" not in html

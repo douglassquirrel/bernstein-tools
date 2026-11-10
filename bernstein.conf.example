@@ -18,3 +18,5 @@
 #PYTHON=/usr/bin/python3
 # The port podium serves its page on, on this machine only (0: any free port).
 #PODIUM_PORT=8417
+# Where podium adds a line for everything it runs (the folder is made if missing).
+#PODIUM_LOG=~/.bernstein/podium.log

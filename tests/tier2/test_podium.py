@@ -194,7 +194,8 @@ def test_over_a_real_loopback_socket_the_page_view_and_status_need_the_token(wor
             for name, path, method in (("page", "/?t=tok-en", "GET"), ("view", "/view?t=tok-en", "GET"),
                                        ("status", "/status?t=tok-en", "GET"), ("no token", "/", "GET"),
                                        ("wrong token", "/status?t=tok", "GET"), ("nowhere", "/x?t=tok-en", "GET"),
-                                       ("post", "/?t=tok-en", "POST"), ("head", "/?t=tok-en", "HEAD")):
+                                       ("post", "/?t=tok-en", "POST"), ("head", "/?t=tok-en", "HEAD"),
+                                       ("put", "/?t=tok-en", "PUT")):
                 got[name] = get(base + path, method)
             got["raw head"] = raw(server.server_address[1], "HEAD /?t=tok-en HTTP/1.0\r\n\r\n")
         finally:
@@ -207,7 +208,8 @@ def test_over_a_real_loopback_socket_the_page_view_and_status_need_the_token(wor
     assert got["page"][0] == 200 and got["page"][2] == podium.page(made)
     assert got["view"][0] == 200 and got["view"][2] == made and '<span class="name">lone-tools</span>' in made
     assert got["status"][0] == 200 and got["status"][2] == RAW
-    assert [got[k][0] for k in ("no token", "wrong token", "nowhere", "post")] == [403, 403, 404, 405]
+    assert [got[k][0] for k in ("no token", "wrong token", "nowhere", "put")] == [403, 403, 404, 405]
+    assert got["post"][0] == 403            # a POST's token is in its body, and this one had none
     assert "lone-tools" not in got["no token"][2] + got["wrong token"][2]
     assert got["head"][0] == 405
     assert got["raw head"].startswith("HTTP/1.0 405 ") and got["raw head"].endswith("\r\n\r\n")   # no body
@@ -261,3 +263,136 @@ def test_the_link_is_written_out_before_serving_starts_even_when_output_is_not_a
                        serve=lambda server: at_serve.append(Out.flushed))
     assert code == 0 and "podium is serving at http://127.0.0.1:" in at_serve[0]
     assert at_serve[0].endswith("stop it with Ctrl-C.\n")
+
+
+def post(url, **fields):
+    """(status, the JSON answer or the text) from a POST of these fields as JSON to the real loopback server."""
+    request = urllib.request.Request(url, data=json.dumps(fields).encode("utf-8"), method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as answer:
+            return answer.status, json.loads(answer.read().decode("utf-8"))
+    except urllib.error.HTTPError as refused:
+        text = refused.read().decode("utf-8")
+        return refused.code, json.loads(text) if text.startswith("{") else text
+
+
+def serving(world, talk, *argv):
+    """Run podium on a real loopback socket while talk(base address) runs; podium's exit code and stderr."""
+    def serve(server):
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+        thread.start()
+        try:
+            talk(f"http://127.0.0.1:{server.server_address[1]}")
+        finally:
+            server.shutdown()
+            thread.join()
+
+    code, _out, err = world.podium("--port", "0", "--no-open", *argv, serve=serve)
+    return code, err
+
+
+def acted(world):
+    return [c["args"] for c in world.calls() if c["prog"] == "conduct" and c["args"][:1] != ["status"]]
+
+
+def test_an_action_is_previewed_with_dry_run_then_sent_and_logged(world):
+    world.status(RAW)
+    log = os.path.join(world.home, ".bernstein", "podium.log")      # the default place, under HOME
+    got = {}
+
+    def talk(base):
+        got["preview"] = post(base + "/preview", t="tok-en", action={"verb": "stop", "project": "lone-tools"})
+        got["log after preview"] = os.path.exists(log)
+        got["run"] = post(base + "/run", t="tok-en", ticket=got["preview"][1]["ticket"])
+        got["again"] = post(base + "/run", t="tok-en", ticket=got["preview"][1]["ticket"])
+        got["view"] = get(base + "/view?t=tok-en")
+
+    assert serving(world, talk) == (0, "")
+    code, said = got["preview"]
+    assert code == 200 and said["command"] == "conduct stop lone-tools --dry-run" and said["exit"] == 0
+    assert said["output"] == "conduct stub: stop lone-tools\n" and said["ticket"]
+    assert got["log after preview"] is False
+    code, entry = got["run"]
+    assert code == 200 and entry == {"time": "2026-10-18T09:40:00Z", "command": "conduct stop lone-tools", "exit": 0,
+                                     "output": "conduct stub: stop lone-tools\n", "error": "", "reminder": None,
+                                     "log_error": None}
+    assert got["again"][0] == 409
+    assert acted(world) == [["stop", "lone-tools", "--dry-run"], ["stop", "lone-tools"]]
+    with open(log, encoding="utf-8") as f:
+        assert f.read() == ("2026-10-18T09:40:00Z  conduct stop lone-tools  (exit 0)\n"
+                            "  conduct stub: stop lone-tools\n")
+    assert "<h2>Activity</h2>" in got["view"][2] and "<code>conduct stop lone-tools</code>" in got["view"][2]
+
+
+def test_the_log_goes_where_the_setting_says(world, tmp_path):
+    world.status(RAW)
+    log = str(tmp_path / "my logs" / "podium é.log")
+    world.write_conf(f"PODIUM_LOG={log}\n")
+
+    def talk(base):
+        ticket = post(base + "/preview", t="tok-en", action={"verb": "wake", "all": True})[1]["ticket"]
+        post(base + "/run", t="tok-en", ticket=ticket)
+
+    assert serving(world, talk) == (0, "")
+    with open(log, encoding="utf-8") as f:
+        assert f.read() == "2026-10-18T09:40:00Z  conduct wake --all  (exit 0)\n  conduct stub: wake --all\n"
+    assert not os.path.exists(os.path.join(world.home, ".bernstein"))
+
+
+def test_a_brief_typed_in_the_page_reaches_conduct_as_a_file_word_for_word_and_is_then_removed(world):
+    world.status(RAW)
+    brief = 'Line one.\n"quotes" \\ $HOME `id` $(id) ; rm -rf / </script> café 日本\n'
+    got = {}
+
+    def talk(base):
+        got["preview"] = post(base + "/preview", t="tok-en",
+                              action={"verb": "start", "project": "lone-tools", "pace": "relaxed", "brief": brief})
+        got["run"] = post(base + "/run", t="tok-en", ticket=got["preview"][1]["ticket"])
+
+    assert serving(world, talk) == (0, "")
+    calls = [c for c in world.calls() if c["prog"] == "conduct" and c["args"][:1] == ["start"]]
+    assert [c["brief"] for c in calls] == [brief, brief]
+    assert calls[0]["args"][:5] == ["start", "lone-tools", "--pace", "relaxed", "--brief"]
+    assert calls[0]["args"][6:] == ["--dry-run"] and len(calls[1]["args"]) == 6
+    assert not os.path.exists(calls[0]["args"][5]) and not os.path.exists(calls[1]["args"][5])
+    assert got["run"][1]["reminder"].startswith("Now in the desktop app: confirm the folder")
+    assert got["run"][1]["command"] == ("conduct start lone-tools --pace relaxed --brief <the brief typed in podium, "
+                                        f"{len(brief)} characters>")
+
+
+def test_nothing_is_run_without_the_token_or_for_a_project_not_in_the_listing(world):
+    world.status(RAW)
+    got = {}
+
+    def talk(base):
+        got["no token"] = post(base + "/preview", action={"verb": "stop", "project": "lone-tools"})
+        got["wrong token"] = post(base + "/run", t="tok", ticket="x")
+        got["token in the address only"] = post(base + "/preview?t=tok-en",
+                                                action={"verb": "stop", "project": "lone-tools"})
+        got["stranger"] = post(base + "/preview", t="tok-en", action={"verb": "stop", "project": "elsewhere"})
+        got["all for start"] = post(base + "/preview", t="tok-en", action={"verb": "start", "all": True})
+
+    assert serving(world, talk) == (0, "")
+    assert [got[k][0] for k in ("no token", "wrong token", "token in the address only")] == [403, 403, 403]
+    assert got["stranger"] == (400, {"error": "'elsewhere' is not a mailbox in the listing podium last showed"})
+    assert got["all for start"] == (400, {"error": "start is for one project at a time"})
+    assert acted(world) == []
+    assert not os.path.exists(os.path.join(world.home, ".bernstein"))
+
+
+def test_a_post_whose_length_is_not_a_number_is_read_as_empty_and_refused_403(world):
+    got = {}
+
+    def serve(server):
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+        thread.start()
+        try:
+            got["reply"] = raw(server.server_address[1],
+                               "POST /preview HTTP/1.0\r\nContent-Length: lots\r\n\r\n")
+        finally:
+            server.shutdown()
+            thread.join()
+
+    assert world.podium("--port", "0", "--no-open", serve=serve)[0] == 0
+    assert got["reply"].startswith("HTTP/1.0 403 ") and got["reply"].endswith("when it started\n")
+    assert world.calls() == []

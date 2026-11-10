@@ -14,7 +14,10 @@ import http.server
 import json
 import os
 import secrets
+import shlex
 import subprocess
+import tempfile
+import threading
 import urllib.parse
 
 from bernstein.conduct import day
@@ -91,6 +94,29 @@ def groups(rows):
     return {"cards": cards, "lone": lone, "unstartable": unstartable, "bernstein": bernstein}
 
 
+LABELS = {"start": "Start", "stop": "Stop", "dormant": "Dormant", "dream": "Dream", "wake": "Wake"}
+ASLEEP = ("dormant", "quiet", "stale")
+
+
+def buttons(row):
+    """The verbs a row offers, from its state. conduct still decides when one is pressed."""
+    if row["mailbox"] == "bernstein" or row.get("missing"):
+        return []
+    state = row["state"]
+    if state == "running":
+        return ["stop", "dormant", "dream"]
+    if state in ASLEEP:
+        return ["wake"]
+    return ["start"] if row["kind"] is not None and not row["refused"] else []
+
+
+def buttons_for_all(rows):
+    """The verbs offered for every session at once: bernstein's own is never among them."""
+    states = {r["state"] for r in rows if r["mailbox"] != "bernstein"}
+    return (["stop", "dormant", "dream"] if "running" in states else []) + (
+        ["wake"] if states.intersection(ASLEEP) else [])
+
+
 def e(text):
     """Anything from outside, as text for the page: never markup."""
     return html.escape(str(text), quote=True)
@@ -119,17 +145,43 @@ def row_html(row, now, label=None, claw=False):
     refused = ""
     if row.get("refused") and row["mailbox"] != "bernstein":   # conduct never starts bernstein's own session
         refused = f'<p class="refused">Cannot start: {e(row["refused"])}</p>'
+    acts = "".join(f'<button type="button" class="act" data-verb="{verb}" data-project="{e(row["mailbox"])}">'
+                   f"{LABELS[verb]}</button>" for verb in buttons(row))
+    acts = f'<div class="acts">{acts}</div>' if acts else ""
     return (f'{start}{who}<span class="badge {tone}">{e(words)}</span>'
-            f'<ul class="facts">{"".join(facts)}</ul>{refused}</div>')
+            f'<ul class="facts">{"".join(facts)}</ul>{acts}{refused}</div>')
 
 
-def view(rows, now, error=None):
-    """The part of the page that is made again at every refresh: when, then the cards or the error."""
+def activity(entries):
+    """What podium has run since it started, newest first; nothing when it has run nothing."""
+    if not entries:
+        return ""
+    runs = []
+    for entry in reversed(entries):
+        done = entry["exit"] is not None
+        mark = f'exit {e(entry["exit"])}' if done else "not run"
+        tone = "ok" if entry["exit"] == 0 else "alert"
+        when = stamp(entry["time"])
+        time = f"{when:%H:%M:%S} UTC" if when else e(entry["time"])
+        trouble = f'<p class="refused">{e(entry["log_error"])}</p>' if entry.get("log_error") else ""
+        runs.append(f'<div class="run"><p class="what"><span class="time">{time}</span> '
+                    f'<code>{e(entry["command"])}</code> <span class="badge {tone}">{mark}</span></p>'
+                    f'<pre>{e(entry["output"])}{e(entry["error"])}</pre>{trouble}</div>')
+    return '<h2>Activity</h2><section class="card log">' + "".join(runs) + "</section>"
+
+
+def view(rows, now, error=None, entries=()):
+    """The part of the page that is made again at every refresh: when, then the cards or the error, then
+    what podium has run."""
     parts = [f'<p class="asof">As of {now:%H:%M:%S} UTC</p>']
     if error:
-        return parts[0] + f'<p class="error">{e(error)}</p>'
+        return parts[0] + f'<p class="error">{e(error)}</p>' + activity(entries)
     if not rows:
-        return parts[0] + '<p class="empty">No mailboxes.</p>'
+        return parts[0] + '<p class="empty">No mailboxes.</p>' + activity(entries)
+    for_all = "".join(f'<button type="button" class="act" data-verb="{verb}" data-all="1">{LABELS[verb]} all</button>'
+                      for verb in buttons_for_all(rows))
+    if for_all:
+        parts.append(f'<div class="all">{for_all}</div>')
     found = groups(rows)
     for head, claws in found["cards"]:
         parts.append('<section class="card">' + row_html(head, now)
@@ -139,7 +191,7 @@ def view(rows, now, error=None):
         if members:
             parts.append(f'<h2>{title}</h2><section class="card">'
                          + "".join(row_html(r, now) for r in members) + "</section>")
-    return "".join(parts)
+    return "".join(parts) + activity(entries)
 
 
 PAGE = """<!doctype html>
@@ -180,7 +232,7 @@ button:focus-visible { outline: 2px solid var(--busy); outline-offset: 2px; }
 .empty { color: var(--muted); }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin: 0 0 12px;
   overflow: hidden; }
-.row { display: grid; grid-template-columns: minmax(11rem, 1.1fr) minmax(8rem, auto) 2.4fr;
+.row { display: grid; grid-template-columns: minmax(10rem, 1.2fr) 9.5rem minmax(0, 2fr) 13rem;
   gap: 4px 16px; align-items: center; padding: 12px 16px; }
 .row + .row { border-top: 1px solid var(--line); }
 .row.claw { background: color-mix(in srgb, var(--bg) 45%, var(--card)); }
@@ -188,7 +240,7 @@ button:focus-visible { outline: 2px solid var(--busy); outline-offset: 2px; }
 .who { min-width: 0; }
 .name { font-weight: 600; overflow-wrap: anywhere; }
 .kind { color: var(--muted); font-size: 13px; white-space: nowrap; }
-.badge { justify-self: start; font-size: 13px; font-weight: 600; border-radius: 999px; padding: 2px 10px;
+.badge { justify-self: start; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 2px 10px;
   color: var(--off); background: var(--off-bg); }
 .badge.ok { color: var(--ok); background: var(--ok-bg); }
 .badge.busy { color: var(--busy); background: var(--busy-bg); }
@@ -199,9 +251,40 @@ button:focus-visible { outline: 2px solid var(--busy); outline-offset: 2px; }
   color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .facts .new { color: var(--ink); font-weight: 600; }
 .refused { grid-column: 1 / -1; margin: 2px 0 0; color: var(--alert); font-size: 13px; overflow-wrap: anywhere; }
+.acts, .all { display: flex; flex-wrap: wrap; gap: 6px; }
+.acts { grid-column: 4; justify-content: flex-end; }
+.all { margin: 0 0 14px; }
+.act { font-size: 13px; padding: 4px 11px; }
+.log .run { padding: 12px 16px; }
+.log .run + .run { border-top: 1px solid var(--line); }
+.what { margin: 0 0 6px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+code, pre { font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+code { overflow-wrap: anywhere; }
+pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }
+dialog { width: min(44rem, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; color: var(--ink);
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog h2 { font-size: 18px; text-transform: none; letter-spacing: 0; color: var(--ink); margin: 0 0 14px; }
+dialog label, dialog legend { display: block; font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+dialog fieldset { border: 0; padding: 0; margin: 0 0 12px; }
+dialog .choice { display: flex; gap: 8px; align-items: baseline; color: var(--ink); font-size: 15px; margin: 0 0 4px; }
+dialog .field { margin: 0 0 12px; }
+textarea, select, input[type="number"] { font: inherit; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+textarea { width: 100%; min-height: 7rem; resize: vertical; }
+input[type="number"] { width: 6rem; }
+.shown { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  margin: 0 0 12px; }
+.shown code { display: block; color: var(--ink); margin: 0 0 6px; }
+.note { margin: 0 0 12px; }
+.buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+#act-go { background: var(--ink); color: var(--card); border-color: var(--ink); }
+button:disabled { opacity: 0.5; cursor: default; }
 @media (max-width: 640px) {
   .row { grid-template-columns: 1fr auto; }
-  .facts { grid-column: 1 / -1; }
+  .facts, .acts { grid-column: 1 / -1; }
+  .acts { justify-content: flex-start; }
   .row.claw .who { padding-left: 12px; }
 }
 </style>
@@ -212,10 +295,33 @@ button:focus-visible { outline: 2px solid var(--busy); outline-offset: 2px; }
 <p id="lost" class="lost" hidden></p>
 <main id="view">%%VIEW%%</main>
 </div>
+<dialog id="act" aria-labelledby="act-title">
+<h2 id="act-title"></h2>
+<div id="act-options"></div>
+<div id="act-shown" class="shown" hidden><code id="act-command"></code><pre id="act-output"></pre></div>
+<p id="act-note" class="note" hidden></p>
+<p id="act-problem" class="error" hidden></p>
+<div class="buttons"><button type="button" id="act-cancel">Cancel</button><button type="button" id="act-go">Preview</button></div>
+</dialog>
 <script>
 (function () {
   var token = new URLSearchParams(location.search).get("t") || "";
   var lost = document.getElementById("lost");
+  var dialog = document.getElementById("act");
+  var title = document.getElementById("act-title");
+  var options = document.getElementById("act-options");
+  var shown = document.getElementById("act-shown");
+  var command = document.getElementById("act-command");
+  var output = document.getElementById("act-output");
+  var note = document.getElementById("act-note");
+  var problem = document.getElementById("act-problem");
+  var cancel = document.getElementById("act-cancel");
+  var go = document.getElementById("act-go");
+  var names = {start: "Start", stop: "Stop", dormant: "Dormant", wake: "Wake", dream: "Dream"};
+  var asked = null;      // {verb, project} or {verb, all: true}: what the open dialog is about
+  var ticket = null;     // what the last preview gave, to send it
+  var step = "options";  // options, then preview, then done
+
   function refresh() {
     return fetch("/view?t=" + encodeURIComponent(token), {cache: "no-store"}).then(function (answer) {
       if (!answer.ok) { throw new Error("it answered " + answer.status); }
@@ -228,8 +334,199 @@ button:focus-visible { outline: 2px solid var(--busy); outline-offset: 2px; }
       lost.hidden = false;
     });
   }
+
+  function post(path, body) {
+    body.t = token;
+    return fetch(path, {method: "POST", cache: "no-store", headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify(body)}).then(function (answer) {
+      return answer.text().then(function (text) {
+        var said;
+        try { said = JSON.parse(text); } catch (notJson) { said = {error: text.trim() || "podium answered " + answer.status}; }
+        return {ok: answer.ok, said: said};
+      });
+    }, function (why) {
+      return {ok: false, said: {error: "podium is not answering (" + why.message + "). Is its Terminal command still running?"}};
+    });
+  }
+
+  function add(parent, tag, text, attributes) {
+    var made = document.createElement(tag);
+    if (text) { made.textContent = text; }
+    Object.keys(attributes || {}).forEach(function (name) { made.setAttribute(name, attributes[name]); });
+    parent.appendChild(made);
+    return made;
+  }
+
+  function field(labelText, id) {
+    var holder = add(options, "div", "", {"class": "field"});
+    add(holder, "label", labelText, {"for": id});
+    return holder;
+  }
+
+  function choice(parent, name, value, text, checked) {
+    var line = add(parent, "label", "", {"class": "choice"});
+    var radio = add(line, "input", "", {type: "radio", name: name, value: value});
+    radio.checked = checked;
+    add(line, "span", text);
+    return radio;
+  }
+
+  function minutesField(labelText) {
+    return add(field(labelText, "act-minutes"), "input", "",
+               {type: "number", id: "act-minutes", min: "5", max: "240", value: "60"});
+  }
+
+  function build(verb) {
+    options.textContent = "";
+    if (verb === "start") {
+      add(field("A brief for the session (optional). It is sent word for word.", "act-brief"), "textarea", "",
+          {id: "act-brief"});
+      var pace = add(field("Mail pace", "act-pace"), "select", "", {id: "act-pace"});
+      add(pace, "option", "Leave as it is", {value: ""});
+      ["eager", "normal", "relaxed"].forEach(function (level) { add(pace, "option", level, {value: level}); });
+    } else if (verb === "stop") {
+      var first = add(options, "fieldset", "");
+      add(first, "legend", "Dream first?");
+      choice(first, "act-dream", "no", "No: hand over and stop now", true);
+      choice(first, "act-dream", "yes", "Yes: dream first, then hand over and stop", false);
+      minutesField("Minutes to dream, if dreaming first (5 to 240)");
+      add(field("Seconds to wait for the handover, if stopping now (optional, 1 to 600)", "act-wait"), "input", "",
+          {type: "number", id: "act-wait", min: "1", max: "600"});
+    } else if (verb === "dream") {
+      minutesField("Minutes to dream (5 to 240)");
+      var then = add(field("Afterwards", "act-then"), "select", "", {id: "act-then"});
+      add(then, "option", "Go dormant", {value: "dormant"});
+      add(then, "option", "Hand over and stop", {value: "stop"});
+    }
+  }
+
+  function number(id) {
+    var box = document.getElementById(id);
+    if (!box || box.value.trim() === "") { return null; }
+    return /^[0-9]+$/.test(box.value.trim()) ? parseInt(box.value.trim(), 10) : box.value;
+  }
+
+  function actionNow() {
+    var action = {verb: asked.verb};
+    if (asked.all) { action.all = true; } else { action.project = asked.project; }
+    if (asked.verb === "start") {
+      if (document.getElementById("act-brief").value !== "") { action.brief = document.getElementById("act-brief").value; }
+      if (document.getElementById("act-pace").value !== "") { action.pace = document.getElementById("act-pace").value; }
+    } else if (asked.verb === "stop") {
+      if (document.querySelector('input[name="act-dream"]:checked').value === "yes") {
+        action.verb = "dream";
+        action.then = "stop";
+        action.minutes = number("act-minutes");
+      } else if (number("act-wait") !== null) {
+        action.wait = number("act-wait");
+      }
+    } else if (asked.verb === "dream") {
+      action.minutes = number("act-minutes");
+      action.then = document.getElementById("act-then").value;
+    }
+    if (action.minutes === null) { delete action.minutes; }
+    return action;
+  }
+
+  function show(said) {
+    command.textContent = said.command || "";
+    output.textContent = (said.output || "") + (said.error || "");
+    shown.hidden = false;
+  }
+
+  function trouble(text) {
+    problem.textContent = text;
+    problem.hidden = !text;
+  }
+
+  function working(yes) {
+    go.disabled = yes;
+    cancel.disabled = yes;
+    if (yes) { go.textContent = "Working\u2026"; }
+  }
+
+  function preview() {
+    var action = actionNow();
+    working(true);
+    trouble("");
+    post("/preview", {action: action}).then(function (got) {
+      working(false);
+      if (!got.ok) {
+        go.textContent = "Preview";
+        trouble(got.said.error || "podium refused that");
+        return;
+      }
+      show(got.said);
+      options.hidden = true;
+      ticket = got.said.ticket;
+      if (ticket) {
+        step = "preview";
+        go.textContent = "Send";
+        note.textContent = "Nothing has been sent. This is what conduct would do: read it, then Send or Cancel.";
+        note.hidden = false;
+      } else {
+        step = "done";
+        go.hidden = true;
+        cancel.textContent = "Close";
+        trouble("conduct would not do this" + (got.said.exit === null ? "" : " (exit " + got.said.exit + ")") +
+                ", so there is nothing to send.");
+      }
+    });
+  }
+
+  function send() {
+    working(true);
+    post("/run", {ticket: ticket}).then(function (got) {
+      working(false);
+      step = "done";
+      go.hidden = true;
+      cancel.textContent = "Close";
+      note.hidden = true;
+      if (!got.ok) {
+        trouble(got.said.error || "podium refused that");
+        return;
+      }
+      show(got.said);
+      if (got.said.exit === 0) {
+        note.textContent = "Done." + (got.said.reminder ? " " + got.said.reminder : "");
+        note.hidden = false;
+      } else {
+        trouble(got.said.exit === null ? "conduct did not finish." : "conduct failed (exit " + got.said.exit + ").");
+      }
+      if (got.said.log_error) { trouble((problem.textContent ? problem.textContent + " " : "") + got.said.log_error); }
+    });
+  }
+
+  function open(verb, project, all) {
+    asked = all ? {verb: verb, all: true} : {verb: verb, project: project};
+    ticket = null;
+    step = "options";
+    title.textContent = names[verb] + " " + (all ? "every session but bernstein's" : project);
+    build(verb);
+    options.hidden = false;
+    command.textContent = "";
+    output.textContent = "";
+    shown.hidden = true;
+    note.hidden = true;
+    trouble("");
+    go.hidden = false;
+    go.disabled = false;
+    cancel.disabled = false;
+    go.textContent = "Preview";
+    cancel.textContent = "Cancel";
+    dialog.showModal();
+    if (verb === "dormant" || verb === "wake") { preview(); }
+  }
+
+  document.getElementById("view").addEventListener("click", function (event) {
+    var pressed = event.target.closest("button.act");
+    if (pressed) { open(pressed.dataset.verb, pressed.dataset.project, pressed.dataset.all === "1"); }
+  });
+  go.addEventListener("click", function () { if (step === "options") { preview(); } else if (step === "preview") { send(); } });
+  cancel.addEventListener("click", function () { dialog.close(); });
+  dialog.addEventListener("close", function () { refresh(); });
   document.getElementById("refresh").addEventListener("click", refresh);
-  setInterval(refresh, 15000);
+  setInterval(function () { if (!dialog.open) { refresh(); } }, 15000);
 })();
 </script>
 </body>
@@ -268,16 +565,20 @@ def ask_conduct(conduct, env, run=subprocess.run):
     return rows, done.stdout, None
 
 
-def respond(method, target, token, fetch, now):
-    """(status, content type, body) for one request. Nothing is answered without the token; fetch,
+NO_TOKEN = (403, "text/plain",
+            "podium: this address needs the token: open the link podium printed when it started\n")
+BODY_LIMIT = 200000
+
+
+def respond(method, target, token, fetch, now, entries=()):
+    """(status, content type, body) for a request to look. Nothing is answered without the token; fetch,
     which asks conduct, is called only for an address that shows the listing."""
     parts = urllib.parse.urlsplit(target)
     given = urllib.parse.parse_qs(parts.query, keep_blank_values=True).get("t", [])
     if len(given) != 1 or not hmac.compare_digest(given[0].encode("utf-8"), token.encode("utf-8")):
-        return 403, "text/plain", ("podium: this address needs the token: open the link podium printed when "
-                                   "it started\n")
+        return NO_TOKEN
     if method != "GET":
-        return 405, "text/plain", "podium: this page is read only: it answers GET and nothing else\n"
+        return 405, "text/plain", "podium: this address answers GET and nothing else\n"
     if parts.path not in ("/", "/view", "/status"):
         return 404, "text/plain", "podium: there is nothing at this address\n"
     rows, raw, error = fetch()
@@ -285,14 +586,39 @@ def respond(method, target, token, fetch, now):
         if error:
             return 502, "application/json", json.dumps({"error": error}) + "\n"
         return 200, "application/json", raw
-    made = view(rows, now, error)
+    made = view(rows, now, error, entries)
     return 200, "text/html", page(made) if parts.path == "/" else made
 
 
-def answer(method, target, token, fetch, now):
-    """respond, with any fault of podium's own turned into a plain 500 instead of a traceback."""
+def act(target, body, token, panel):
+    """(status, content type, body) for a request to act: POST /preview with an action, then POST /run
+    with the ticket the preview gave. The token is in the body, and nothing is done without it."""
+    if len(body) > BODY_LIMIT:
+        return 413, "text/plain", "podium: that is more than podium takes in one request\n"
     try:
-        return respond(method, target, token, fetch, now)
+        sent = json.loads(body.decode("utf-8"))
+    except ValueError:
+        sent = None
+    given = sent.get("t") if isinstance(sent, dict) else None
+    if not isinstance(given, str) or not hmac.compare_digest(given.encode("utf-8"), token.encode("utf-8")):
+        return NO_TOKEN
+    path = urllib.parse.urlsplit(target).path
+    if path == "/preview":
+        code, said = panel.preview(sent.get("action"))
+    elif path == "/run":
+        code, said = panel.send(sent.get("ticket"))
+    else:
+        return 404, "text/plain", "podium: there is nothing to send to at this address\n"
+    return code, "application/json", json.dumps(said) + "\n"
+
+
+def answer(method, target, body, token, panel, now):
+    """The answer to any request: a POST acts, anything else looks. A fault of podium's own becomes a
+    plain 500 instead of a traceback."""
+    try:
+        if method == "POST":
+            return act(target, body, token, panel)
+        return respond(method, target, token, panel.listing, now, panel.entries)
     except Exception as fault:  # noqa: BLE001 - the last line of defence for a page someone is looking at
         return 500, "text/plain", (f"podium: something went wrong inside podium ({type(fault).__name__}: {fault}); "
                                    "try Refresh\n")
@@ -302,7 +628,7 @@ CSP = ("default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline
        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
-def handler_for(token, fetch, clock):
+def handler_for(token, panel, clock):
     """The request handler: every method goes through answer, and nothing is logged to the terminal."""
     class Handler(http.server.BaseHTTPRequestHandler):
         server_version = "podium"
@@ -310,7 +636,12 @@ def handler_for(token, fetch, clock):
         timeout = 30
 
         def reply(self):
-            code, kind, body = answer(self.command, self.path, token, fetch, clock())
+            try:
+                length = max(0, int(self.headers.get("Content-Length") or 0))
+            except ValueError:
+                length = 0
+            sent = self.rfile.read(min(length, BODY_LIMIT + 1)) if length else b""
+            code, kind, body = answer(self.command, self.path, sent, token, panel, clock())
             data = body.encode("utf-8")
             self.send_response(code)
             for name, value in (("Content-Type", kind + "; charset=utf-8"), ("Content-Length", str(len(data))),
@@ -332,6 +663,9 @@ def handler_for(token, fetch, clock):
 class Server(http.server.ThreadingHTTPServer):
     """One thread per request, so a browser's idle connection cannot hold the page up."""
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        """A connection the browser dropped is nothing to tell the terminal about."""
 
 
 class Stop(Exception):
@@ -397,7 +731,7 @@ def main(argv, env, out, err, conduct=None, token=None, serve=None, clock=None, 
         token = token or secrets.token_urlsafe(32)
         conduct = conduct or conduct_beside()
         clock = clock or (lambda: datetime.datetime.now(datetime.timezone.utc))
-        handler = handler_for(token, lambda: ask_conduct(conduct, env), clock)
+        handler = handler_for(token, Panel(conduct, env, clock, s["PODIUM_LOG"]), clock)
         try:
             server, busy = listen(port, handler, make_server)
         except OSError as why:
@@ -433,3 +767,184 @@ def open_in_browser(link, env, err):
         why = failed.strerror
     if why:
         err.write(f"podium: the page could not be opened in the browser ({why}); open the link above yourself\n")
+
+
+class Refused(ValueError):
+    """An action the page asked for that podium does not offer; the message says why."""
+
+
+PACES = ("eager", "normal", "relaxed")
+BRIEF_LIMIT = 20000
+OPTIONS = {"start": ("pace", "brief"), "stop": ("wait",), "dormant": (), "wake": (), "dream": ("minutes", "then")}
+
+
+def whole(value, low, high):
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def command_for(action, names):
+    """(conduct's arguments, the brief's text or None) for an action the page sent. Only the verbs and
+    options podium offers, and only a project in the listing it last showed: anything else is Refused."""
+    if not isinstance(action, dict):
+        raise Refused("an action must be a JSON object")
+    verb = action.get("verb")
+    if not isinstance(verb, str) or verb not in OPTIONS:
+        raise Refused(f"podium does not offer the verb {verb!r}")
+    for key in action:
+        if key not in ("verb", "project", "all") + OPTIONS[verb]:
+            raise Refused(f"{verb} does not take {key}")
+    project, everything = action.get("project"), action.get("all", False)
+    if not isinstance(everything, bool) or everything == (project is not None):
+        raise Refused("name one project, or everything at once")
+    if everything:
+        if verb == "start":
+            raise Refused("start is for one project at a time")
+        argv = [verb, "--all"]
+    else:
+        if not isinstance(project, str) or project not in names:
+            raise Refused(f"{project!r} is not a mailbox in the listing podium last showed")
+        if project == "bernstein":
+            raise Refused("podium does not act on bernstein's own session")
+        if project.startswith("-"):
+            raise Refused(f"{project!r} cannot be given to conduct as a project: it starts with a dash")
+        argv = [verb, project]
+    brief = None
+    if verb == "start":
+        if action.get("pace") is not None:
+            if action["pace"] not in PACES:
+                raise Refused("the pace must be eager, normal or relaxed")
+            argv += ["--pace", action["pace"]]
+        brief = action.get("brief")
+        if brief is not None and not isinstance(brief, str):
+            raise Refused("the brief must be text")
+        if brief is not None and len(brief) > BRIEF_LIMIT:
+            raise Refused(f"the brief is longer than {BRIEF_LIMIT} characters")
+        brief = brief or None
+    if verb == "stop" and action.get("wait") is not None:
+        if not whole(action["wait"], 1, 600):
+            raise Refused("the wait must be a whole number of seconds from 1 to 600")
+        argv += ["--wait", str(action["wait"])]
+    if verb == "dream":
+        minutes, then = action.get("minutes", 60), action.get("then", "dormant")
+        if not whole(minutes, 5, 240):
+            raise Refused("the minutes must be a whole number from 5 to 240")
+        if then not in ("dormant", "stop"):
+            raise Refused("then must be dormant or stop")
+        argv += ["--minutes", str(minutes), "--then", then]
+    return argv, brief
+
+
+def shown(argv, brief, dry_run=False):
+    """The command as it could be typed, for the preview and the log. A brief is shown by its length."""
+    text = "conduct " + " ".join(shlex.quote(a) for a in argv)
+    if brief:
+        text += f" --brief <the brief typed in podium, {len(brief)} characters>"
+    return text + (" --dry-run" if dry_run else "")
+
+
+BUSY = (409, {"error": "podium is busy with another action: try again when it has finished"})
+GONE = (409, {"error": "that preview is no longer the latest one: preview again, then send"})
+REMINDER = ("Now in the desktop app: confirm the folder or folders it shows, then send the first line. If it is a "
+            "Claude Code session, check its folder is the project's before anything else (the app has dropped it "
+            "before), and ask a bernstein session to set its model and effort.")
+
+
+def log_text(entry):
+    """One run as the log file keeps it: a line saying when, what and how it ended, then what it printed."""
+    ended = f"exit {entry['exit']}" if entry["exit"] is not None else "not run"
+    printed = "".join("  " + line + "\n" for line in (entry["output"] + entry["error"]).splitlines())
+    return f"{entry['time']}  {entry['command']}  ({ended})\n{printed}"
+
+
+class Panel:
+    """What podium knows and does between requests: the names in the last listing, the one preview
+    that may be sent, what it has run, and the one action that may run at a time. It runs conduct and
+    nothing else, and writes only the brief's temporary file and the log."""
+
+    def __init__(self, conduct, env, clock, log_path, run=subprocess.run, ticket=None):
+        self.conduct, self.env, self.clock, self.log_path, self.run = conduct, env, clock, log_path, run
+        self.ticket = ticket or (lambda: secrets.token_urlsafe(16))
+        self.names, self.pending, self.entries = None, None, []
+        self.lock = threading.Lock()
+
+    def listing(self):
+        """conduct status --json, remembering the mailboxes it names for the actions that follow."""
+        rows, raw, error = ask_conduct(self.conduct, self.env, self.run)
+        if not error:
+            self.names = {r["mailbox"] for r in rows}
+        return rows, raw, error
+
+    def call(self, argv, brief, dry_run):
+        """Run conduct with these arguments: (exit code or None if it did not run to the end, what it
+        printed, what it said on standard error or why it did not run). The brief is a file while it runs."""
+        seconds = 60 + (int(argv[argv.index("--wait") + 1]) if "--wait" in argv else 0)
+        full, path = [self.conduct, *argv], None
+        try:
+            if brief:
+                handle, path = tempfile.mkstemp(prefix="podium-brief-", suffix=".txt")
+                with os.fdopen(handle, "w", encoding="utf-8") as f:
+                    f.write(brief)
+                full += ["--brief", path]
+            if dry_run:
+                full.append("--dry-run")
+            try:
+                done = self.run(full, env=self.env, capture_output=True, text=True, check=False, timeout=seconds)
+            except subprocess.TimeoutExpired:
+                if dry_run:
+                    return None, "", f"conduct did not answer within {seconds} seconds"
+                return None, "", (f"conduct was stopped after {seconds} seconds without finishing; some of it may "
+                                  "have been done: look at the page before trying again")
+            except OSError as why:
+                return None, "", f"{self.conduct} could not be run ({why.strerror})"
+            return done.returncode, done.stdout, done.stderr
+        finally:
+            if path:
+                os.remove(path)
+
+    def preview(self, action):
+        """(status, answer) for a preview: the verb run with --dry-run, and a ticket to send it if
+        conduct was content."""
+        if not self.lock.acquire(blocking=False):
+            return BUSY
+        try:
+            if self.names is None:
+                self.listing()
+            try:
+                argv, brief = command_for(action, self.names or set())
+            except Refused as why:
+                return 400, {"error": str(why)}
+            self.pending = None
+            code, output, error = self.call(argv, brief, True)
+            ticket = None
+            if code == 0:
+                ticket = self.ticket()
+                self.pending = (ticket, argv, brief)
+            return 200, {"command": shown(argv, brief, dry_run=True), "exit": code, "output": output,
+                         "error": error, "ticket": ticket}
+        finally:
+            self.lock.release()
+
+    def send(self, ticket):
+        """(status, the run as recorded) for sending the latest preview, once."""
+        if not self.lock.acquire(blocking=False):
+            return BUSY
+        try:
+            if (self.pending is None or not isinstance(ticket, str)
+                    or not hmac.compare_digest(ticket.encode("utf-8"), self.pending[0].encode("utf-8"))):
+                return GONE
+            _ticket, argv, brief = self.pending
+            self.pending = None
+            code, output, error = self.call(argv, brief, False)
+            entry = {"time": f"{self.clock():%Y-%m-%dT%H:%M:%SZ}", "command": shown(argv, brief), "exit": code,
+                     "output": output, "error": error,
+                     "reminder": REMINDER if argv[0] == "start" and code == 0 else None, "log_error": None}
+            try:
+                os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+                with open(self.log_path, "a", encoding="utf-8") as log:
+                    log.write(log_text(entry))
+            except OSError as why:
+                entry["log_error"] = f"the log {self.log_path} could not be written ({why.strerror})"
+            self.entries.append(entry)
+            return 200, entry
+        finally:
+            self.lock.release()

@@ -4,7 +4,8 @@ Each stub records its arguments and working folder as one JSON line in calls.jso
 fails when its name is listed in the file `fail` in the stub folder, as `name`, `name:verb` (only that
 first argument) or `name:verb:code` (that exit code; 1 otherwise). The lobster-mail stub's
 `duty status --all --json` prints the JSON in `duty.json` (default: no mailboxes). The conduct stub's
-`status` prints the text in `status.json` (default: no mailboxes).
+`status` prints the text in `status.json` (default: no mailboxes); its other verbs print "conduct stub: "
+and their first two arguments, and a `--brief FILE` is read into the call's record as `brief`.
 """
 
 import datetime
@@ -26,6 +27,8 @@ STUB = textwrap.dedent('''\
     entry = {{"prog": name, "args": sys.argv[1:], "cwd": os.getcwd()}}
     if sys.argv[-1:] == ["-"]:
         entry["stdin"] = sys.stdin.read()
+    if "--brief" in sys.argv[1:-1] and name == "conduct":
+        entry["brief"] = open(sys.argv[sys.argv.index("--brief") + 1], encoding="utf-8").read()
     with open(os.path.join(here, "calls.jsonl"), "a") as log:
         log.write(json.dumps(entry) + "\\n")
     fail = os.path.join(here, "fail")
@@ -38,6 +41,8 @@ STUB = textwrap.dedent('''\
     if name == "lobster-mail" and args[:3] == ["duty", "status", "--all"]:
         duty = os.path.join(here, "duty.json")
         print(open(duty).read() if os.path.exists(duty) else json.dumps({{"root": "", "mailboxes": [], "skipped": []}}))
+    if name == "conduct" and args[:1] != ["status"]:
+        print("conduct stub: " + " ".join(args[:2]))
     if name == "conduct" and args[:1] == ["status"]:
         status = os.path.join(here, "status.json")
         sys.stdout.write(open(status).read() if os.path.exists(status) else

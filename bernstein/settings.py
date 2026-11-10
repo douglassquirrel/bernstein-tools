@@ -23,9 +23,10 @@ DEFAULTS = {
     "MAIL_ROOT": "~/projects/mail",
     "PYTHON": "/usr/bin/python3",
     "PODIUM_PORT": "8417",
+    "PODIUM_LOG": "~/.bernstein/podium.log",
 }
 
-PATHS = ("TEMPLATE", "NON_CODE_DIR", "CODE_DIR", "LOBSTER_MAIL", "MAIL_ROOT", "PYTHON")
+PATHS = ("TEMPLATE", "NON_CODE_DIR", "CODE_DIR", "LOBSTER_MAIL", "MAIL_ROOT", "PYTHON", "PODIUM_LOG")
 
 
 def expand(value, home):

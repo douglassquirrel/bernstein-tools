@@ -5,7 +5,7 @@ non-code project does the work and asks a companion tools project, by mail, for 
 as a tested command. `new-lobster` makes such a pair in one step: both folders from a template,
 git, a Backlog issue tracker, a mailbox each, and the first commits. `conduct` starts a project's
 session and asks a running one to hand over, and `podium` shows every session on a page in your
-browser. They are for one person's Mac and their own
+browser, with buttons for what `conduct` does. They are for one person's Mac and their own
 projects; the projects talk by `lobster-mail`, from the
 [lobster-tools](https://github.com/douglassquirrel/lobster-tools) repository.
 
@@ -254,7 +254,7 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 | 4 | A program failed, or the duty listing could not be read |
 | 5 | `--wait` ran out before the handover arrived |
 
-## podium: a page showing every session
+## podium: a page showing every session, with buttons
 
 ```
 podium [--port N] [--no-open]
@@ -268,7 +268,27 @@ badge, who is on duty and how long ago it checked in, the pace, the mail waiting
 project's model and effort. A running session that reports a status shows that in the badge (`dreaming
 until 10:20 UTC`), and `overdue since` once its finish time has passed. The page makes itself again
 every 15 seconds and when you press Refresh, follows your light or dark setting, and works at the
-width of a phone. This first version only shows; it has no buttons that act.
+width of a phone.
+
+Each line has buttons for what can be done to that session now: **Start** when nobody is on duty and
+`conduct` could start the project; **Stop**, **Dormant** and **Dream** when it is running; **Wake** when
+it is dormant, quiet or stale. A bar at the top has **Stop all**, **Dormant all**, **Dream all** and
+**Wake all** when any session but bernstein's is in that state; bernstein's own line has no buttons.
+Nothing happens at one press:
+
+1. The button opens a dialog. Start asks for an optional brief (sent word for word) and mail pace; Dream
+   for the minutes (5 to 240) and what comes after; Stop asks "Dream first?" (yes makes it a dream that
+   ends in a handover) and for an optional wait for the handover (1 to 600 seconds).
+2. **Preview** runs the `conduct` command with `--dry-run` and shows the command and everything it
+   printed: the message that would be sent, word for word. If `conduct` would refuse, its reason is
+   shown and there is nothing to send.
+3. **Send** runs exactly what was previewed, once, and shows what `conduct` printed and its exit code.
+   After a Start it reminds you what only you can do in the desktop app. Cancel sends nothing.
+
+What podium has run since it started is listed under "Activity" at the foot of the page, and each run
+is added to a log file (the setting `PODIUM_LOG`, `~/.bernstein/podium.log` unless set; its folder is
+made if missing): the time, the command, the exit code and the output. A preview is not a run and is
+not logged.
 
 ```
 $ ./podium
@@ -281,8 +301,14 @@ It runs only while this command runs: stop it with Ctrl-C.
   running.
 - Every address needs the token in the link, which is new each run, so no other page in your browser
   and no other program can read it without the link. Without the token the answer is 403.
-- It only ever runs `conduct status --json` (the `conduct` beside it), once for each time the page is
-  made. It never runs `lobster-mail`, sends nothing and writes nothing.
+- It only ever runs `conduct` (the one beside it): `conduct status --json` each time the page is made,
+  and the verb you previewed and sent, as a list of arguments, never through a shell. It never runs
+  `lobster-mail` itself, so every refusal and every message is `conduct`'s own.
+- It writes only two things: the log, added to and never written over, and a brief you typed, as a
+  temporary file while `conduct` reads it, removed straight afterwards.
+- It acts only on a mailbox in the listing it last showed, only with the verbs and options above, only
+  one action at a time (a second while one runs is told "busy"), and only the latest preview can be
+  sent, once.
 - `--port N` (or the setting `PODIUM_PORT`, 8417 unless set; 0 for any free port) says where to serve.
   If that port is in use, a free one is used and podium says so.
 - `--no-open` prints the link without opening the browser. If the browser cannot be opened, podium
@@ -290,7 +316,8 @@ It runs only while this command runs: stop it with Ctrl-C.
 - If `conduct status` fails, the page shows its message in place of the cards and tries again at the
   next refresh; if podium itself has stopped, the page says so.
 - Addresses: `/` the page, `/view` the part that is made again, `/status` what `conduct status --json`
-  printed (502 with the reason when it failed), each with `?t=<token>`. Only GET is answered.
+  printed (502 with the reason when it failed), each answering GET with `?t=<token>`. The buttons POST
+  JSON to `/preview` (`{"t": token, "action": {…}}`) and `/run` (`{"t": token, "ticket": …}`).
 
 | Code | Meaning |
 |---|---|
@@ -364,6 +391,8 @@ Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a set
 `./conduct status` and `./conduct status --json` read only, so they are run against the real mail root
 and projects as they are. So is `./podium`: open its link, look at the page at full and at phone width,
 in light and dark, press Refresh, then stop it with Ctrl-C and press Refresh again to see the page say so.
+Its buttons are tried as far as Preview, which is `conduct`'s own dry run and sends nothing; Send is
+tried only against a stand-in for `conduct`, never the real one, unless the message is really wanted.
 
 ## Known limitations and non-goals
 
@@ -403,7 +432,10 @@ in light and dark, press Refresh, then stop it with Ctrl-C and press Refresh aga
 - 10 November 2026: `conduct status [--json]` shows what every mailbox's session is doing. It reads only.
   The state `dormant` and the reported status need a `lobster-tools` that has `lobster-mail status`.
 - 10 November 2026: `podium` shows the same on a page in your browser, served on this machine only while
-  its command runs. A new setting, `PODIUM_PORT` (8417 unless set). It only shows; it does not act yet.
+  its command runs. A new setting, `PODIUM_PORT` (8417 unless set).
+- 10 November 2026: `podium` has buttons for `conduct`'s verbs. Each shows a preview (the dry run) before
+  anything is sent. Every run is added to a log, `~/.bernstein/podium.log` unless the new setting
+  `PODIUM_LOG` says otherwise.
 - 10 November 2026: the Dormant and Dream messages now tell a session to report `dormant` or `dreaming`
   with `lobster-mail status` and to clear it on waking; the Wake message tells it to clear it; the Start
   message tells a new session to clear a status an earlier one left. A session made dormant before this
