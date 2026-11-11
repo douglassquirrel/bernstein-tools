@@ -217,3 +217,10 @@ def test_a_project_with_one_claw_is_spoken_of_in_the_singular():
     assert alone["WITH_CLAWS"] == "with its claw `recipes-tools`"
     for words in ("ITS_CLAWS", "FROM_CLAWS", "IN_CLAWS", "TOOL_FROM_CLAWS", "THE_CLAWS", "WITH_CLAWS"):
         assert "claws" not in alone[words]
+
+
+def test_one_further_claw_is_a_claw_and_two_are_claws():
+    one = values_for("recipes", "non-code", public=False, claws=["word-tools"], **COMMON)
+    assert one["OTHER_CLAWS"] == "It also uses the claw `word-tools`."
+    two = values_for("recipes", "non-code", public=False, claws=["word-tools", "book-tools"], **COMMON)
+    assert two["OTHER_CLAWS"] == "It also uses the claws `word-tools` and `book-tools`."

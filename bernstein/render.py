@@ -185,7 +185,7 @@ def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lob
         "CLAWS": " ".join(claws) if non_code else "",
         "CLAW_LIST": listed(every),
         "CLAW_NAMES": listed(every, mark=False),
-        "OTHER_CLAWS": (f"It also uses the claws {listed(claws)}." if claws
+        "OTHER_CLAWS": (f"It also uses the claw{'s' if len(claws) > 1 else ''} {listed(claws)}." if claws
                         else "It uses no other claw yet; when it does, `CLAWS` in `lobster.conf` names them."),
         "CLAW_MOUNTS": "\n".join(mounts),
         "CLAW_ROWS": "\n".join(rows),
