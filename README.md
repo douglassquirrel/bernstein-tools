@@ -283,7 +283,9 @@ podium [--port N] [--no-open]
 project with the tools projects it works with under it (its sister as "home claw", the rest as "claw"),
 then the tools projects that serve no one ("lone claws"), then mailboxes whose project `conduct` could
 not start, each with the reason, then bernstein's own. Each line has the session's state as a coloured
-badge, who is on duty and how long ago it checked in, and the project's model and effort; the pace is
+badge, the kind of session on duty and how long ago it checked in ("Claude Code" for a session on the Mac,
+whose mail name is `mac`; "Claude Cowork" for one in the app's virtual machine, whose mail name is `device`),
+and the project's model and effort; the pace is
 shown only when it is not normal, and mail waiting or claimed only when there is some. A running session that reports a status shows that in the badge (`dreaming
 until 10:20 UTC`), and `overdue since` once its finish time has passed. The page makes itself again
 every 15 seconds and when you press Refresh, follows your light or dark setting, and works at the
@@ -468,6 +470,8 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 - 11 November 2026: `conduct status --json` gives each project a `session` link to its newest Claude Code
   session in the desktop app, and podium shows it as "Open". A new setting, `APP_SESSIONS`, says where the
   app keeps its sessions.
+- 11 November 2026: podium names the session on duty "Claude Code" or "Claude Cowork", where it showed the
+  mail names `mac` and `device`. `conduct status` still prints the mail names.
 - 11 November 2026: the Stop message, and a dream that ends in a handover, now tell the session to archive
   itself as its last act, so finished sessions leave your list.
 - 11 November 2026: the `session` link and podium's "Open" now cover a non-code project's Claude session

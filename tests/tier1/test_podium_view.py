@@ -123,7 +123,7 @@ def test_a_row_shows_its_kind_badge_duty_pace_mail_and_model():
                             open_=1, sister="recipes-tools", claws=["recipes-tools"]),
                         row("recipes-tools", "handed-over", sister="recipes", serves=["recipes"])], NOW)
     assert ('<div class="row"><div class="who"><span class="name">recipes</span> <span class="kind">non-code</span>'
-            '</div><span class="badge ok">running</span><ul class="facts"><li>mac, 3 min ago</li>'
+            '</div><span class="badge ok">running</span><ul class="facts"><li>Claude Code, 3 min ago</li>'
             '<li>pace eager</li><li class="new">2 new</li><li>1 open</li><li>opus, high</li></ul>'
             '<div class="acts"><button type="button" class="act" data-verb="stop" data-project="recipes">Stop</button>'
             '<button type="button" class="act" data-verb="dormant" data-project="recipes">Dormant</button>'
@@ -286,7 +286,7 @@ def test_a_line_leaves_out_what_is_only_the_usual_no_mail_normal_pace_nobody_on_
     for usual in ("nobody on duty", "pace normal", "0 new", "0 open"):
         assert usual not in quiet
     busy = podium.view([row("lone-tools", "running", duty="mac", minutes=0, pace="relaxed", open_=3)], NOW)
-    assert '<ul class="facts"><li>mac, just now</li><li>pace relaxed</li><li>3 open</li><li>opus, high</li></ul>' in busy
+    assert '<ul class="facts"><li>Claude Code, just now</li><li>pace relaxed</li><li>3 open</li><li>opus, high</li></ul>' in busy
     bare = podium.view([row("old-thing", "off", kind=None, refused="no lobster.conf")], NOW)
     assert '<span class="badge off">off</span><p class="refused">' in bare and "<ul" not in bare
 
@@ -344,3 +344,13 @@ def test_a_cowork_session_s_link_is_shown_too_with_no_time():
     for bad in ("claude://claude.ai/cowork/local_11111111-1111-4111-8111-111111111111", link + "?x=1",
                 "claude://claude.ai/cowork/session_", "claude://claude.ai/cowork/session_01AAAA/../x"):
         assert "Open</a>" not in podium.view([dict(r, session={"link": bad})], NOW)
+
+
+def test_the_session_on_duty_is_named_by_the_app_it_runs_in_not_by_its_mail_name():
+    assert "<li>Claude Code, 3 min ago</li>" in podium.view([row("lone-tools", "running", duty="mac")], NOW)
+    assert "<li>Claude Cowork, 3 min ago</li>" in podium.view(
+        [row("recipes", "running", kind="non-code", duty="device")], NOW)
+    other = podium.view([row("lone-tools", "running", duty="desk-1 <b>")], NOW)       # any other name is shown as it is
+    assert "<li>desk-1 &lt;b&gt;, 3 min ago</li>" in other
+    assert podium.session_name("mac") == "Claude Code" and podium.session_name("device") == "Claude Cowork"
+    assert podium.session_name(None) == "None"

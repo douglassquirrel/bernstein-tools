@@ -95,6 +95,15 @@ def groups(rows):
     return {"cards": cards, "lone": lone, "unstartable": unstartable, "bernstein": bernstein}
 
 
+SESSIONS = {"mac": "Claude Code", "device": "Claude Cowork"}
+
+
+def session_name(holder):
+    """The duty's holder as the page says it: lobster-mail's two usual session names are the two ways a session
+    runs (`mac`: Claude Code on the Mac; `device`: a Claude Cowork session, in the app's virtual machine)."""
+    return SESSIONS.get(holder, str(holder))
+
+
 LABELS = {"start": "Start", "stop": "Stop", "dormant": "Dormant", "dream": "Dream", "wake": "Wake"}
 ASLEEP = ("dormant", "quiet", "stale")
 
@@ -151,7 +160,7 @@ def row_html(row, now, label=None, claw=False):
     duty = row.get("duty")
     facts = []      # only what is not the usual: nobody on duty, normal pace and no mail go unsaid
     if duty:
-        facts.append(f"<li>{e(duty.get('holder'))}, {ago(duty.get('minutes'))}</li>")
+        facts.append(f"<li>{e(session_name(duty.get('holder')))}, {ago(duty.get('minutes'))}</li>")
     if row["pace"] != "normal":
         facts.append(f"<li>pace {e(row['pace'])}</li>")
     if row["new"]:
