@@ -141,6 +141,27 @@ def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lob
                                     f"   {nc_shown}/CLAUDE.md, its Purpose and The brief) and offer its answers for "
                                     "\"What this is\",\n   so Squirrel need not say them twice.",
         }
+    built = "Claude Code builds, tests and maintains in its own repository, with its own CLAUDE.md, PLAN.md and DIARY.md"
+    home_claw = f"`{tools}` (`{tilde(tools_path, home)}`)"
+    if claws:           # several claws: the plural, with the home claw named
+        claw_words = {
+            "ITS_CLAWS": f"its claws, {listed(every)}",
+            "FROM_CLAWS": f"one of its claws, {listed(every)} (tools projects; `{tools}` is the home claw)",
+            "IN_CLAWS": f"one of its claws, {listed(every)} (new tools in `{tools}`, the home claw)",
+            "TOOL_FROM_CLAWS": (f"a tool from one of this project's claws, {listed(every)}: each a tools project "
+                                f"{built}; the home claw is {home_claw}"),
+            "THE_CLAWS": f"the claws ({listed(every, mark=False)})",
+            "WITH_CLAWS": f"with its claws {listed(every)} (home: `{tools}`)",
+        }
+    else:               # one claw, the home: the singular
+        claw_words = {
+            "ITS_CLAWS": f"its claw, `{tools}`",
+            "FROM_CLAWS": f"its claw, `{tools}` (a tools project)",
+            "IN_CLAWS": f"its claw, `{tools}`",
+            "TOOL_FROM_CLAWS": f"a tool from this project's claw, {home_claw}: a tools project {built}",
+            "THE_CLAWS": f"the claw ({tools})",
+            "WITH_CLAWS": f"with its claw `{tools}`",
+        }
     values = {
         "NAME": name,
         "TOOLS": tools,
@@ -165,9 +186,10 @@ def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lob
         "CLAW_LIST": listed(every),
         "CLAW_NAMES": listed(every, mark=False),
         "OTHER_CLAWS": (f"It also uses the claws {listed(claws)}." if claws
-                        else "It uses no other claw yet; when it comes to, `CLAWS` in `lobster.conf` names them."),
+                        else "It uses no other claw yet; when it does, `CLAWS` in `lobster.conf` names them."),
         "CLAW_MOUNTS": "\n".join(mounts),
         "CLAW_ROWS": "\n".join(rows),
     }
     values.update(sister_words)
+    values.update(claw_words)
     return values

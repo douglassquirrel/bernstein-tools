@@ -154,7 +154,7 @@ def test_values_for_a_non_code_project_name_its_home_claw_and_the_further_claws_
         "| `google-docs-tools` | {{to fill: as they are used}} | From `~/mnt/google-docs-tools`, as its README says |")
     alone = values_for("recipes", "non-code", public=False, **COMMON)
     assert (alone["CLAWS"], alone["CLAW_LIST"], alone["CLAW_NAMES"]) == ("", "`recipes-tools`", "recipes-tools")
-    assert alone["OTHER_CLAWS"] == "It uses no other claw yet; when it comes to, `CLAWS` in `lobster.conf` names them."
+    assert alone["OTHER_CLAWS"] == "It uses no other claw yet; when it does, `CLAWS` in `lobster.conf` names them."
     assert alone["CLAW_MOUNTS"].count("\n") == 0 and alone["CLAW_ROWS"].count("\n") == 0
 
 
@@ -187,3 +187,33 @@ def test_the_sister_words_of_a_non_code_half_name_its_tools_project_not_itself()
     code = values_for("training-video", "code", public=True, tools="video-tools", **COMMON)
     assert (code["TALKS_TO"], code["ASKING"], code["SEND_TO"]) == (
         "its sister project, `training-video`", "`training-video`", "training-video")
+
+
+def test_a_project_with_several_claws_is_spoken_of_in_the_plural_with_its_home_claw_named():
+    nc = values_for("beyond-ai", "non-code", public=True, tools="book-tools",
+                    claws=["word-tools", "google-docs-tools"], **COMMON)
+    every = "`book-tools`, `word-tools` and `google-docs-tools`"
+    assert nc["ITS_CLAWS"] == "its claws, " + every
+    assert nc["FROM_CLAWS"] == "one of its claws, " + every + " (tools projects; `book-tools` is the home claw)"
+    assert nc["IN_CLAWS"] == "one of its claws, " + every + " (new tools in `book-tools`, the home claw)"
+    assert nc["TOOL_FROM_CLAWS"] == (
+        "a tool from one of this project's claws, " + every + ": each a tools project Claude Code builds, tests "
+        "and maintains in its own repository, with its own CLAUDE.md, PLAN.md and DIARY.md; the home claw is "
+        "`book-tools` (`~/projects/code/book-tools-code/book-tools`)")
+    assert nc["THE_CLAWS"] == "the claws (book-tools, word-tools and google-docs-tools)"
+    assert nc["WITH_CLAWS"] == "with its claws " + every + " (home: `book-tools`)"
+
+
+def test_a_project_with_one_claw_is_spoken_of_in_the_singular():
+    alone = values_for("recipes", "non-code", public=False, **COMMON)
+    assert alone["ITS_CLAWS"] == "its claw, `recipes-tools`"
+    assert alone["FROM_CLAWS"] == "its claw, `recipes-tools` (a tools project)"
+    assert alone["IN_CLAWS"] == "its claw, `recipes-tools`"
+    assert alone["TOOL_FROM_CLAWS"] == (
+        "a tool from this project's claw, `recipes-tools` (`~/projects/code/recipes-tools`): a tools project "
+        "Claude Code builds, tests and maintains in its own repository, with its own CLAUDE.md, PLAN.md and "
+        "DIARY.md")
+    assert alone["THE_CLAWS"] == "the claw (recipes-tools)"
+    assert alone["WITH_CLAWS"] == "with its claw `recipes-tools`"
+    for words in ("ITS_CLAWS", "FROM_CLAWS", "IN_CLAWS", "TOOL_FROM_CLAWS", "THE_CLAWS", "WITH_CLAWS"):
+        assert "claws" not in alone[words]
