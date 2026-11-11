@@ -25,10 +25,11 @@ DEFAULTS = {
     "PODIUM_PORT": "8417",
     "PODIUM_LOG": "~/.bernstein/podium.log",
     "APP_SESSIONS": "~/Library/Application Support/Claude/claude-code-sessions",
+    "APP_COWORK_SESSIONS": "~/Library/Application Support/Claude/local-agent-mode-sessions",
 }
 
 PATHS = ("TEMPLATE", "NON_CODE_DIR", "CODE_DIR", "LOBSTER_MAIL", "MAIL_ROOT", "PYTHON", "PODIUM_LOG",
-         "APP_SESSIONS")
+         "APP_SESSIONS", "APP_COWORK_SESSIONS")
 
 
 def expand(value, home):

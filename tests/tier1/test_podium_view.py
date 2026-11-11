@@ -333,3 +333,14 @@ def test_a_link_that_is_not_the_app_s_own_kind_is_never_put_on_the_page():
         html = podium.view([with_session(row("lone-tools", "off"), link=LINK) | {"session": {"link": bad}}], NOW)
         assert "Open</a>" not in html and "href" not in html
     assert "Open</a>" not in podium.view([dict(row("lone-tools", "off"), session="x")], NOW)
+
+
+def test_a_cowork_session_s_link_is_shown_too_with_no_time():
+    link = "claude://claude.ai/cowork/session_01AAAAAAAAAAAAAAAAAAAAAA"
+    r = dict(row("recipes", "running", kind="non-code", duty="device"),
+             session={"id": link.rsplit("/", 1)[-1], "link": link, "app": "cowork", "last_activity": None})
+    html = podium.view([r], NOW)
+    assert ('<a class="open" href="' + link + '" title="Open its newest session in the Claude app">Open</a>') in html
+    for bad in ("claude://claude.ai/cowork/local_11111111-1111-4111-8111-111111111111", link + "?x=1",
+                "claude://claude.ai/cowork/session_", "claude://claude.ai/cowork/session_01AAAA/../x"):
+        assert "Open</a>" not in podium.view([dict(r, session={"link": bad})], NOW)

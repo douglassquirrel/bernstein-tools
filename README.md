@@ -254,13 +254,22 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 | 4 | A program failed, or the duty listing could not be read |
 | 5 | `--wait` ran out before the handover arrived |
 
-  `session` is the newest Claude Code session, not archived, that the Claude desktop app has for the
-  project's folder: `{"id", "link", "last_activity"}`, or `null` when there is none. The link
-  (`claude://claude.ai/epitaxy/<id>`) opens that session in the app. `conduct` finds it by reading the
-  app's own session files (the setting `APP_SESSIONS`, `~/Library/Application Support/Claude/
-  claude-code-sessions` unless set), which it never writes; that store is the app's and undocumented, so
-  if it is missing or changes shape every `session` is simply `null`. A Claude session of a non-code
-  project is not kept there, so those rows have no link. The text form does not show it.
+  `session` is the project's newest session in the Claude desktop app: `{"id", "link", "app",
+  "last_activity"}`, or `null` when there is none. The link opens that session in the app. `app` says
+  which kind it is:
+  - `code`: a Claude Code session whose folder is the project's, the newest that is not archived
+    (`claude://claude.ai/epitaxy/<id>`), with when it was last active. Read from the app's session files
+    (the setting `APP_SESSIONS`, `~/Library/Application Support/Claude/claude-code-sessions` unless set).
+  - `cowork`: a Claude session whose first connected folder is the project's
+    (`claude://claude.ai/cowork/<id>`). Read from the app's list of those sessions (the setting
+    `APP_COWORK_SESSIONS`, `~/Library/Application Support/Claude/local-agent-mode-sessions` unless set).
+    That list is in the order the sessions were made and has no times, so the last one listed for the
+    folder is taken as the newest, `last_activity` is `null`, and it may be one you have archived.
+
+  A non-code project gets its `cowork` session if it has one, any other its `code` session, and each
+  falls back to the other kind. `conduct` only reads these files, never writes them. They are the app's
+  own and undocumented, so if they are missing or change shape every `session` is simply `null`. The
+  text form does not show it.
 
 ## podium: a page showing every session, with buttons
 
@@ -279,9 +288,10 @@ every 15 seconds and when you press Refresh, follows your light or dark setting,
 width of a phone. It is set in EB Garamond if that typeface is installed on the Mac, and in Georgia if
 not; nothing is fetched from anywhere, so no font is downloaded.
 
-A line whose project has a Claude Code session in the desktop app starts its buttons with **Open**, a link
-that takes you straight to the newest one that is not archived (your browser may ask once whether the page
-may open Claude). It is there for bernstein's own line too.
+A line whose project has a session in the desktop app starts its buttons with **Open**, a link that takes
+you straight to the newest one: a non-code project's Claude session, or a tools project's Claude Code
+session (your browser may ask once whether the page may open Claude). It is there for bernstein's own line
+too.
 
 Each line has buttons for what can be done to that session now: **Start** when nobody is on duty and
 `conduct` could start the project; **Stop**, **Dormant** and **Dream** when it is running; **Wake** when
@@ -456,6 +466,8 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 - 11 November 2026: `conduct status --json` gives each project a `session` link to its newest Claude Code
   session in the desktop app, and podium shows it as "Open". A new setting, `APP_SESSIONS`, says where the
   app keeps its sessions.
+- 11 November 2026: the `session` link and podium's "Open" now cover a non-code project's Claude session
+  too. `session` gains `app` (`code` or `cowork`), and there is a new setting, `APP_COWORK_SESSIONS`.
 - 10 November 2026: podium's page is restyled (a cream page, white cards, an orange accent, a serif face) and
   made more compact: a line no longer says "nobody on duty", "pace normal", "0 new" or "0 open".
 - 10 November 2026: the Dormant and Dream messages now tell a session to report `dormant` or `dreaming`

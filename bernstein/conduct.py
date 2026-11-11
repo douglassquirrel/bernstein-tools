@@ -418,15 +418,54 @@ def app_sessions(store):
             continue
         folder = os.path.realpath(cwd)
         if folder not in newest or last > newest[folder][0]:
-            newest[folder] = (last, {"id": sid, "link": "claude://claude.ai/epitaxy/" + sid,
+            newest[folder] = (last, {"id": sid, "link": "claude://claude.ai/epitaxy/" + sid, "app": "code",
                                      "last_activity": f"{when:%Y-%m-%dT%H:%M:%SZ}"})
     return {folder: found for folder, (_, found) in newest.items()}
 
 
-def status_rows(boxes, lookup, sessions=None, folder_of=None):
+COWORK_ID = re.compile(r"session_[A-Za-z0-9]{8,64}")
+
+
+def cowork_sessions(store):
+    """The newest Claude (cowork) session for each folder one was opened on, from the desktop app's own
+    list: {real folder: {id, link, app, last_activity}}. The list is in the order the sessions were made
+    and carries no times, so the last entry for a folder is taken as its newest and last_activity is None;
+    it does not say whether a session is archived. A session belongs to the first folder connected to it.
+    Only read; anything unexpected is passed over, and a missing list gives nothing rather than an error."""
+    def changed(path):
+        try:
+            return os.path.getmtime(path)
+        except OSError:
+            return 0
+
+    # with more than one list (more than one account), the one changed last is read last, so it wins
+    lists = sorted(glob.glob(os.path.join(glob.escape(store), "*", "*", "remote-session-spaces.json")), key=changed)
+    newest = {}
+    for path in lists:
+        try:
+            with open(path, encoding="utf-8") as f:
+                entries = json.load(f)["entries"]
+            if not isinstance(entries, list):
+                continue
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        for entry in entries:
+            try:
+                sid, first = entry["sessionId"], entry["folders"][0]
+            except (KeyError, IndexError, TypeError):
+                continue
+            if isinstance(sid, str) and COWORK_ID.fullmatch(sid) and isinstance(first, str):
+                newest[os.path.realpath(first)] = {"id": sid, "link": "claude://claude.ai/cowork/" + sid,
+                                                   "app": "cowork", "last_activity": None}
+    return newest
+
+
+def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None):
     """One row per mailbox in the duty listing, joined with what lookup(name) says of its project.
     lookup gives what find_project gives, or raises ProjectRefused as conduct start would; folder_of
-    then gives the folder alone, if there is one. sessions is what app_sessions found, by folder."""
+    then gives the folder alone, if there is one. sessions is what app_sessions found, by folder, and
+    cowork what cowork_sessions found: a non-code project gets its cowork session if it has one, any
+    other row its Claude Code session, and each falls back to the other kind."""
     rows = []
     for name, entry in boxes.items():
         row = {"mailbox": name, "state": state_of(entry), "kind": None, "folder": None, "model": None,
@@ -443,8 +482,10 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None):
         else:
             row.update(kind=p.kind, folder=p.folder, model=p.model, effort=p.effort, sister=p.sister,
                        claws=list(p.claw_names))
-        if sessions and row["folder"]:
-            row["session"] = sessions.get(os.path.realpath(row["folder"]))
+        if row["folder"]:
+            real = os.path.realpath(row["folder"])
+            first, second = (cowork, sessions) if row["kind"] == "non-code" else (sessions, cowork)
+            row["session"] = (first or {}).get(real) or (second or {}).get(real)
         rows.append(row)
     for row in rows:
         row["serves"] = [r["mailbox"] for r in rows if r["kind"] == "non-code" and row["mailbox"] in r["claws"]]
@@ -671,7 +712,8 @@ def status(a, s, env, now, out, err, sleep):
         return found[0] if found else None
 
     rows = status_rows(boxes, lambda name: find_project(name, s["NON_CODE_DIR"], s["CODE_DIR"]),
-                       sessions=app_sessions(s["APP_SESSIONS"]), folder_of=folder_of)
+                       sessions=app_sessions(s["APP_SESSIONS"]), folder_of=folder_of,
+                       cowork=cowork_sessions(s["APP_COWORK_SESSIONS"]))
     if a.json:
         out.write(json.dumps({"root": s["MAIL_ROOT"], "mailboxes": rows, "skipped": skipped}, indent=1) + "\n")
     elif not rows:

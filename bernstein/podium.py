@@ -118,7 +118,8 @@ def buttons_for_all(rows):
         ["wake"] if states.intersection(ASLEEP) else [])
 
 
-OPEN_LINK = re.compile(r"claude://claude\.ai/epitaxy/local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+OPEN_LINK = re.compile(r"claude://claude\.ai/(epitaxy/local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                       r"|cowork/session_[A-Za-z0-9]{8,64})")
 
 
 def open_link(row, now):

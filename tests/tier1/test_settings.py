@@ -18,6 +18,7 @@ def test_an_empty_file_gives_the_defaults_with_home_filled_in():
         "PODIUM_PORT": "8417",
         "PODIUM_LOG": "/home/sq/.bernstein/podium.log",
         "APP_SESSIONS": "/home/sq/Library/Application Support/Claude/claude-code-sessions",
+        "APP_COWORK_SESSIONS": "/home/sq/Library/Application Support/Claude/local-agent-mode-sessions",
     }
 
 

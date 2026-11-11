@@ -29,9 +29,9 @@ def test_the_newest_session_that_is_not_archived_is_found_for_each_folder(tmp_pa
     session(store, C, tools, 1794409999999, archived=True)     # newer still, but archived
     session(store, D, other, 1794300000000, account="acct2/org2")
     assert conduct.app_sessions(store) == {
-        os.path.realpath(tools): {"id": B, "link": "claude://claude.ai/epitaxy/" + B,
+        os.path.realpath(tools): {"id": B, "link": "claude://claude.ai/epitaxy/" + B, "app": "code",
                                   "last_activity": "2026-11-11T12:58:12Z"},
-        os.path.realpath(other): {"id": D, "link": "claude://claude.ai/epitaxy/" + D,
+        os.path.realpath(other): {"id": D, "link": "claude://claude.ai/epitaxy/" + D, "app": "code",
                                   "last_activity": "2026-11-10T08:40:00Z"}}
 
 
@@ -100,3 +100,98 @@ def test_a_row_carries_its_project_s_session_or_none():
     assert rows["bernstein"]["session"] == found["/p/bernstein-code"]
     plain = conduct.status_rows(boxes, lookup)
     assert all(r["session"] is None for r in plain) and plain[0]["folder"] is None
+
+
+S1, S2, S3 = "session_01AAAAAAAAAAAAAAAAAAAAAA", "session_01BBBBBBBBBBBBBBBBBBBBBB", "session_01CCCCCCCCCCCCCCCCCCCCCC"
+
+
+def cowork(store, entries, account="acct/org"):
+    """The app's list of Claude (cowork) sessions, invented: [(session id, [folders])], oldest first."""
+    folder = os.path.join(store, account)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, "remote-session-spaces.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"entries": [{"sessionId": sid, "folders": folders, "memoryEnabled": False}
+                               for sid, folders in entries]}, f)
+    return path
+
+
+def test_the_last_cowork_session_listed_for_a_folder_is_its_newest(tmp_path):
+    store, recipes, menus = str(tmp_path / "store"), str(tmp_path / "recipes"), str(tmp_path / "menus")
+    os.makedirs(recipes)
+    os.makedirs(menus)
+    cowork(store, [(S1, [recipes, "/m/mail"]), (S2, [menus, "/m/mail", recipes]), (S3, [recipes, "/m/mail"])])
+    assert conduct.cowork_sessions(store) == {
+        os.path.realpath(recipes): {"id": S3, "link": "claude://claude.ai/cowork/" + S3, "app": "cowork",
+                                    "last_activity": None},
+        os.path.realpath(menus): {"id": S2, "link": "claude://claude.ai/cowork/" + S2, "app": "cowork",
+                                  "last_activity": None}}
+
+
+def test_a_cowork_list_that_is_not_as_expected_gives_what_it_can_and_never_an_error(tmp_path):
+    store, recipes = str(tmp_path / "store"), str(tmp_path / "recipes")
+    os.makedirs(recipes)
+    folder = os.path.join(store, "acct", "org")
+    os.makedirs(folder)
+    with open(os.path.join(folder, "remote-session-spaces.json"), "w") as f:
+        json.dump({"entries": [
+            {"sessionId": S1, "folders": [recipes]},
+            "not an entry", {"sessionId": "local_x", "folders": [recipes]}, {"sessionId": S2, "folders": []},
+            {"sessionId": S2, "folders": [7]}, {"sessionId": S2}, {"folders": [recipes]},
+            {"sessionId": S2 + '"><script>', "folders": [recipes]}]}, f)
+    assert [s["id"] for s in conduct.cowork_sessions(store).values()] == [S1]
+    for text in ("not json", "[]", json.dumps({"entries": 3}), json.dumps({"other": []})):
+        with open(os.path.join(folder, "remote-session-spaces.json"), "w") as f:
+            f.write(text)
+        assert conduct.cowork_sessions(store) == {}
+    assert conduct.cowork_sessions(str(tmp_path / "nowhere")) == {}
+
+
+def test_reading_the_cowork_list_changes_nothing_in_it(tmp_path):
+    store, recipes = str(tmp_path / "store"), str(tmp_path / "recipes")
+    os.makedirs(recipes)
+    path = cowork(store, [(S1, [recipes])])
+    with open(path, "rb") as f:
+        before = (f.read(), os.stat(path).st_mtime_ns, sorted(os.listdir(os.path.dirname(path))))
+    conduct.cowork_sessions(store)
+    with open(path, "rb") as f:
+        assert (f.read(), os.stat(path).st_mtime_ns, sorted(os.listdir(os.path.dirname(path)))) == before
+
+
+def test_a_non_code_project_gets_its_cowork_session_and_a_code_project_its_claude_code_one():
+    from types import SimpleNamespace
+
+    def lookup(name):
+        kind = "code" if name.endswith("-tools") else "non-code"
+        return SimpleNamespace(name=name, kind=kind, folder="/p/" + name, checkout="/p/" + name, sister="x",
+                               claws=[], claw_names=[], model="opus", effort="high")
+
+    code = {"/p/recipes": {"id": A, "app": "code"}, "/p/recipes-tools": {"id": B, "app": "code"},
+            "/p/menus": {"id": C, "app": "code"}}
+    desk = {"/p/recipes": {"id": S1, "app": "cowork"}, "/p/recipes-tools": {"id": S2, "app": "cowork"},
+            "/p/lone-tools": {"id": S3, "app": "cowork"}}
+    boxes = {n: {"mailbox": n, "duty": None} for n in ("recipes", "recipes-tools", "menus", "lone-tools", "stews")}
+    rows = {r["mailbox"]: r["session"] for r in conduct.status_rows(boxes, lookup, sessions=code, cowork=desk)}
+    assert rows["recipes"]["id"] == S1              # a non-code project: its cowork session first
+    assert rows["recipes-tools"]["id"] == B         # a tools project: its Claude Code session first
+    assert rows["menus"]["id"] == C                 # no cowork session: the Claude Code one will do
+    assert rows["lone-tools"]["id"] == S3           # and the other way round
+    assert rows["stews"] is None
+
+
+def test_with_two_cowork_lists_the_one_changed_last_wins_and_one_that_vanishes_is_no_error(tmp_path, monkeypatch):
+    store, recipes = str(tmp_path / "store"), str(tmp_path / "recipes")
+    os.makedirs(recipes)
+    older = cowork(store, [(S1, [recipes])], account="acct-a/org")
+    newer = cowork(store, [(S2, [recipes])], account="acct-b/org")
+    os.utime(older, (1000, 1000))
+    os.utime(newer, (2000, 2000))
+    assert conduct.cowork_sessions(store)[os.path.realpath(recipes)]["id"] == S2
+    os.utime(older, (3000, 3000))
+    assert conduct.cowork_sessions(store)[os.path.realpath(recipes)]["id"] == S1
+
+    def gone(path):
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(conduct.os.path, "getmtime", gone)
+    assert conduct.cowork_sessions(store)[os.path.realpath(recipes)]["id"] in (S1, S2)

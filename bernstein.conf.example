@@ -23,3 +23,5 @@
 # Where the Claude desktop app keeps its Claude Code sessions: read, never written, to link each
 # project to its newest session.
 #APP_SESSIONS=~/Library/Application Support/Claude/claude-code-sessions
+# Where the app keeps its list of Claude (cowork) sessions: read, never written, for the same link.
+#APP_COWORK_SESSIONS=~/Library/Application Support/Claude/local-agent-mode-sessions

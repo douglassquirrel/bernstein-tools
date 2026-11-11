@@ -172,7 +172,7 @@ def test_status_gives_each_project_the_link_to_its_newest_session_in_the_desktop
     rows = {r["mailbox"]: r for r in json.loads(out)["mailboxes"]}
     assert (code, err) == (0, "")
     assert rows["recipes-tools"]["session"] == {"id": SID, "link": "claude://claude.ai/epitaxy/" + SID,
-                                                "last_activity": "2026-11-11T12:58:12Z"}
+                                                "app": "code", "last_activity": "2026-11-11T12:58:12Z"}
     assert rows["video-tools"]["session"] is None           # its only session is archived
     assert rows["recipes"]["session"] is None               # no Claude Code session was opened in its folder
     assert tree(store) == before                            # the app's store is only read
@@ -222,3 +222,32 @@ def test_a_mailbox_whose_project_is_in_two_places_has_no_folder_and_no_session(w
     row = json.loads(out)["mailboxes"][0]
     assert code == 0 and "is in two places" in row["refused"]
     assert row["folder"] is None and row["session"] is None
+
+
+COWORK = "session_01AAAAAAAAAAAAAAAAAAAAAA"
+
+
+def test_status_gives_a_non_code_project_the_link_to_its_newest_cowork_session(world, tmp_path):
+    nc, tools, _video = a_pair(world)
+    desk = os.path.join(world.home, "Library", "Application Support", "Claude", "local-agent-mode-sessions")
+    os.makedirs(os.path.join(desk, "acct", "org"))
+    listed = os.path.join(desk, "acct", "org", "remote-session-spaces.json")
+    with open(listed, "w", encoding="utf-8") as f:
+        json.dump({"entries": [{"sessionId": "session_01OLDOLDOLDOLDOLDOLDOLDOL", "folders": [nc, world.mail]},
+                               {"sessionId": COWORK, "folders": [nc, world.mail, tools]}]}, f)
+    world.listing([entry("recipes", "fresh"), entry("recipes-tools")])
+    before = tree(desk)
+    code, out, err = world.conduct("status", "--json")
+    rows = {r["mailbox"]: r for r in json.loads(out)["mailboxes"]}
+    assert (code, err) == (0, "")
+    assert rows["recipes"]["session"] == {"id": COWORK, "link": "claude://claude.ai/cowork/" + COWORK,
+                                          "app": "cowork", "last_activity": None}
+    assert rows["recipes-tools"]["session"] is None         # only connected to that session, not its own folder
+    assert tree(desk) == before
+    elsewhere = tmp_path / "desk 2" / "a" / "b"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / "remote-session-spaces.json").write_text(json.dumps(
+        {"entries": [{"sessionId": "session_01ELSEWHEREELSEWHEREELSE", "folders": [nc]}]}))
+    world.write_conf(f"APP_COWORK_SESSIONS={tmp_path / 'desk 2'}\n")
+    code, out, _err = world.conduct("status", "--json")
+    assert code == 0 and json.loads(out)["mailboxes"][0]["session"]["id"] == "session_01ELSEWHEREELSEWHEREELSE"
