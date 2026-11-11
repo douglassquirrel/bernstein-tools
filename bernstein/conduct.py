@@ -52,12 +52,17 @@ def start_message(brief, today):
 
 
 def stop_message(today):
-    """The body of the Stop message: hand over at the next safe point."""
+    """The body of the Stop message: hand over at the next safe point, then archive the session."""
     return (f"Stop (from bernstein, {day(today)}).\n\n"
             "Squirrel has asked this session to hand over and stop. At the next safe point (nothing\n"
             "half-edited, nothing half-committed): bring the record up to date, send the handover with\n"
             "lobster-mail handover, stop watching mail and stop the check-in chain, tell Squirrel in\n"
-            "chat that bernstein asked you to hand over, and do nothing more unless he says.\n")
+            "chat that bernstein asked you to hand over, and do nothing more unless he says.\n\n"
+            "Then, as the very last thing, after your reply to this message: archive this session, so it\n"
+            "leaves his list of sessions. In Claude Code in the desktop app that is the archive tool with\n"
+            "the session \"self\", which he approves on the card the app shows; nothing may still be\n"
+            "running in the background when you call it. If you have no tool that archives a session, say\n"
+            "so in your last line to him instead.\n")
 
 
 def dormant_message(project, today):
@@ -135,7 +140,9 @@ DREAM_ENDS = {
 """,
     "stop": """hand over and stop: bring the record up to date, send the handover with lobster-mail
    handover (it ends the dreaming status with the duty), stop watching mail, and tell Squirrel you
-   have stopped.
+   have stopped. Last of all, archive this session, so it leaves his list (in Claude Code in the
+   desktop app, the archive tool with the session "self", which he approves on the card it shows;
+   if you have no such tool, say so in your last line to him).
 """,
 }
 

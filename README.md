@@ -166,7 +166,9 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
   beside it, and `lobster-tools` connected; a Claude Code session for a tools project. You
   confirm the folders and send the prefilled first line. For a Claude Code session it reminds you
   to have a bernstein session set its model and effort, which a program cannot do.
-- **`stop`** mails a Stop message: hand over at the next safe point, then stop. `--all` asks every
+- **`stop`** mails a Stop message: hand over at the next safe point, then stop, and last of all archive
+  the session so that it leaves your list (in Claude Code in the desktop app the session does this with
+  the app's archive tool, which you approve on a card; a session with no such tool says so instead). `--all` asks every
   session on duty except bernstein's. `--wait SECONDS` waits for each handover, looking every 10
   seconds.
 - **`dormant`** puts a running session to sleep without a handover, for a pause such as overnight:
@@ -466,6 +468,8 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 - 11 November 2026: `conduct status --json` gives each project a `session` link to its newest Claude Code
   session in the desktop app, and podium shows it as "Open". A new setting, `APP_SESSIONS`, says where the
   app keeps its sessions.
+- 11 November 2026: the Stop message, and a dream that ends in a handover, now tell the session to archive
+  itself as its last act, so finished sessions leave your list.
 - 11 November 2026: the `session` link and podium's "Open" now cover a non-code project's Claude session
   too. `session` gains `app` (`code` or `cowork`), and there is a new setting, `APP_COWORK_SESSIONS`.
 - 10 November 2026: podium's page is restyled (a cream page, white cards, an orange accent, a serif face) and

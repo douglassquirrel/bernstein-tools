@@ -34,7 +34,12 @@ def test_the_stop_message_asks_for_a_handover_at_a_safe_point():
         "Squirrel has asked this session to hand over and stop. At the next safe point (nothing\n"
         "half-edited, nothing half-committed): bring the record up to date, send the handover with\n"
         "lobster-mail handover, stop watching mail and stop the check-in chain, tell Squirrel in\n"
-        "chat that bernstein asked you to hand over, and do nothing more unless he says.\n")
+        "chat that bernstein asked you to hand over, and do nothing more unless he says.\n\n"
+        "Then, as the very last thing, after your reply to this message: archive this session, so it\n"
+        "leaves his list of sessions. In Claude Code in the desktop app that is the archive tool with\n"
+        "the session \"self\", which he approves on the card the app shows; nothing may still be\n"
+        "running in the background when you call it. If you have no tool that archives a session, say\n"
+        "so in your last line to him instead.\n")
 
 
 def make(tmp_path, rel, kind, sister):
@@ -177,7 +182,9 @@ def test_the_dream_message_with_then_stop_hands_over_at_the_end_instead():
         "6. At the end, reply to this message with the files written and a line on each, and tell Squirrel in\n"
         "   chat, in a line, with no question. Then hand over and stop: bring the record up to date, send the handover with lobster-mail\n"
         "   handover (it ends the dreaming status with the duty), stop watching mail, and tell Squirrel you\n"
-        "   have stopped.\n")
+        "   have stopped. Last of all, archive this session, so it leaves his list (in Claude Code in the\n"
+        "   desktop app, the archive tool with the session \"self\", which he approves on the card it shows;\n"
+        "   if you have no such tool, say so in your last line to him).\n")
 
 
 def test_a_dream_past_midnight_names_the_day_it_ends_and_its_own_length():
@@ -201,3 +208,8 @@ def test_the_dream_subject_names_the_finish_time():
     assert dream_subject(MORNING, 60) == "Dream: until 10:40 UTC"
     assert dream_subject(datetime.datetime(2026, 10, 18, 23, 30, tzinfo=datetime.timezone.utc), 90) == \
         "Dream: until 01:00 UTC on 19 October 2026"
+
+
+def test_a_dream_that_ends_dormant_does_not_archive_the_session():
+    from bernstein.conduct import dream_message
+    assert "archive" not in dream_message("recipes", MORNING, 60, "dormant")
