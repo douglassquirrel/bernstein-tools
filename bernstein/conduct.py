@@ -7,8 +7,10 @@ arguments or settings, 3 no such project or mailbox (or, for start, a session al
 
 import argparse
 import datetime
+import glob
 import json
 import os
+import re
 import subprocess
 import urllib.parse
 from types import SimpleNamespace
@@ -393,23 +395,56 @@ def state_of(entry):
     return "quiet" if entry.get("pace") == "relaxed" else "stale"
 
 
-def status_rows(boxes, lookup):
+SESSION_ID = re.compile(r"local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def app_sessions(store):
+    """The newest Claude Code session that is not archived, for each folder one was opened in, from the
+    desktop app's own store: {real folder: {id, link, last_activity}}. The store is the app's, not ours:
+    it is only read, anything in it that is not a session as expected is passed over, and a store that
+    is missing or unreadable gives nothing rather than an error."""
+    newest = {}
+    for path in glob.glob(os.path.join(glob.escape(store), "*", "*", "local_*.json")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            sid, cwd, last = data["sessionId"], data["cwd"], data["lastActivityAt"]
+            if (data["isArchived"] is not False or not isinstance(cwd, str) or not isinstance(sid, str)
+                    or not SESSION_ID.fullmatch(sid) or os.path.basename(path) != sid + ".json"
+                    or isinstance(last, bool) or not isinstance(last, int)):
+                continue
+            when = datetime.datetime.fromtimestamp(last / 1000, datetime.timezone.utc)
+        except (OSError, ValueError, KeyError, TypeError, OverflowError):
+            continue
+        folder = os.path.realpath(cwd)
+        if folder not in newest or last > newest[folder][0]:
+            newest[folder] = (last, {"id": sid, "link": "claude://claude.ai/epitaxy/" + sid,
+                                     "last_activity": f"{when:%Y-%m-%dT%H:%M:%SZ}"})
+    return {folder: found for folder, (_, found) in newest.items()}
+
+
+def status_rows(boxes, lookup, sessions=None, folder_of=None):
     """One row per mailbox in the duty listing, joined with what lookup(name) says of its project.
-    lookup gives what find_project gives, or raises ProjectRefused as conduct start would."""
+    lookup gives what find_project gives, or raises ProjectRefused as conduct start would; folder_of
+    then gives the folder alone, if there is one. sessions is what app_sessions found, by folder."""
     rows = []
     for name, entry in boxes.items():
         row = {"mailbox": name, "state": state_of(entry), "kind": None, "folder": None, "model": None,
                "effort": None, "sister": None, "claws": [], "serves": [], "refused": None,
                "duty": entry.get("duty"), "pace": entry.get("pace") or "normal",
                "new": entry.get("new", 0), "open": entry.get("open", 0),
-               "handover_waiting": bool(entry.get("handover_waiting")), "reported": entry.get("reported")}
+               "handover_waiting": bool(entry.get("handover_waiting")), "reported": entry.get("reported"),
+               "session": None}
         try:
             p = lookup(name)
         except ProjectRefused as why:
             row["refused"] = str(why)
+            row["folder"] = folder_of(name) if folder_of else None
         else:
             row.update(kind=p.kind, folder=p.folder, model=p.model, effort=p.effort, sister=p.sister,
                        claws=list(p.claw_names))
+        if sessions and row["folder"]:
+            row["session"] = sessions.get(os.path.realpath(row["folder"]))
         rows.append(row)
     for row in rows:
         row["serves"] = [r["mailbox"] for r in rows if r["kind"] == "non-code" and row["mailbox"] in r["claws"]]
@@ -627,7 +662,16 @@ def status(a, s, env, now, out, err, sleep):
     from lobster-mail and each project's lobster.conf. Nothing is sent, set, opened or written."""
     skipped = []
     boxes = listing(s, env, sleep, skipped)
-    rows = status_rows(boxes, lambda name: find_project(name, s["NON_CODE_DIR"], s["CODE_DIR"]))
+    def folder_of(name):
+        """The folder of a mailbox whose project start would refuse, if it has one."""
+        try:
+            found = find_folder(name, s["NON_CODE_DIR"], s["CODE_DIR"])
+        except ProjectRefused:
+            return None
+        return found[0] if found else None
+
+    rows = status_rows(boxes, lambda name: find_project(name, s["NON_CODE_DIR"], s["CODE_DIR"]),
+                       sessions=app_sessions(s["APP_SESSIONS"]), folder_of=folder_of)
     if a.json:
         out.write(json.dumps({"root": s["MAIL_ROOT"], "mailboxes": rows, "skipped": skipped}, indent=1) + "\n")
     elif not rows:

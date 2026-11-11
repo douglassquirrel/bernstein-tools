@@ -304,3 +304,32 @@ def test_the_page_wears_the_site_s_colours_typeface_and_roundel():
 def test_a_hidden_part_of_the_page_stays_hidden_whatever_its_own_style_says():
     # the progress line is laid out as a row, which would otherwise show it while it is marked hidden
     assert "[hidden] { display: none !important; }" in podium.page("")
+
+
+LINK = "claude://claude.ai/epitaxy/local_11111111-1111-4111-8111-111111111111"
+
+
+def with_session(r, link=LINK):
+    return dict(r, session={"id": link.rsplit("/", 1)[-1], "link": link, "last_activity": "2026-10-18T09:38:00Z"})
+
+
+def test_a_row_whose_project_has_a_session_in_the_desktop_app_links_to_it():
+    html = podium.view([with_session(row("lone-tools", "running", duty="mac"))], NOW)
+    assert ('<div class="acts"><a class="open" href="' + LINK + '" title="Open its newest session in the Claude app '
+            '(last active 09:38 UTC)">Open</a><button type="button" class="act" data-verb="stop"') in html
+    assert "Open</a>" not in podium.view([row("lone-tools", "running", duty="mac")], NOW)
+
+
+def test_bernstein_s_own_row_and_a_row_with_no_buttons_still_get_the_link():
+    html = podium.view([with_session(row("bernstein", "running", kind=None, duty="mac")),
+                        with_session(row("old-thing", "off", kind=None, refused="no lobster.conf"))], NOW)
+    assert html.count('<div class="acts"><a class="open" href="' + LINK + '"') == 2
+    assert "<button" not in html
+
+
+def test_a_link_that_is_not_the_app_s_own_kind_is_never_put_on_the_page():
+    for bad in ("javascript:alert(1)", "https://example.com/", "claude://claude.ai/epitaxy/local_x\" onclick=\"y",
+                "claude://elsewhere/local_11111111-1111-4111-8111-111111111111", LINK + "/../x", "", None, 7):
+        html = podium.view([with_session(row("lone-tools", "off"), link=LINK) | {"session": {"link": bad}}], NOW)
+        assert "Open</a>" not in html and "href" not in html
+    assert "Open</a>" not in podium.view([dict(row("lone-tools", "off"), session="x")], NOW)

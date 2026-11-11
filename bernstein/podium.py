@@ -13,6 +13,7 @@ import html
 import http.server
 import json
 import os
+import re
 import secrets
 import shlex
 import subprocess
@@ -117,6 +118,21 @@ def buttons_for_all(rows):
         ["wake"] if states.intersection(ASLEEP) else [])
 
 
+OPEN_LINK = re.compile(r"claude://claude\.ai/epitaxy/local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def open_link(row, now):
+    """A link that opens the project's newest session in the desktop app, when conduct found one. Only the
+    app's own kind of link is ever put on the page, whatever the listing says."""
+    found = row.get("session")
+    link = found.get("link") if isinstance(found, dict) else None
+    if not isinstance(link, str) or not OPEN_LINK.fullmatch(link):
+        return ""
+    when = stamp(found.get("last_activity"))
+    title = "Open its newest session in the Claude app" + (f" (last active {clock(when, now)})" if when else "")
+    return f'<a class="open" href="{e(link)}" title="{e(title)}">Open</a>'
+
+
 def e(text):
     """Anything from outside, as text for the page: never markup."""
     return html.escape(str(text), quote=True)
@@ -150,8 +166,9 @@ def row_html(row, now, label=None, claw=False):
     refused = ""
     if row.get("refused") and row["mailbox"] != "bernstein":   # conduct never starts bernstein's own session
         refused = f'<p class="refused">Cannot start: {e(row["refused"])}</p>'
-    acts = "".join(f'<button type="button" class="act" data-verb="{verb}" data-project="{e(row["mailbox"])}">'
-                   f"{LABELS[verb]}</button>" for verb in buttons(row))
+    acts = open_link(row, now) + "".join(
+        f'<button type="button" class="act" data-verb="{verb}" data-project="{e(row["mailbox"])}">'
+        f"{LABELS[verb]}</button>" for verb in buttons(row))
     acts = f'<div class="acts">{acts}</div>' if acts else ""
     return (f'{start}{who}<span class="badge {tone}">{e(words)}</span>'
             f"{facts}{acts}{refused}</div>")
@@ -233,10 +250,11 @@ h2, .asof { font-size: 13px; font-weight: 600; text-transform: uppercase; letter
 h2 { margin: 14px 0 5px; }
 .asof { margin: 8px 0 12px; font-variant-numeric: tabular-nums; }
 .asof::after { content: ""; display: block; width: 9rem; height: 3px; background: var(--accent); margin-top: 6px; }
-button { font: inherit; font-size: 15px; color: var(--small-accent); background: var(--card);
+button, a.open { font: inherit; font-size: 15px; color: var(--small-accent); background: var(--card);
   border: 1px solid var(--line); border-radius: 999px; padding: 1px 11px; cursor: pointer; white-space: nowrap; }
-button:hover:not(:disabled) { background: var(--fill); border-color: var(--fill); color: var(--on); }
-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a.open { text-decoration: none; color: var(--ink); }
+button:hover:not(:disabled), a.open:hover { background: var(--fill); border-color: var(--fill); color: var(--on); }
+button:focus-visible, a.open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: 0.5; cursor: default; }
 #act-go { background: var(--fill); border-color: var(--fill); color: var(--on); }
 .lost, .error { background: var(--mistake); color: var(--on); border-radius: 6px; padding: 7px 12px;
@@ -244,7 +262,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .empty { color: var(--muted); font-style: italic; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; margin: 0 0 8px;
   overflow: hidden; }
-.row { display: grid; grid-template-columns: minmax(9rem, 1fr) 11.5rem minmax(0, 1.5fr) 14rem;
+.row { display: grid; grid-template-columns: minmax(9rem, 1fr) 11.5rem minmax(0, 1.5fr) 15.5rem;
   gap: 2px 12px; align-items: center; padding: 5px 12px; }
 .row + .row { border-top: 1px solid var(--line); }
 .row.claw .who { padding-left: 16px; }

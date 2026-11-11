@@ -17,6 +17,7 @@ def test_an_empty_file_gives_the_defaults_with_home_filled_in():
         "PYTHON": "/usr/bin/python3",
         "PODIUM_PORT": "8417",
         "PODIUM_LOG": "/home/sq/.bernstein/podium.log",
+        "APP_SESSIONS": "/home/sq/Library/Application Support/Claude/claude-code-sessions",
     }
 
 

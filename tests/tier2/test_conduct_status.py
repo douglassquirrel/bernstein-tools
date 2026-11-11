@@ -55,13 +55,13 @@ def test_status_json_joins_each_mailbox_with_its_project(world):
         {"mailbox": "recipes", "state": "running", "kind": "non-code", "folder": nc, "model": "opus",
          "effort": "high", "sister": "recipes-tools", "claws": ["recipes-tools", "video-tools"], "serves": [],
          "refused": None, "duty": recipes["duty"], "pace": "normal", "new": 2, "open": 0,
-         "handover_waiting": False, "reported": DREAMING},
+         "handover_waiting": False, "reported": DREAMING, "session": None},
         {"mailbox": "recipes-tools", "state": "handed-over", "kind": "code", "folder": tools, "model": "opus",
          "effort": "high", "sister": "recipes", "claws": [], "serves": ["recipes"], "refused": None,
-         "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": True, "reported": None},
+         "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": True, "reported": None, "session": None},
         {"mailbox": "video-tools", "state": "off", "kind": "code", "folder": video, "model": "opus",
          "effort": "high", "sister": "", "claws": [], "serves": ["recipes"], "refused": None,
-         "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": False, "reported": None}]
+         "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": False, "reported": None, "session": None}]
 
 
 def test_status_says_why_start_would_refuse_a_project(world):
@@ -145,3 +145,80 @@ def test_status_looks_again_while_a_duty_is_changing_then_gives_up_with_exit_4(w
 def test_help_shows_the_status_form(world):
     code, out, _err = world.conduct("--help")
     assert code == 0 and "conduct status [--json]" in out
+
+
+SID = "local_11111111-1111-4111-8111-111111111111"
+OLD = "local_22222222-2222-4222-8222-222222222222"
+
+
+def app_store(world, sessions):
+    """The desktop app's session store, invented, where the settings say it is: [(id, folder, last, archived)]."""
+    store = os.path.join(world.home, "Library", "Application Support", "Claude", "claude-code-sessions")
+    folder = os.path.join(store, "acct", "org")
+    os.makedirs(folder, exist_ok=True)
+    for sid, cwd, last, archived in sessions:
+        with open(os.path.join(folder, sid + ".json"), "w", encoding="utf-8") as f:
+            json.dump({"sessionId": sid, "cwd": cwd, "isArchived": archived, "lastActivityAt": last}, f)
+    return store
+
+
+def test_status_gives_each_project_the_link_to_its_newest_session_in_the_desktop_app(world):
+    _nc, tools, video = a_pair(world)
+    store = app_store(world, [(SID, tools, 1794401892175, False), (OLD, tools, 1794300000000, False),
+                              ("local_33333333-3333-4333-8333-333333333333", video, 1794409999999, True)])
+    world.listing([entry("recipes", "fresh"), entry("recipes-tools"), entry("video-tools")])
+    before = tree(store)
+    code, out, err = world.conduct("status", "--json")
+    rows = {r["mailbox"]: r for r in json.loads(out)["mailboxes"]}
+    assert (code, err) == (0, "")
+    assert rows["recipes-tools"]["session"] == {"id": SID, "link": "claude://claude.ai/epitaxy/" + SID,
+                                                "last_activity": "2026-11-11T12:58:12Z"}
+    assert rows["video-tools"]["session"] is None           # its only session is archived
+    assert rows["recipes"]["session"] is None               # no Claude Code session was opened in its folder
+    assert tree(store) == before                            # the app's store is only read
+
+
+def test_status_reads_the_app_s_sessions_from_where_the_setting_says(world, tmp_path):
+    _nc, tools, _video = a_pair(world)
+    elsewhere = tmp_path / "my store" / "acct" / "org"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / (SID + ".json")).write_text(json.dumps(
+        {"sessionId": SID, "cwd": tools, "isArchived": False, "lastActivityAt": 1794401892175}))
+    world.write_conf(f"APP_SESSIONS={tmp_path / 'my store'}\n")
+    world.listing([entry("recipes-tools")])
+    code, out, _err = world.conduct("status", "--json")
+    assert code == 0 and json.loads(out)["mailboxes"][0]["session"]["id"] == SID
+
+
+def test_status_finds_the_session_of_a_mailbox_whose_project_cannot_be_started(world):
+    bare = os.path.join(world.code, "bernstein-code")       # a folder with no lobster.conf, as bernstein's own
+    os.makedirs(bare)
+    app_store(world, [(SID, bare, 1794401892175, False)])
+    world.listing([entry("bernstein", "fresh")])
+    code, out, _err = world.conduct("status", "--json")
+    row = json.loads(out)["mailboxes"][0]
+    assert code == 0 and row["kind"] is None and row["refused"].endswith("has no lobster.conf: is it a lobster project?")
+    assert row["folder"] == bare and row["session"]["id"] == SID
+
+
+def test_status_works_as_before_when_the_app_s_store_is_not_there_or_holds_rubbish(world):
+    a_pair(world)
+    world.listing([entry("recipes-tools")])
+    code, out, err = world.conduct("status", "--json")       # no store at all under this HOME
+    assert (code, err) == (0, "") and json.loads(out)["mailboxes"][0]["session"] is None
+    store = app_store(world, [])
+    with open(os.path.join(store, "acct", "org", SID + ".json"), "w") as f:
+        f.write("not json")
+    code, out, err = world.conduct("status")
+    assert (code, err) == (0, "") and out.startswith("recipes-tools  off")
+
+
+def test_a_mailbox_whose_project_is_in_two_places_has_no_folder_and_no_session(world):
+    world.project("recipes", "non-code")
+    os.makedirs(os.path.join(world.code, "recipes"))            # the same name among the code projects too
+    app_store(world, [(SID, os.path.join(world.code, "recipes"), 1794401892175, False)])
+    world.listing([entry("recipes")])
+    code, out, _err = world.conduct("status", "--json")
+    row = json.loads(out)["mailboxes"][0]
+    assert code == 0 and "is in two places" in row["refused"]
+    assert row["folder"] is None and row["session"] is None

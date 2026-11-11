@@ -20,3 +20,6 @@
 #PODIUM_PORT=8417
 # Where podium adds a line for everything it runs (the folder is made if missing).
 #PODIUM_LOG=~/.bernstein/podium.log
+# Where the Claude desktop app keeps its Claude Code sessions: read, never written, to link each
+# project to its newest session.
+#APP_SESSIONS=~/Library/Application Support/Claude/claude-code-sessions

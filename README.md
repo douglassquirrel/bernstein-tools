@@ -223,8 +223,8 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
   `state`, `kind` (`non-code`, `code`, or `null` when the project cannot be read), `folder`, `model`,
   `effort`, `sister`, `claws` (for a non-code project, the tools projects it works with, its sister
   first), `serves` (for a tools project, the non-code projects that name it), `refused` (why `start`
-  would refuse, or `null`), and `duty`, `pace`, `new`, `open`, `handover_waiting` and `reported` as
-  `lobster-mail duty status --all --json` gives them. `reported` needs a `lobster-tools` with the
+  would refuse, or `null`), `session` (below), and `duty`, `pace`, `new`, `open`, `handover_waiting` and
+  `reported` as `lobster-mail duty status --all --json` gives them. `reported` needs a `lobster-tools` with the
   `status` verb (10 November 2026); with an older one it is always `null`.
 
 `start` checks the project before it sends or opens anything, and refuses (exit 3) with a message
@@ -254,6 +254,14 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 | 4 | A program failed, or the duty listing could not be read |
 | 5 | `--wait` ran out before the handover arrived |
 
+  `session` is the newest Claude Code session, not archived, that the Claude desktop app has for the
+  project's folder: `{"id", "link", "last_activity"}`, or `null` when there is none. The link
+  (`claude://claude.ai/epitaxy/<id>`) opens that session in the app. `conduct` finds it by reading the
+  app's own session files (the setting `APP_SESSIONS`, `~/Library/Application Support/Claude/
+  claude-code-sessions` unless set), which it never writes; that store is the app's and undocumented, so
+  if it is missing or changes shape every `session` is simply `null`. A Claude session of a non-code
+  project is not kept there, so those rows have no link. The text form does not show it.
+
 ## podium: a page showing every session, with buttons
 
 ```
@@ -270,6 +278,10 @@ until 10:20 UTC`), and `overdue since` once its finish time has passed. The page
 every 15 seconds and when you press Refresh, follows your light or dark setting, and works at the
 width of a phone. It is set in EB Garamond if that typeface is installed on the Mac, and in Georgia if
 not; nothing is fetched from anywhere, so no font is downloaded.
+
+A line whose project has a Claude Code session in the desktop app starts its buttons with **Open**, a link
+that takes you straight to the newest one that is not archived (your browser may ask once whether the page
+may open Claude). It is there for bernstein's own line too.
 
 Each line has buttons for what can be done to that session now: **Start** when nobody is on duty and
 `conduct` could start the project; **Stop**, **Dormant** and **Dream** when it is running; **Wake** when
@@ -441,6 +453,9 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
   anything is sent. Every run is added to a log, `~/.bernstein/podium.log` unless the new setting
   `PODIUM_LOG` says otherwise.
 - 10 November 2026: podium's dialog shows what it is waiting for, and for how long, while `conduct` runs.
+- 11 November 2026: `conduct status --json` gives each project a `session` link to its newest Claude Code
+  session in the desktop app, and podium shows it as "Open". A new setting, `APP_SESSIONS`, says where the
+  app keeps its sessions.
 - 10 November 2026: podium's page is restyled (a cream page, white cards, an orange accent, a serif face) and
   made more compact: a line no longer says "nobody on duty", "pace normal", "0 new" or "0 open".
 - 10 November 2026: the Dormant and Dream messages now tell a session to report `dormant` or `dreaming`
