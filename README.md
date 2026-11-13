@@ -141,6 +141,24 @@ underscores, such as `{{NAME}}`, `{{TOOLS}}`, `{{SELF}}`, `{{SISTER}}`, `{{DATE}
 `{{EFFORT}}`, is filled in; an unknown one is an error. Any other `{{…}}` is left as written, for
 the project's first session to complete.
 
+**Global files.** A template may own some files in every project's folder: the rules and routines
+that are the same everywhere, kept apart from what a project writes for itself. It names them in
+`common/global-files`, one path a line relative to a project's folder (`#` starts a comment), for
+example:
+
+```
+LOBSTER-RULES.md
+START-HERE.txt
+inbox/README.md
+```
+
+A global file must read the same every day, so it may not use `{{DATE}}`; `{{TEMPLATE_VERSION}}`
+is the line in `common/version` (empty when there is none). A project never edits a global file.
+`conform` lists one that is missing or no longer equals the template's render for that project's
+own names, folders and claws, and `conduct start` replaces any that are behind (below). In a
+public tools project a global file sits beside the checkout, like `CLAUDE.md`, and is never
+committed in it. A template without the list has no global files, and nothing below changes.
+
 ## conduct: starting and stopping a project's session
 
 ```
@@ -155,7 +173,8 @@ conduct status  [--json]
 `conduct` talks to a lobster project's session by mail, as `bernstein`; each project's guidance
 says to act on bernstein's mail at once (since 8 November 2026, apart from a request for a tool,
 which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty status
---all`, and never writes in a project's folder.
+--all`, and writes in a project's folder only to bring the template's global files up to date
+at a start (below).
 
 - **`start`** refuses if a session is already on duty for the project. Otherwise it sets the mail
   pace if `--pace` is given, mails a Start message (follow `START-HERE.txt` from the top, clear any
@@ -166,6 +185,14 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
   beside it, and `lobster-tools` connected; a Claude Code session for a tools project. You
   confirm the folders and send the prefilled first line. For a Claude Code session it reminds you
   to have a bernstein session set its model and effort, which a program cannot do.
+  **Global files.** If the template names global files and the project has them all, `start`
+  replaces each one that no longer equals the template's render, whole, before it sends anything:
+  the old copy goes to the project's `_to_delete/before-global-update-<date>-<time>/`, the Start
+  message tells the session which files changed and asks it to commit them, and `--dry-run` prints
+  "Would bring up to date in …" and writes nothing. No other file is touched, and a start that is
+  refused touches none. A project that lacks one of the global files does not keep them apart yet:
+  it is left exactly as it is, and `start` says so. If an old copy cannot be kept, nothing is
+  replaced, sent or opened (exit 4).
   **The session's name** is the project and the day ("recipes-tools · 18 October"), or `--name TEXT`
   (one line, at most 60 characters; an empty, two-line or longer name is exit 2). A program cannot
   rename a session in the app, so the name travels two ways: the Start message asks the session to
@@ -380,7 +407,12 @@ and EFFORT), for a non-code project every claw in CLAWS present in the code fold
 `common/sections/` and each heading naming the pair, the Inbox and Mail sections in the template's
 exact wording (blank lines aside), a git repository, `backlog/`, the mailbox, and, for a public tools
 project, none of the outer files (CLAUDE.md, PLAN.md, DIARY.md, START-HERE.txt, `lobster.conf`,
-`inbox/`, `.claude/`) inside the checkout. For example, for a pair brought into line:
+`inbox/`, `.claude/`, and the template's global files) inside the checkout. When the template names
+global files, each must be in the project's folder and equal the template's render for that project:
+one that is absent is `missing: <file>, one of the template's global files`, and one in other words
+is `missing: the template's current <file> (a global file: conduct start brings it up to date)`. A
+template whose global file would read differently on another day is exit 4. For example, for a
+pair brought into line:
 
 ```
 $ ./conform training-video training-video-tools
@@ -492,6 +524,10 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 - 13 November 2026: `conduct start` names each session: the project and the day by default, or
   `--name TEXT`. The Start message now asks the session to title itself, and the first line you
   send begins with the name. podium's Start dialog has a "name" field.
+- 13 November 2026: a template can name **global files** (`common/global-files`), which it owns in
+  every project's folder. `conform` lists one that is missing or behind, and `conduct start` brings
+  those that are behind up to date before it opens the session, keeping the old copies in the
+  project's `_to_delete/`. A project without them all is not touched.
 
 ## Contributing
 

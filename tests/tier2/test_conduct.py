@@ -606,3 +606,120 @@ def test_start_dry_run_shows_the_name_the_session_would_be_given(world):
     code, out, _err = world.conduct("start", "--dry-run", "recipes-tools", "--name", "Sunday")
     assert code == 0 and "Would name the session: Sunday\n" in out
     assert sent(world) == [] and opened(world) == []
+
+
+def split_claw(world, rules="Rules v1 for recipes-tools.\n"):
+    """A tools project that keeps the template's global files apart, and a template whose rules have moved on."""
+    from conftest import write_tree
+    folder = world.project("recipes-tools", "code")
+    write_tree(world.template, {"common/global-files": "RULES.md\nSTART-HERE.txt\n",
+                                "code/RULES.md": "Rules v2 for {{TOOLS}}, serving {{SERVING}}.\n"})
+    write_tree(folder, {"RULES.md": rules, "CLAUDE.md": "The project's own.\n"})
+    world.duty({"recipes-tools": None})
+    return folder
+
+
+def test_start_brings_a_split_projects_global_files_up_to_date_before_the_session_opens(world):
+    from conftest import tree
+    folder = split_claw(world)
+    code, out, err = world.conduct("start", "recipes-tools")
+    assert code == 0, err
+    files = tree(folder)
+    assert files["RULES.md"] == b"Rules v2 for recipes-tools, serving `recipes`.\n"
+    assert files["_to_delete/before-global-update-2026-10-18-0940/RULES.md"] == b"Rules v1 for recipes-tools.\n"
+    assert files["CLAUDE.md"] == b"The project's own.\n" and files["START-HERE.txt"] == b"Start recipes-tools.\n"
+    assert sorted(files) == ["CLAUDE.md", "RULES.md", "START-HERE.txt",
+                             "_to_delete/before-global-update-2026-10-18-0940/RULES.md", "lobster.conf"]
+    assert ("bernstein brought this project's global files up to date just before this session started:\n"
+            "RULES.md. They are the template's and are never edited here; the copies they replaced are in\n"
+            "_to_delete/before-global-update-2026-10-18-0940/. Read them as they are now, say so in the diary,\n"
+            "and commit them with your next commit.\n\n") in sent(world)[0]["stdin"]
+    assert f"Brought up to date in {folder}: RULES.md (the old copies are in " in out
+    assert len(opened(world)) == 1
+
+
+def test_start_dry_run_says_which_global_files_it_would_replace_and_writes_nothing(world):
+    from conftest import tree
+    folder = split_claw(world)
+    before = tree(folder)
+    code, out, _err = world.conduct("start", "--dry-run", "recipes-tools")
+    assert code == 0 and f"Would bring up to date in {folder}: RULES.md\n" in out
+    assert tree(folder) == before and sent(world) == [] and opened(world) == []
+
+
+def test_start_leaves_a_project_that_is_not_split_exactly_as_it_is_and_says_so(world):
+    from conftest import tree, write_tree
+    folder = world.project("recipes-tools", "code")
+    write_tree(world.template, {"common/global-files": "RULES.md\nSTART-HERE.txt\n", "code/RULES.md": "Rules v2.\n"})
+    world.duty({"recipes-tools": None})
+    before = tree(folder)
+    code, out, err = world.conduct("start", "recipes-tools")
+    assert code == 0, err
+    assert tree(folder) == before
+    assert "global files" not in sent(world)[0]["stdin"]
+    assert ("recipes-tools does not keep the template's global files apart yet: its files are left as they are.\n"
+            in out)
+
+
+def test_start_changes_nothing_when_the_global_files_are_current_or_the_template_has_none(world):
+    from conftest import tree, write_tree
+    folder = split_claw(world, rules="Rules v2 for recipes-tools, serving `recipes`.\n")
+    before = tree(folder)
+    code, out, _err = world.conduct("start", "recipes-tools")
+    assert code == 0 and tree(folder) == before
+    assert "global files" not in sent(world)[0]["stdin"] and "up to date" not in out and "apart" not in out
+    os.remove(os.path.join(world.template, "common", "global-files"))
+    write_tree(folder, {"RULES.md": "anything\n"})
+    code, out, _err = world.conduct("start", "recipes-tools")
+    assert code == 0 and tree(folder)["RULES.md"] == b"anything\n" and "apart" not in out
+
+
+def test_start_that_is_refused_never_touches_the_global_files(world):
+    from conftest import tree
+    folder = split_claw(world)
+    before = tree(folder)
+    world.duty({"recipes-tools": "fresh"})
+    assert world.conduct("start", "recipes-tools")[0] == 3
+    world.duty({"recipes-tools": None})
+    world.fail("lobster-mail:send")
+    assert world.conduct("start", "recipes-tools", "--name", "")[0] == 2
+    assert tree(folder) == before
+
+
+def test_start_with_a_template_whose_global_file_carries_the_date_is_exit_4_and_nothing_happens(world):
+    from conftest import tree, write_tree
+    folder = split_claw(world)
+    write_tree(world.template, {"code/RULES.md": "Rules of {{DATE}}.\n"})
+    before = tree(folder)
+    code, out, err = world.conduct("start", "recipes-tools")
+    assert (code, out) == (4, "")
+    assert err == ("conduct: the template cannot be read: code/RULES.md is a global file and must read the same "
+                   "every day: use {{TEMPLATE_VERSION}} in it, not {{DATE}}\n")
+    assert tree(folder) == before and sent(world) == [] and opened(world) == []
+
+
+def test_start_renders_a_non_code_projects_global_files_with_its_own_folder_and_claws(world):
+    from conftest import tree, write_tree
+    nc = world.project("recipes", "non-code", under="eat", claws=("knives",))
+    world.project("recipes-tools", "code", under="eat")
+    world.project("knives", "code", sister="")
+    write_tree(world.template, {"common/global-files": "RULES.md\n",
+                                "non-code/RULES.md": "{{SELF}} at {{NONCODE_PATH}}, tools at {{TOOLS_PATH}}, {{CLAW_NAMES}}.\n"})
+    write_tree(nc, {"RULES.md": "old\n"})
+    world.duty({"recipes": None})
+    code, _out, err = world.conduct("start", "recipes")
+    assert code == 0, err
+    assert tree(nc)["RULES.md"] == (b"recipes at ~/projects/non-code/eat/recipes, tools at "
+                                    b"~/projects/code/eat/recipes-tools, recipes-tools and knives.\n")
+
+
+def test_start_that_cannot_keep_the_old_copy_replaces_nothing_and_sends_and_opens_nothing(world):
+    from conftest import tree, write_tree
+    folder = split_claw(world)
+    write_tree(folder, {"_to_delete": "a file where the folder should be\n"})
+    before = tree(folder)
+    code, out, err = world.conduct("start", "recipes-tools")
+    assert (code, out) == (4, "")
+    assert err.startswith(f"conduct: a global file in {folder} could not be replaced (")
+    assert err.endswith("): nothing was sent or opened\n")
+    assert tree(folder) == before and sent(world) == [] and opened(world) == []

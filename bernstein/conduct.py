@@ -15,7 +15,8 @@ import subprocess
 import urllib.parse
 from types import SimpleNamespace
 
-from bernstein.render import MONTHS
+from bernstein import globalfiles
+from bernstein.render import MONTHS, TemplateRefused
 from bernstein.settings import SettingsRefused, read_settings
 
 PACES = ("eager", "normal", "relaxed")
@@ -60,8 +61,9 @@ def name_refusal(text):
     return None
 
 
-def start_message(brief, today, name):
-    """The body of the Start message: follow START-HERE.txt, name the session, then the brief or wait."""
+def start_message(brief, today, name, updated=(), kept=None):
+    """The body of the Start message: follow START-HERE.txt, name the session, say which global files
+    bernstein has just replaced, then the brief or wait."""
     text = (f"Start (from bernstein, {day(today)}).\n\n"
             "Squirrel has started this session through bernstein. Follow START-HERE.txt in this\n"
             "project's folder from the top: step 0 (the model and effort question) first, then the\n"
@@ -70,6 +72,11 @@ def start_message(brief, today, name):
             f"This session's name is \"{name}\". If you have a tool that names or renames a\n"
             "session, give this session (\"self\") exactly that title now, so Squirrel can find it in his list;\n"
             "if you have no such tool, say so in your reply to this message.\n\n")
+    if updated:
+        text += ("bernstein brought this project's global files up to date just before this session started:\n"
+                 f"{', '.join(updated)}. They are the template's and are never edited here; the copies they "
+                 f"replaced are in\n_to_delete/{os.path.basename(kept)}/. Read them as they are now, say so in "
+                 "the diary,\nand commit them with your next commit.\n\n")
     if brief is None:
         return text + "Then wait for Squirrel.\n"
     return text + "Then this brief, from Squirrel:\n\n" + brief
@@ -299,6 +306,19 @@ def find_project(name, non_code_dir, code_dir):
     return SimpleNamespace(name=name, kind=kind, folder=folder, checkout=checkout, sister=sister, claws=claws,
                            claw_names=claw_names, model=settings.get("MODEL", ""),
                            effort=settings.get("EFFORT", ""))
+
+
+def global_files_of(project, s, home, today):
+    """The template's global files rendered for a project found by find_project; none if it names none."""
+    if project.kind == "non-code":
+        other = project.claws[0][0]
+    else:
+        try:
+            other = locate(project.sister, s["NON_CODE_DIR"], non_code_folder_in) if project.sister else None
+        except ProjectRefused:
+            other = None
+    return globalfiles.renders(s, project.kind, project.name, project.sister, project.folder, project.checkout,
+                               other, project.claw_names[1:], home, today.date())
 
 
 def encode(params):
@@ -589,14 +609,34 @@ def start(a, s, env, today, out, err, sleep):
         raise Stop(3, f"a session is already running for {a.project}: {d['holder']} has been on duty since "
                       f"{d['since']}, last beat {d['last_beat']}")
     name = session_name(a.project, today, a.name)
-    body = start_message(brief, today, name)
+    try:
+        rendered = global_files_of(project, s, env["HOME"], today)
+    except (TemplateRefused, OSError) as why:
+        raise Stop(4, f"the template cannot be read: {why}")
+    split = globalfiles.is_split(rendered, project.folder)
+    behind = [rel for rel, how in globalfiles.state(rendered, project.folder) if how == "behind"] if split else []
     link = link_for(project, s["MAIL_ROOT"], os.path.dirname(s["LOBSTER_MAIL"]), name)
     if a.dry_run:
+        body = start_message(brief, today, name)
         out.write(f"Would send to {a.project}, as bernstein, subject \"Start: {a.project}\":\n\n{body}\n")
+        if behind:
+            out.write(f"Would bring up to date in {project.folder}: {', '.join(behind)}\n")
         out.write(f"Would open:\n  {link}\n")
         out.write(f"Would name the session: {name}\n")
         out.write("Dry run: nothing was sent or opened.\n")
         return
+    updated, kept = [], None
+    if behind:
+        try:
+            updated, kept = globalfiles.bring_up_to_date(rendered, project.folder, f"{today:%Y-%m-%d-%H%M}")
+        except OSError as why:
+            raise Stop(4, f"a global file in {project.folder} could not be replaced ({why.strerror}): "
+                          "nothing was sent or opened")
+        out.write(f"Brought up to date in {project.folder}: {', '.join(updated)} (the old copies are in {kept})\n")
+    elif rendered and not split:
+        out.write(f"{a.project} does not keep the template's global files apart yet: its files are left as "
+                  "they are.\n")
+    body = start_message(brief, today, name, updated, kept)
     if a.pace:
         pace(s, env, a.project, a.pace)
     send(s, env, a.project, f"Start: {a.project}", body, err)
