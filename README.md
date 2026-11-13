@@ -227,11 +227,12 @@ at a start (below).
   replaced, sent or opened (exit 4).
   **The session's name** is the project and the day ("recipes-tools · 18 October"), or `--name TEXT`
   (one line, at most 60 characters; an empty, two-line or longer name is exit 2). A program cannot
-  rename a session in the app, so the name travels two ways: the Start message asks the session to
-  give itself exactly that title if it has a tool for naming a session (and to say so if it has
-  none), and the prefilled first line begins with the name, which is what the app titles a new
-  session from. `--dry-run` prints "Would name the session: …". podium's Start dialog has a field
-  for the name.
+  rename a session in the app, so the name travels two ways. The prefilled first line begins
+  "Session title: <name>.", since the app titles a new session from its first message (it writes its
+  own summary, so this steers the title rather than setting it). And the Start message asks a Claude
+  Code session to give itself exactly that title with the app's tool for naming a session; a Claude
+  Cowork session (a non-code project or a feeler) has no such tool, so it is only told its name.
+  `--dry-run` prints "Would name the session: …". podium's Start dialog has a field for the name.
 - **`finish`** is for a feeler (below): it mails a running feeler a Finish message asking it to write up
   what it found in its CLAUDE.md, list every script in its `tools/` with a proposal for each (offer it
   to a claw by mail, on your OK, or leave it as a record), bring its state up to date, commit, hand
@@ -570,6 +571,9 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
   (no tools project, Backlog or inbox; mail at the relaxed pace), `conduct` starts it like any
   project, and `conduct finish <feeler>` asks it to write up and hand over. A project's
   `lobster.conf` may now say `KIND=feeler`.
+- 13 November 2026, later: the first line of a new session now begins "Session title: <name>.", and
+  only a Claude Code session is asked to rename itself: a Claude Cowork session cannot (its first
+  start under the new naming was titled "Literary agent folder setup" by the app).
 
 ## Contributing
 

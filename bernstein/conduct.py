@@ -61,17 +61,23 @@ def name_refusal(text):
     return None
 
 
-def start_message(brief, today, name, updated=(), kept=None):
-    """The body of the Start message: follow START-HERE.txt, name the session, say which global files
-    bernstein has just replaced, then the brief or wait."""
+def start_message(brief, today, name, updated=(), kept=None, can_rename=True):
+    """The body of the Start message: follow START-HERE.txt, name the session (a Claude Code session can
+    give itself its name; a Claude Cowork session cannot), say which global files bernstein has just
+    replaced, then the brief or wait."""
     text = (f"Start (from bernstein, {day(today)}).\n\n"
             "Squirrel has started this session through bernstein. Follow START-HERE.txt in this\n"
             "project's folder from the top: step 0 (the model and effort question) first, then the\n"
             "mail and the rest. If lobster-mail start says a status is being reported for this mailbox, an\n"
-            "earlier session left it: clear it with the command start prints.\n\n"
-            f"This session's name is \"{name}\". If you have a tool that names or renames a\n"
-            "session, give this session (\"self\") exactly that title now, so Squirrel can find it in his list;\n"
-            "if you have no such tool, say so in your reply to this message.\n\n")
+            "earlier session left it: clear it with the command start prints.\n\n")
+    if can_rename:
+        text += (f"This session's name is \"{name}\". If you have a tool that names or renames a\n"
+                 "session, give this session (\"self\") exactly that title now, so Squirrel can find it in his list;\n"
+                 "if you have no such tool, say so in your reply to this message.\n\n")
+    else:
+        text += (f"This session's name is \"{name}\": the first line Squirrel sent begins with it, so\n"
+                 "that the app titles the session from it. A Claude Cowork session has no tool for naming a session,\n"
+                 "so there is nothing to do or to report about the name.\n\n")
     if updated:
         text += ("bernstein brought this project's global files up to date just before this session started:\n"
                  f"{', '.join(updated)}. They are the template's and are never edited here; the copies they "
@@ -358,11 +364,11 @@ def link_for(project, mail_root, lobster_tools, name):
         for checkout, secrets in project.claws:
             folders += [checkout] + ([secrets] if secrets else [])
         folders.append(lobster_tools)
-        q = (f"{name}. Read START-HERE.txt in the {project.name} folder (mounted at ~/mnt/{project.name}) and do "
+        q = (f"Session title: {name}. Read START-HERE.txt in the {project.name} folder (mounted at ~/mnt/{project.name}) and do "
              f"what it says, starting with its step 0 before anything else. If ~/mnt/{project.name} is not "
              f"there, say \"the app opened me without the {project.name} folder\" and stop.")
         return "claude://cowork/new?" + encode([("folder", f) for f in folders] + [("q", q)])
-    q = (f"{name}. This session must work in {project.folder}. If your working folder is anything else, say \"the app "
+    q = (f"Session title: {name}. This session must work in {project.folder}. If your working folder is anything else, say \"the app "
          "opened me in the wrong folder\" and stop. Otherwise read START-HERE.txt there and do what it says, "
          "starting with its step 0 before anything else.")
     return "claude://code/new?" + encode([("folder", project.folder), ("q", q)])
@@ -648,7 +654,7 @@ def start(a, s, env, today, out, err, sleep):
     behind = [rel for rel, how in globalfiles.state(rendered, project.folder) if how == "behind"] if split else []
     link = link_for(project, s["MAIL_ROOT"], os.path.dirname(s["LOBSTER_MAIL"]), name)
     if a.dry_run:
-        body = start_message(brief, today, name)
+        body = start_message(brief, today, name, can_rename=project.kind == "code")
         out.write(f"Would send to {a.project}, as bernstein, subject \"Start: {a.project}\":\n\n{body}\n")
         if behind:
             out.write(f"Would bring up to date in {project.folder}: {', '.join(behind)}\n")
@@ -667,7 +673,7 @@ def start(a, s, env, today, out, err, sleep):
     elif rendered and not split:
         out.write(f"{a.project} does not keep the template's global files apart yet: its files are left as "
                   "they are.\n")
-    body = start_message(brief, today, name, updated, kept)
+    body = start_message(brief, today, name, updated, kept, can_rename=project.kind == "code")
     if a.pace:
         pace(s, env, a.project, a.pace)
     send(s, env, a.project, f"Start: {a.project}", body, err)

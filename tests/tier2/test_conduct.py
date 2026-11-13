@@ -571,7 +571,7 @@ def test_start_names_the_session_for_the_project_and_the_day_in_the_message_the_
     code, out, err = world.conduct("start", "recipes-tools")
     assert code == 0, err
     assert "This session's name is \"recipes-tools · 18 October\"." in sent(world)[0]["stdin"]
-    assert "&q=recipes-tools%20%C2%B7%2018%20October.%20This%20session%20must%20work%20in" in opened(world)[0][0]
+    assert "&q=Session%20title%3A%20recipes-tools%20%C2%B7%2018%20October.%20This%20session%20must%20work%20in" in opened(world)[0][0]
     assert "The session is to be named: recipes-tools · 18 October\n" in out
 
 
@@ -583,7 +583,7 @@ def test_start_takes_a_name_as_data_with_quotes_dollars_and_accents(world):
     assert code == 0, err
     assert f"This session's name is \"{name}\"." in sent(world)[0]["stdin"]
     assert opened(world)[0][0].split("&q=")[1].startswith(
-        "Fix%20%22oven%22%20%24HOME%20%3C%2Fscript%3E%20%C3%A9%5C.%20This%20session")
+        "Session%20title%3A%20Fix%20%22oven%22%20%24HOME%20%3C%2Fscript%3E%20%C3%A9%5C.%20This%20session")
     assert f"The session is to be named: {name}\n" in out
 
 
@@ -743,7 +743,7 @@ def test_start_opens_a_feeler_as_a_claude_session_with_its_folder_the_mail_its_c
     enc = lambda s: s.replace("/", "%2F").replace(" ", "%20")
     link = opened(world)[0][0]
     assert link.startswith("claude://cowork/new?folder=" + enc(folder) + "&folder=" + enc(world.mail)
-                           + "&folder=" + enc(knives) + "&folder=" + enc(world.bin) + "&q=agents%20%C2%B7%2018%20October.%20Read%20START-HERE.txt")
+                           + "&folder=" + enc(knives) + "&folder=" + enc(world.bin) + "&q=Session%20title%3A%20agents%20%C2%B7%2018%20October.%20Read%20START-HERE.txt")
     assert sent(world)[0]["args"][:7] == ["send", "--as", "bernstein", "--to", "agents", "--subject", "Start: agents"]
     assert "Opened a Claude session for agents: confirm its folders, then send its first line.\n" in out
 
@@ -839,3 +839,17 @@ def test_finish_dry_run_shows_the_message_and_sends_nothing(world):
     code, out, _err = world.conduct("finish", "--dry-run", "agents")
     assert code == 0 and "Would send to agents, as bernstein, subject \"Finish: write up and hand over\":" in out
     assert out.endswith("Dry run: nothing was sent.\n") and sent(world) == []
+
+
+def test_only_a_claude_code_session_is_asked_to_give_itself_its_name(world):
+    world.project("recipes", "non-code")
+    world.project("recipes-tools", "code")
+    feeler(world)
+    world.duty({"recipes": None, "recipes-tools": None, "agents": None})
+    for project in ("recipes", "recipes-tools", "agents"):
+        assert world.conduct("start", project)[0] == 0
+    cowork, code, one_off = [m["stdin"] for m in sent(world)]
+    assert "If you have a tool that names or renames a" in code
+    for message in (cowork, one_off):
+        assert "If you have a tool that names or renames a" not in message
+        assert "there is nothing to do or to report about the name." in message

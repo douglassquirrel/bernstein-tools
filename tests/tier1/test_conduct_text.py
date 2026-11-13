@@ -118,7 +118,7 @@ def test_the_link_for_a_non_code_project_connects_its_four_folders(tmp_path):
     enc = lambda s: s.replace("/", "%2F")
     assert link == ("claude://cowork/new?folder=" + enc(p.folder) + "&folder=%2Fm%2Fmail"
                     "&folder=" + enc(p.claws[0][0]) + "&folder=%2Fl%2Flobster-tools"
-                    "&q=" + quote("recipes · 18 October. Read START-HERE.txt in the recipes folder (mounted at ~/mnt/recipes) and do "
+                    "&q=" + quote("Session title: recipes · 18 October. Read START-HERE.txt in the recipes folder (mounted at ~/mnt/recipes) and do "
                                   "what it says, starting with its step 0 before anything else. If ~/mnt/recipes "
                                   "is not there, say \"the app opened me without the recipes folder\" and stop."))
 
@@ -128,7 +128,7 @@ def test_the_link_for_a_tools_project_opens_claude_code_in_its_folder(tmp_path):
     q = find_project("recipes-tools", str(tmp_path / "non-code"), str(tmp_path / "code"))
     assert link_for(q, "/m/mail", "/l/lobster-tools", "Fix the \"oven\" & more") == (
         "claude://code/new?folder=" + quote(q.folder) + "&q=" + quote(
-            "Fix the \"oven\" & more. This session must work in " + q.folder + ". If your working folder is anything else, say \"the app "
+            "Session title: Fix the \"oven\" & more. This session must work in " + q.folder + ". If your working folder is anything else, say \"the app "
             "opened me in the wrong folder\" and stop. Otherwise read START-HERE.txt there and do what it says, "
             "starting with its step 0 before anything else."))
 
@@ -243,3 +243,17 @@ def test_the_dream_subject_names_the_finish_time():
 def test_a_dream_that_ends_dormant_does_not_archive_the_session():
     from bernstein.conduct import dream_message
     assert "archive" not in dream_message("recipes", MORNING, 60, "dormant")
+
+
+def test_a_session_that_cannot_rename_itself_is_told_its_name_and_asked_for_nothing():
+    text = start_message(None, DAY, "recipes · 18 October", can_rename=False)
+    assert text == (
+        "Start (from bernstein, 18 October 2026).\n\n"
+        "Squirrel has started this session through bernstein. Follow START-HERE.txt in this\n"
+        "project's folder from the top: step 0 (the model and effort question) first, then the\n"
+        "mail and the rest. If lobster-mail start says a status is being reported for this mailbox, an\n"
+        "earlier session left it: clear it with the command start prints.\n\n"
+        "This session's name is \"recipes · 18 October\": the first line Squirrel sent begins with it, so\n"
+        "that the app titles the session from it. A Claude Cowork session has no tool for naming a session,\n"
+        "so there is nothing to do or to report about the name.\n\n"
+        "Then wait for Squirrel.\n")
