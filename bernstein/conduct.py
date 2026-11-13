@@ -39,13 +39,37 @@ def day(today):
     return f"{today.day} {MONTHS[today.month - 1]} {today.year}"
 
 
-def start_message(brief, today):
-    """The body of the Start message: follow START-HERE.txt, then the brief or wait."""
+NAME_LIMIT = 60
+
+
+def session_name(project, today, given=None):
+    """What the session is called in the app's list: the name given, or the project and the day."""
+    if given is not None:
+        return given.strip()
+    return f"{project} · {today.day} {MONTHS[today.month - 1]}"
+
+
+def name_refusal(text):
+    """Why a name given for a session cannot be used, or None."""
+    if not text.strip():
+        return "the name is empty"
+    if "\n" in text or "\r" in text:
+        return "the name must be one line"
+    if len(text.strip()) > NAME_LIMIT:
+        return f"the name is longer than {NAME_LIMIT} characters"
+    return None
+
+
+def start_message(brief, today, name):
+    """The body of the Start message: follow START-HERE.txt, name the session, then the brief or wait."""
     text = (f"Start (from bernstein, {day(today)}).\n\n"
             "Squirrel has started this session through bernstein. Follow START-HERE.txt in this\n"
             "project's folder from the top: step 0 (the model and effort question) first, then the\n"
             "mail and the rest. If lobster-mail start says a status is being reported for this mailbox, an\n"
-            "earlier session left it: clear it with the command start prints.\n\n")
+            "earlier session left it: clear it with the command start prints.\n\n"
+            f"This session's name is \"{name}\". If you have a tool that names or renames a\n"
+            "session, give this session (\"self\") exactly that title now, so Squirrel can find it in his list;\n"
+            "if you have no such tool, say so in your reply to this message.\n\n")
     if brief is None:
         return text + "Then wait for Squirrel.\n"
     return text + "Then this brief, from Squirrel:\n\n" + brief
@@ -281,18 +305,18 @@ def encode(params):
     return urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
 
 
-def link_for(project, mail_root, lobster_tools):
+def link_for(project, mail_root, lobster_tools, name):
     """The documented desktop-app link that opens the project's session with its first line."""
     if project.kind == "non-code":
         folders = [project.folder, mail_root]
         for checkout, secrets in project.claws:
             folders += [checkout] + ([secrets] if secrets else [])
         folders.append(lobster_tools)
-        q = (f"Read START-HERE.txt in the {project.name} folder (mounted at ~/mnt/{project.name}) and do "
+        q = (f"{name}. Read START-HERE.txt in the {project.name} folder (mounted at ~/mnt/{project.name}) and do "
              f"what it says, starting with its step 0 before anything else. If ~/mnt/{project.name} is not "
              f"there, say \"the app opened me without the {project.name} folder\" and stop.")
         return "claude://cowork/new?" + encode([("folder", f) for f in folders] + [("q", q)])
-    q = (f"This session must work in {project.folder}. If your working folder is anything else, say \"the app "
+    q = (f"{name}. This session must work in {project.folder}. If your working folder is anything else, say \"the app "
          "opened me in the wrong folder\" and stop. Otherwise read START-HERE.txt there and do what it says, "
          "starting with its step 0 before anything else.")
     return "claude://code/new?" + encode([("folder", project.folder), ("q", q)])
@@ -306,7 +330,7 @@ class Parser(argparse.ArgumentParser):
 def parser():
     p = Parser(prog="conduct", description="Start a lobster project's session, or ask a running one to "
                "hand over and stop, by mail as bernstein.",
-               epilog="conduct start <project> [--brief FILE] [--pace LEVEL] [--dry-run]\n"
+               epilog="conduct start <project> [--brief FILE] [--pace LEVEL] [--name TEXT] [--dry-run]\n"
                       "conduct stop <project> | --all [--wait SECONDS] [--dry-run]\n"
                       "conduct dormant <project> | --all [--dry-run]\n"
                       "conduct wake <project> | --all [--dry-run]\n"
@@ -318,6 +342,8 @@ def parser():
     s.add_argument("project")
     s.add_argument("--brief", metavar="FILE", help="a file whose text is sent as the session's brief")
     s.add_argument("--pace", choices=PACES, help="set the mailbox's mail pace first")
+    s.add_argument("--name", metavar="TEXT", help="what the session is called in the app's list, one line "
+                   f"of at most {NAME_LIMIT} characters (default: the project and the day)")
     s.add_argument("--dry-run", action="store_true", help="show the message and the link; send and open nothing")
     t = verbs.add_parser("stop", help="ask a running session to hand over and stop")
     t.add_argument("project", nargs="?")
@@ -542,6 +568,8 @@ def send(s, env, to, subject, body, err):
 
 
 def start(a, s, env, today, out, err, sleep):
+    if a.name is not None and name_refusal(a.name):
+        raise Stop(2, f"{name_refusal(a.name)}: give --name one line of at most {NAME_LIMIT} characters")
     brief = None
     if a.brief is not None:
         try:
@@ -560,11 +588,13 @@ def start(a, s, env, today, out, err, sleep):
         d = boxes[a.project]["duty"]
         raise Stop(3, f"a session is already running for {a.project}: {d['holder']} has been on duty since "
                       f"{d['since']}, last beat {d['last_beat']}")
-    body = start_message(brief, today)
-    link = link_for(project, s["MAIL_ROOT"], os.path.dirname(s["LOBSTER_MAIL"]))
+    name = session_name(a.project, today, a.name)
+    body = start_message(brief, today, name)
+    link = link_for(project, s["MAIL_ROOT"], os.path.dirname(s["LOBSTER_MAIL"]), name)
     if a.dry_run:
         out.write(f"Would send to {a.project}, as bernstein, subject \"Start: {a.project}\":\n\n{body}\n")
         out.write(f"Would open:\n  {link}\n")
+        out.write(f"Would name the session: {name}\n")
         out.write("Dry run: nothing was sent or opened.\n")
         return
     if a.pace:
@@ -572,6 +602,7 @@ def start(a, s, env, today, out, err, sleep):
     send(s, env, a.project, f"Start: {a.project}", body, err)
     out.write(f"Sent the Start message to {a.project}.\n")
     run(["open", link], env, "open")
+    out.write(f"The session is to be named: {name}\n")
     if project.kind == "non-code":
         out.write(f"Opened a Claude session for {a.project}: confirm its folders, then send its first line.\n")
     else:

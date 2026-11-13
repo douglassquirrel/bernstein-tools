@@ -431,6 +431,8 @@ input[type="number"] { width: 6rem; }
     if (verb === "start") {
       add(field("A brief for the session (optional). It is sent word for word.", "act-brief"), "textarea", "",
           {id: "act-brief"});
+      add(field("A name for the session in the app's list (optional; else the project and the day)", "act-name"),
+          "input", "", {type: "text", id: "act-name", maxlength: "60"});
       var pace = add(field("Mail pace", "act-pace"), "select", "", {id: "act-pace"});
       add(pace, "option", "Leave as it is", {value: ""});
       ["eager", "normal", "relaxed"].forEach(function (level) { add(pace, "option", level, {value: level}); });
@@ -462,6 +464,7 @@ input[type="number"] { width: 6rem; }
     if (asked.verb === "start") {
       if (document.getElementById("act-brief").value !== "") { action.brief = document.getElementById("act-brief").value; }
       if (document.getElementById("act-pace").value !== "") { action.pace = document.getElementById("act-pace").value; }
+      if (document.getElementById("act-name").value !== "") { action.name = document.getElementById("act-name").value; }
     } else if (asked.verb === "stop") {
       if (document.querySelector('input[name="act-dream"]:checked').value === "yes") {
         action.verb = "dream";
@@ -840,7 +843,8 @@ class Refused(ValueError):
 
 PACES = ("eager", "normal", "relaxed")
 BRIEF_LIMIT = 20000
-OPTIONS = {"start": ("pace", "brief"), "stop": ("wait",), "dormant": (), "wake": (), "dream": ("minutes", "then")}
+NAME_LIMIT = 60
+OPTIONS = {"start": ("pace", "brief", "name"), "stop": ("wait",), "dormant": (), "wake": (), "dream": ("minutes", "then")}
 
 
 def whole(value, low, high):
@@ -885,6 +889,15 @@ def command_for(action, names):
         if brief is not None and len(brief) > BRIEF_LIMIT:
             raise Refused(f"the brief is longer than {BRIEF_LIMIT} characters")
         brief = brief or None
+        name = action.get("name")
+        if name is not None and not isinstance(name, str):
+            raise Refused("the name must be text")
+        if name is not None and name.strip():
+            if "\n" in name or "\r" in name:
+                raise Refused("the name must be one line")
+            if len(name.strip()) > NAME_LIMIT:
+                raise Refused(f"the name is longer than {NAME_LIMIT} characters")
+            argv += ["--name=" + name.strip()]
     if verb == "stop" and action.get("wait") is not None:
         if not whole(action["wait"], 1, 600):
             raise Refused("the wait must be a whole number of seconds from 1 to 600")

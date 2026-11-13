@@ -10,6 +10,10 @@ NAMES = {"bernstein", "recipes", "recipes-tools", "video tools"}
     ({"verb": "start", "project": "recipes", "pace": "eager"}, ["start", "recipes", "--pace", "eager"], None),
     ({"verb": "start", "project": "recipes", "brief": "Draft the menu.\n"}, ["start", "recipes"], "Draft the menu.\n"),
     ({"verb": "start", "project": "recipes", "brief": "", "pace": None}, ["start", "recipes"], None),
+    ({"verb": "start", "project": "recipes", "name": "  Sunday's \"menu\" $1  "},
+     ["start", "recipes", "--name=Sunday's \"menu\" $1"], None),
+    ({"verb": "start", "project": "recipes", "name": "-dash first"}, ["start", "recipes", "--name=-dash first"], None),
+    ({"verb": "start", "project": "recipes", "name": "   ", "pace": "eager"}, ["start", "recipes", "--pace", "eager"], None),
     ({"verb": "stop", "project": "recipes-tools"}, ["stop", "recipes-tools"], None),
     ({"verb": "stop", "project": "recipes", "wait": 120}, ["stop", "recipes", "--wait", "120"], None),
     ({"verb": "stop", "all": True}, ["stop", "--all"], None),
@@ -51,6 +55,10 @@ def test_an_action_from_the_page_becomes_conduct_s_arguments(action, argv, brief
     ({"verb": "dream", "project": "recipes", "brief": "x"}, "dream does not take brief"),
     ({"verb": "start", "project": "recipes", "pace": "fast"}, "the pace must be eager, normal or relaxed"),
     ({"verb": "start", "project": "recipes", "brief": 3}, "the brief must be text"),
+    ({"verb": "start", "project": "recipes", "name": 3}, "the name must be text"),
+    ({"verb": "start", "project": "recipes", "name": "one\ntwo"}, "the name must be one line"),
+    ({"verb": "start", "project": "recipes", "name": "x" * 61}, "the name is longer than 60 characters"),
+    ({"verb": "stop", "project": "recipes", "name": "x"}, "stop does not take name"),
     ({"verb": "start", "project": "recipes", "brief": "x" * 20001}, "the brief is longer than 20000 characters"),
     ({"verb": "stop", "project": "recipes", "wait": 0}, "the wait must be a whole number of seconds from 1 to 600"),
     ({"verb": "stop", "project": "recipes", "wait": 601}, "the wait must be a whole number of seconds from 1 to 600"),
@@ -79,3 +87,8 @@ def test_the_command_is_shown_as_it_could_be_typed_and_a_brief_by_its_length():
     assert podium.shown(["start", "recipes", "--pace", "eager"], "Draft the menu.\n") == \
         "conduct start recipes --pace eager --brief <the brief typed in podium, 16 characters>"
     assert podium.shown(["stop", "--all"], None, dry_run=True) == "conduct stop --all --dry-run"
+
+
+def test_the_start_dialog_has_a_field_for_the_session_s_name_and_sends_it():
+    assert 'id: "act-name"' in podium.PAGE and "maxlength: \"60\"" in podium.PAGE
+    assert 'action.name = document.getElementById("act-name").value' in podium.PAGE

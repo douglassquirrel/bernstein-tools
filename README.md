@@ -144,7 +144,7 @@ the project's first session to complete.
 ## conduct: starting and stopping a project's session
 
 ```
-conduct start   <project> [--brief FILE] [--pace eager|normal|relaxed] [--dry-run]
+conduct start   <project> [--brief FILE] [--pace eager|normal|relaxed] [--name TEXT] [--dry-run]
 conduct stop    <project> | --all  [--wait SECONDS] [--dry-run]
 conduct dormant <project> | --all  [--dry-run]
 conduct wake    <project> | --all  [--dry-run]
@@ -159,13 +159,20 @@ which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty 
 
 - **`start`** refuses if a session is already on duty for the project. Otherwise it sets the mail
   pace if `--pace` is given, mails a Start message (follow `START-HERE.txt` from the top, clear any
-  status an earlier session left reported for the mailbox, then the brief from `--brief FILE`, or
-  wait), and opens the session in the Claude desktop app with the
+  status an earlier session left reported for the mailbox, name the session, then the brief from
+  `--brief FILE`, or wait), and opens the session in the Claude desktop app with the
   documented link: a Claude session for a non-code project, with its folder, the mail root, its
   home claw, each further claw in `CLAWS`, each claw's `<claw>-secrets` folder when there is one
   beside it, and `lobster-tools` connected; a Claude Code session for a tools project. You
   confirm the folders and send the prefilled first line. For a Claude Code session it reminds you
   to have a bernstein session set its model and effort, which a program cannot do.
+  **The session's name** is the project and the day ("recipes-tools · 18 October"), or `--name TEXT`
+  (one line, at most 60 characters; an empty, two-line or longer name is exit 2). A program cannot
+  rename a session in the app, so the name travels two ways: the Start message asks the session to
+  give itself exactly that title if it has a tool for naming a session (and to say so if it has
+  none), and the prefilled first line begins with the name, which is what the app titles a new
+  session from. `--dry-run` prints "Would name the session: …". podium's Start dialog has a field
+  for the name.
 - **`stop`** mails a Stop message: hand over at the next safe point, then stop, and last of all archive
   the session so that it leaves your list (in Claude Code in the desktop app the session does this with
   the app's archive tool, which you approve on a card; a session with no such tool says so instead). `--all` asks every
@@ -482,6 +489,9 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
   with `lobster-mail status` and to clear it on waking; the Wake message tells it to clear it; the Start
   message tells a new session to clear a status an earlier one left. A session made dormant before this
   date shows as `quiet` once its duty is stale.
+- 13 November 2026: `conduct start` names each session: the project and the day by default, or
+  `--name TEXT`. The Start message now asks the session to title itself, and the first line you
+  send begins with the name. podium's Start dialog has a "name" field.
 
 ## Contributing
 

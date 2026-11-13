@@ -4,7 +4,15 @@ from urllib.parse import quote as urlquote
 
 import pytest
 
-from bernstein.conduct import ProjectRefused, find_project, link_for, start_message, stop_message
+from bernstein.conduct import (
+    ProjectRefused,
+    find_project,
+    link_for,
+    name_refusal,
+    session_name,
+    start_message,
+    stop_message,
+)
 
 DAY = datetime.date(2026, 10, 18)
 
@@ -13,18 +21,40 @@ def quote(text):
     return urlquote(text, safe="")
 
 
-def test_the_start_message_points_to_start_here_and_waits_without_a_brief():
-    assert start_message(None, DAY) == (
+def test_a_session_is_named_for_its_project_and_the_day_unless_a_name_is_given():
+    assert session_name("recipes-tools", DAY) == "recipes-tools · 18 October"
+    assert session_name("recipes", DAY, "  Sunday's menu  ") == "Sunday's menu"
+
+
+@pytest.mark.parametrize("given, why", [
+    ("", "the name is empty"),
+    ("   ", "the name is empty"),
+    ("one\ntwo", "the name must be one line"),
+    ("x" * 61, "the name is longer than 60 characters"),
+])
+def test_a_name_that_is_empty_has_two_lines_or_is_too_long_is_refused(given, why):
+    assert name_refusal(given) == why
+
+
+def test_a_name_of_sixty_characters_with_quotes_and_accents_is_accepted():
+    assert name_refusal("é\"$'<" + "x" * 55) is None
+
+
+def test_the_start_message_points_to_start_here_names_the_session_and_waits_without_a_brief():
+    assert start_message(None, DAY, "recipes · 18 October") == (
         "Start (from bernstein, 18 October 2026).\n\n"
         "Squirrel has started this session through bernstein. Follow START-HERE.txt in this\n"
         "project's folder from the top: step 0 (the model and effort question) first, then the\n"
         "mail and the rest. If lobster-mail start says a status is being reported for this mailbox, an\n"
         "earlier session left it: clear it with the command start prints.\n\n"
+        "This session's name is \"recipes · 18 October\". If you have a tool that names or renames a\n"
+        "session, give this session (\"self\") exactly that title now, so Squirrel can find it in his list;\n"
+        "if you have no such tool, say so in your reply to this message.\n\n"
         "Then wait for Squirrel.\n")
 
 
 def test_the_start_message_carries_the_brief_word_for_word():
-    text = start_message("Draft the menu for Sunday.\nKeep it vegetarian.\n", DAY)
+    text = start_message("Draft the menu for Sunday.\nKeep it vegetarian.\n", DAY, "recipes · 18 October")
     assert text.endswith("Then this brief, from Squirrel:\n\nDraft the menu for Sunday.\nKeep it vegetarian.\n")
 
 
@@ -84,11 +114,11 @@ def test_the_link_for_a_non_code_project_connects_its_four_folders(tmp_path):
     make(tmp_path, "non-code/recipes", "non-code", "recipes-tools")
     make(tmp_path, "code/recipes-tools", "code", "recipes")
     p = find_project("recipes", str(tmp_path / "non-code"), str(tmp_path / "code"))
-    link = link_for(p, "/m/mail", "/l/lobster-tools")
+    link = link_for(p, "/m/mail", "/l/lobster-tools", "recipes · 18 October")
     enc = lambda s: s.replace("/", "%2F")
     assert link == ("claude://cowork/new?folder=" + enc(p.folder) + "&folder=%2Fm%2Fmail"
                     "&folder=" + enc(p.claws[0][0]) + "&folder=%2Fl%2Flobster-tools"
-                    "&q=" + quote("Read START-HERE.txt in the recipes folder (mounted at ~/mnt/recipes) and do "
+                    "&q=" + quote("recipes · 18 October. Read START-HERE.txt in the recipes folder (mounted at ~/mnt/recipes) and do "
                                   "what it says, starting with its step 0 before anything else. If ~/mnt/recipes "
                                   "is not there, say \"the app opened me without the recipes folder\" and stop."))
 
@@ -96,9 +126,9 @@ def test_the_link_for_a_non_code_project_connects_its_four_folders(tmp_path):
 def test_the_link_for_a_tools_project_opens_claude_code_in_its_folder(tmp_path):
     make(tmp_path, "code/recipes-tools", "code", "recipes")
     q = find_project("recipes-tools", str(tmp_path / "non-code"), str(tmp_path / "code"))
-    assert link_for(q, "/m/mail", "/l/lobster-tools") == (
+    assert link_for(q, "/m/mail", "/l/lobster-tools", "Fix the \"oven\" & more") == (
         "claude://code/new?folder=" + quote(q.folder) + "&q=" + quote(
-            "This session must work in " + q.folder + ". If your working folder is anything else, say \"the app "
+            "Fix the \"oven\" & more. This session must work in " + q.folder + ". If your working folder is anything else, say \"the app "
             "opened me in the wrong folder\" and stop. Otherwise read START-HERE.txt there and do what it says, "
             "starting with its step 0 before anything else."))
 

@@ -563,3 +563,46 @@ def test_dream_needs_a_project_or_all_and_refuses_an_unknown_mailbox(world):
 def test_no_verb_names_all_six_verbs(world):
     code, _out, err = world.conduct()
     assert (code, err) == (2, "conduct: say start, stop, dormant, wake, dream or status (conduct --help shows the form)\n")
+
+
+def test_start_names_the_session_for_the_project_and_the_day_in_the_message_the_link_and_its_report(world):
+    world.project("recipes-tools", "code")
+    world.duty({"recipes-tools": None})
+    code, out, err = world.conduct("start", "recipes-tools")
+    assert code == 0, err
+    assert "This session's name is \"recipes-tools · 18 October\"." in sent(world)[0]["stdin"]
+    assert "&q=recipes-tools%20%C2%B7%2018%20October.%20This%20session%20must%20work%20in" in opened(world)[0][0]
+    assert "The session is to be named: recipes-tools · 18 October\n" in out
+
+
+def test_start_takes_a_name_as_data_with_quotes_dollars_and_accents(world):
+    world.project("recipes-tools", "code")
+    world.duty({"recipes-tools": None})
+    name = "Fix \"oven\" $HOME </script> é\\"
+    code, out, err = world.conduct("start", "recipes-tools", "--name", name)
+    assert code == 0, err
+    assert f"This session's name is \"{name}\"." in sent(world)[0]["stdin"]
+    assert opened(world)[0][0].split("&q=")[1].startswith(
+        "Fix%20%22oven%22%20%24HOME%20%3C%2Fscript%3E%20%C3%A9%5C.%20This%20session")
+    assert f"The session is to be named: {name}\n" in out
+
+
+@pytest.mark.parametrize("name, why", [
+    ("", "the name is empty"),
+    ("one\ntwo", "the name must be one line"),
+    ("x" * 61, "the name is longer than 60 characters"),
+])
+def test_start_refuses_a_bad_name_with_exit_2_and_sends_and_opens_nothing(world, name, why):
+    world.project("recipes-tools", "code")
+    world.duty({"recipes-tools": None})
+    code, out, err = world.conduct("start", "recipes-tools", "--name", name)
+    assert (code, out, err) == (2, "", f"conduct: {why}: give --name one line of at most 60 characters\n")
+    assert sent(world) == [] and opened(world) == []
+
+
+def test_start_dry_run_shows_the_name_the_session_would_be_given(world):
+    world.project("recipes-tools", "code")
+    world.duty({"recipes-tools": None})
+    code, out, _err = world.conduct("start", "--dry-run", "recipes-tools", "--name", "Sunday")
+    assert code == 0 and "Would name the session: Sunday\n" in out
+    assert sent(world) == [] and opened(world) == []
