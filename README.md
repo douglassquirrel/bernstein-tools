@@ -5,7 +5,8 @@ non-code project does the work and asks a companion tools project, by mail, for 
 as a tested command. `new-lobster` makes such a pair in one step: both folders from a template,
 git, a Backlog issue tracker, a mailbox each, and the first commits. `conduct` starts a project's
 session and asks a running one to hand over, and `podium` shows every session on a page in your
-browser, with buttons for what `conduct` does. They are for one person's Mac and their own
+browser, with buttons for what `conduct` does. `local-history` gives the private folder around a public
+checkout a git history of its own, with no remote. They are for one person's Mac and their own
 projects; the projects talk by `lobster-mail`, from the
 [lobster-tools](https://github.com/douglassquirrel/lobster-tools) repository.
 
@@ -466,9 +467,55 @@ A gap is a line `missing: …`; a half that cannot be found, or is in two places
 0 nothing missing, 1 something missing, 2 bad arguments or settings, 4 the template cannot be read.
 Use it with `new-lobster --render-into` to bring an older pair into line.
 
+## local-history: a history for the folder around a public checkout
+
+```
+local-history [--dry-run] FOLDER [FOLDER ...]
+```
+
+A public tools project keeps its rules, plan and diary in the folder around the checkout, so that they
+are not in the public history. That leaves them in no history at all. `local-history` makes a git
+repository in that outer folder, with no remote, and commits what is there once, so that a file
+emptied or written over by mistake comes back with `git checkout -- <file>`. The repository is on the
+same disk as the files: it is not a backup.
+
+It creates `.git` in each folder and changes no file that exists (it writes no `.gitignore`: what is
+left out goes in the new `.git/info/exclude`). It never adds a remote and never pushes. Left out of
+the history: every git repository inside the folder, by its path (the checkout); `.venv/`,
+`_to_delete/`, `__pycache__/` and `.DS_Store` wherever they are; and the top-level `inbox/`.
+
+Run it with `--dry-run` first. It checks every folder and says what would be committed and left out,
+running no git:
+
+```
+$ ./local-history --dry-run ~/projects/code/demo-tool-code
+Would start a local history in /Users/sq/projects/code/demo-tool-code: 4 files, 93 bytes, no remote.
+  Largest: lobster.conf (56 bytes), DIARY.md (29 bytes), CLAUDE.md (6 bytes)
+  Left out: demo-tool/ (a git repository), .venv/, _to_delete/, inbox/, tools/__pycache__/
+  Duty: nobody is on duty for demo-tool.
+Dry run: nothing was made.
+```
+
+The count is by this command's own rules; a `.gitignore` already in the folder may leave out more.
+Without `--dry-run` the same lines begin "Started a local history in", and afterwards `git status
+--short` in the folder prints nothing and `git remote` prints nothing.
+
+It refuses, making nothing in any of the folders named, when one of them: is not there or is a file
+(exit 2); is named twice (2); already has a `.git` (3); is inside a git repository (3); has no git
+repository inside it, so is not the folder around a checkout (3); holds nothing of its own to keep
+(3); has a folder inside whose name contains a line break (3); or belongs to a project whose session
+is on duty, fresh or stale (3): the project is the one its `lobster.conf` names in `SELF`, and a
+folder with no `lobster.conf` is not checked ("Duty: not checked"). If `git` or `lobster-mail` fails or
+cannot be run, it stops with exit 5 and that program's own words, and says which `.git` folders it had
+already made; those are left as they are.
+
+Afterwards, commit in the outer folder whenever its files are worth keeping (`git add -A && git
+commit -m "..."`, run in the outer folder, not the checkout).
+
 ## Errors and exit codes
 
-Every failure is one line on standard error starting `new-lobster:`, saying what happened.
+Every failure is one line on standard error starting `new-lobster:`, saying what happened. (`conduct`,
+`conform` and `local-history` give their own codes in their sections above.)
 
 | Code | Meaning | What to do |
 |---|---|---|
@@ -488,10 +535,15 @@ Every failure is one line on standard error starting `new-lobster:`, saying what
 
 `tests/tier1/` tests the pure parts (names, settings, rendering) against small invented templates;
 `tests/tier2/` runs `new-lobster` end to end against stubs of `git`, `backlog`, `lobster-mail` and
-Python placed on `PATH`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
+Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
 handling as a plain function; three tests fetch the page from a real socket on `127.0.0.1`, which is this
 machine and not the network), and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
 that appears while `new-lobster` is running, a race the tests cannot stage.
+
+Manual check of `local-history` against the real git (Tier 3): make a scratch folder with a file or two
+and a small git repository inside it, run `./local-history --dry-run` on it and then without the flag, and
+look: `git ls-files` lists the folder's own files and not the checkout's, `git status --short` and `git
+remote` print nothing, and a file emptied on purpose comes back with `git checkout -- <file>`.
 
 Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a settings file whose
 `NON_CODE_DIR`, `CODE_DIR` and `MAIL_ROOT` are scratch folders, then run `./new-lobster --dry-run
@@ -511,6 +563,8 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 13 November 2026: new command `local-history`: a git repository with no remote for the folder around a
+  public checkout, where the rules, plan and diary live. It changes no file and never pushes.
 - 18 October 2026: first versions of `new-lobster` and `conduct`.
 - 18 October 2026: `conduct start` now refuses, sending and opening nothing, a project that lacks
   `START-HERE.txt`, a readable `lobster.conf`, a known KIND, MODEL or EFFORT, or (non-code) its

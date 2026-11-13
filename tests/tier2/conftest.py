@@ -201,6 +201,28 @@ class World:
         code = conform.main(list(argv), env=env, out=out, err=err)
         return code, out.getvalue(), err.getvalue()
 
+    def local_history(self, *argv, path=None):
+        """Run local-history's main. path= replaces PATH (the stubs alone, to make a program truly missing)."""
+        from bernstein import localhistory
+        out, err = io.StringIO(), io.StringIO()
+        env = {"PATH": path or self.bin + os.pathsep + "/usr/bin:/bin", "HOME": self.home,
+               "BERNSTEIN_CONF": self.conf}
+        code = localhistory.main(list(argv), env=env, out=out, err=err)
+        return code, out.getvalue(), err.getvalue()
+
+    def outer(self, name, lobster=True, files=None):
+        """The folder around a public checkout: its own files, the checkout (a folder with a .git), and
+        things that are left out of a local history. Without lobster=True it has no lobster.conf."""
+        folder = os.path.join(self.code, name + "-code")
+        laid = {"CLAUDE.md": "rules\n", "DIARY.md": "a diary of some length\n", name + "/.git/HEAD": "ref\n",
+                name + "/code.py": "pass\n", "_to_delete/old.md": "old\n", ".venv/bin/pip": "x\n",
+                "inbox/README.md": "inbox\n", "inbox/sample.dat": "real data\n"}
+        if lobster:
+            laid["lobster.conf"] = f"KIND=code\nSELF={name}\nSISTER=\nMODEL=opus\nEFFORT=high\n"
+        laid.update(files or {})
+        write_tree(folder, laid)
+        return folder
+
     def calls(self):
         p = os.path.join(self.bin, "calls.jsonl")
         if not os.path.exists(p):

@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""local-history: a git repository, with no remote, for the folder around a checkout. Run local-history --help."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from bernstein.localhistory import main  # noqa: E402
+
+sys.exit(main(sys.argv[1:], dict(os.environ), sys.stdout, sys.stderr))
