@@ -75,7 +75,9 @@ new-lobster --feeler [--dry-run] [--claws "a b"] <name>
 - `--dry-run`: check everything and render every file, print what would be made, and stop.
   Nothing is written; the only program run is the read-only mailbox listing.
 - `--public`: the tools project is public. Its guidance files then stay in an outer folder,
-  `<name>-tools-code/`, beside a checkout `<name>-tools/` that holds the code and an MIT licence.
+  `<name>-tools-code/`, beside a checkout `<name>-tools/` that holds the code and an MIT licence. The outer folder also gets a git repository of its own, with no remote, started last of all with
+  everything beside the checkout in it (what `local-history` does, below); a dry run says so in a line
+  beginning "And:".
 - `--template`, `--non-code-dir`, `--code-dir`, `--model`, `--effort`: override the settings below.
 
 What it makes, for `recipes`: `<non-code dir>/recipes/` and `<code dir>/recipes-tools/`, each a git
@@ -563,6 +565,8 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 13 November 2026: `new-lobster --public` (with or without `--claw`) now also starts a local history, with
+  no remote, in the new tools project's outer folder. A private tools project is made as before.
 - 13 November 2026: new command `local-history`: a git repository with no remote for the folder around a
   public checkout, where the rules, plan and diary live. It changes no file and never pushes.
 - 18 October 2026: first versions of `new-lobster` and `conduct`.

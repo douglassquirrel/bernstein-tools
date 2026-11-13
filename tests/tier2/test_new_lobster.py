@@ -158,7 +158,7 @@ def test_a_public_tools_project_gets_the_outer_folder_with_the_checkout_inside(w
     assert checkout_files["LICENSE"] == b"MIT 2026\n"
     assert "recipes-tools/CLAUDE.md" not in outer_files and "CLAUDE.md" not in checkout_files
     inits = [c["cwd"] for c in world.calls() if c["prog"] == "git" and c["args"][:1] == ["init"]]
-    assert inits == [os.path.join(world.non_code, "recipes"), checkout]
+    assert inits == [os.path.join(world.non_code, "recipes"), checkout, outer]      # the outer folder's own history, last
     backlogs = [c["cwd"] for c in world.calls() if c["prog"] == "backlog"]
     assert backlogs == [os.path.join(world.non_code, "recipes"), outer]
     adds = [c for c in world.calls() if c["prog"] == "git" and c["args"][:1] == ["add"]]
@@ -365,9 +365,15 @@ def test_a_claw_is_made_on_its_own_with_one_mailbox_and_one_repository(world):
         ("git", ["commit", "-q"], checkout),
         ("python3", ["-m", "venv"], checkout),
         ("pip", ["install", "-q"], checkout),
+        ("git", ["init", "-b"], outer),
+        ("git", ["config", "user.name"], outer),
+        ("git", ["config", "user.email"], outer),
+        ("git", ["add", "-A"], outer),
+        ("git", ["commit", "-q"], outer),
     ]
     backlog = next(c["args"] for c in world.calls() if c["prog"] == "backlog")
     assert backlog[-4:] == ["--task-prefix", "wo", "--zero-padded-ids", "3"]
+    assert f"A local history, with no remote, was started in {outer} for the files beside the checkout.\n" in out
     commit = next(c["args"] for c in world.calls() if c["prog"] == "git" and c["args"][:1] == ["commit"])
     assert commit[-1] == "Start the claw word-tools from the lobster-project template"
     assert f"Made the claw word-tools: {outer}\n" in out and f"Mailbox word-tools in {world.mail}\n" in out
@@ -500,3 +506,44 @@ def test_a_feeler_can_be_rendered_into_a_new_folder_for_an_existing_one_off_fold
                                   "feeler/START-HERE.txt", "feeler/lobster.conf"]
     assert out == f"Rendered the template for the feeler agents into {into}: 6 files. Nothing else was written.\n"
     assert os.listdir(world.non_code) == [] and [c["prog"] for c in world.calls()] == []
+
+
+def test_a_public_tools_project_gets_a_local_history_for_its_outer_folder_last_of_all(world):
+    from bernstein import localhistory
+    code, out, err = world.run("--public", "recipes")
+    assert code == 0, err
+    outer = os.path.join(world.code, "recipes-tools-code")
+    calls = [(c["prog"], c["args"], c["cwd"]) for c in world.calls()]
+    assert calls[-5:] == [
+        ("git", ["init", "-b", "main"], outer),
+        ("git", ["config", "user.name", "Claude"], outer),
+        ("git", ["config", "user.email", "claude@douglassquirrel.com"], outer),
+        ("git", ["add", "-A"], outer),
+        ("git", ["commit", "-q", "-m", "Start of this folder's local history (no remote)"], outer),
+    ]
+    with open(os.path.join(outer, ".git", "info", "exclude"), encoding="utf-8") as f:
+        assert f.read() == "\n".join(localhistory.exclude_lines(["recipes-tools"])) + "\n"
+    assert f"A local history, with no remote, was started in {outer} for the files beside the checkout.\n" in out
+    assert not [c for c in world.calls() if c["prog"] == "git" and c["args"][0] in ("remote", "push")]
+
+
+def test_a_private_pair_and_a_private_claw_get_no_outer_history(world):
+    code, pair_out, _ = world.run("recipes")
+    assert code == 0 and "local history" not in pair_out
+    code, out, _ = world.run("--claw", "knives")
+    assert code == 0
+    assert not [c for c in world.calls() if c["prog"] == "git" and c["args"] == ["add", "-A"]]
+    assert "local history" not in out
+    assert not os.path.exists(os.path.join(world.code, "recipes-tools", ".git", "info", "exclude"))
+
+
+def test_a_dry_run_says_a_public_tools_project_would_get_its_outer_history_and_a_private_one_would_not(world):
+    outer = os.path.join(world.code, "recipes-tools-code")
+    line = f"And: a local history, with no remote, in {outer} for the files beside the checkout.\n"
+    assert line in world.run("--dry-run", "--public", "recipes")[1]
+    claw = os.path.join(world.code, "knives-code")
+    assert (f"And: a local history, with no remote, in {claw} for the files beside the checkout.\n"
+            in world.run("--dry-run", "--claw", "--public", "knives")[1])
+    for argv in (("--dry-run", "recipes"), ("--dry-run", "--claw", "knives")):
+        assert "local history" not in world.run(*argv)[1]
+    assert os.listdir(world.code) == []

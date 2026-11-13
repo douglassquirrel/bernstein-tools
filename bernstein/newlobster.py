@@ -115,7 +115,22 @@ def plan(o, nc, tools_outer, tools_repo):
         (f"Then: git init -b main in each repository; backlog init in each half; lobster-mail init {o.name} "
         f"and {o.name}-tools in {o.mail_root}; a first commit in each; the tools' .venv."),
     ]
-    return lines
+    return lines + outer_history_plan(o, tools_outer)
+
+
+def outer_history_plan(o, outer):
+    """The dry run's line about a public tools project's outer folder; nothing for a private one."""
+    if not o.public:
+        return []
+    return [f"And: a local history, with no remote, in {outer} for the files beside the checkout."]
+
+
+def outer_history(outer, repo, env, made, out):
+    """Start the local history of a public tools project's outer folder, as local-history does: everything
+    beside the checkout, the checkout itself left out, no remote."""
+    from bernstein import localhistory  # it imports this module, so not at the top
+    localhistory.start(outer, {"exclude": localhistory.exclude_lines([os.path.basename(repo)])}, env, made)
+    out.write(f"A local history, with no remote, was started in {outer} for the files beside the checkout.\n")
 
 
 def claw_plan(o, outer, repo):
@@ -123,7 +138,7 @@ def claw_plan(o, outer, repo):
         "Make the claw {}: {}{}".format(o.name, repo, f" (inside {outer}, which holds its guidance files)"
                                         if outer != repo else ""),
         f"Then: git init -b main; backlog init; lobster-mail init {o.name} in {o.mail_root}; a first commit; the .venv.",
-    ]
+    ] + outer_history_plan(o, outer)
 
 
 def claw_report(o, outer, repo, out):
@@ -250,6 +265,8 @@ def make_claw(o, env, today, out):
                 f"lobster-mail init {o.name}", made)
     commit(repo, repo_files, not o.public, f"Start the claw {o.name} from the lobster-project template", env, made)
     venv(o, repo, env, made)
+    if o.public:
+        outer_history(outer, repo, env, made, out)
     claw_report(o, outer, repo, out)
 
 
@@ -366,6 +383,8 @@ def make(o, env, today, out):
     commit(nc, rendered["non-code"], True, f"Start {o.name} from bernstein's lobster-project template", env, made)
     commit(tools_repo, repo_files, not o.public, f"Start {tools} from the lobster-project template", env, made)
     venv(o, tools_repo, env, made)
+    if o.public:
+        outer_history(tools_outer, tools_repo, env, made, out)
     report(o, nc, tools_outer, tools_repo, out)
 
 
