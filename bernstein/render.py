@@ -48,6 +48,15 @@ def files_under(folder):
     return found
 
 
+def version(template_dir):
+    """The template's own version, a line in common/version, for text that must not change with the day."""
+    path = os.path.join(template_dir, "common", "version")
+    if not os.path.isfile(path):
+        return ""
+    with open(path, encoding="utf-8") as f:
+        return f.read().strip()
+
+
 def render_half(template_dir, half, values, public):
     """Every file of one half, as {relative path: text}, includes resolved and placeholders filled."""
     own = os.path.join(template_dir, half)
@@ -56,6 +65,7 @@ def render_half(template_dir, half, values, public):
     sources = [(rel, os.path.join(own, rel), half + "/" + rel) for rel in files_under(own)]
     for rel in ("inbox/README.md", "lobster.conf"):
         sources.append((rel, os.path.join(template_dir, "common", rel), "common/" + rel))
+    values = dict(values, TEMPLATE_VERSION=version(template_dir))
     rendered = {}
     for rel, path, where in sources:
         if half == "code" and rel == "LICENSE" and not public:
