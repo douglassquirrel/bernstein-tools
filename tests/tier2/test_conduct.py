@@ -253,7 +253,7 @@ def test_start_refuses_a_kind_that_is_neither_code_nor_non_code(world):
     with open(conf, "w") as f:
         f.write("KIND=weird\nMODEL=opus\nEFFORT=high\n")
     assert refused(world, "recipes-tools") == (
-        3, f"conduct: {conf} says KIND=weird: it must be code or non-code\n")
+        3, f"conduct: {conf} says KIND=weird: it must be code, non-code or feeler\n")
 
 
 def test_start_refuses_a_project_with_no_start_here(world):
@@ -560,9 +560,9 @@ def test_dream_needs_a_project_or_all_and_refuses_an_unknown_mailbox(world):
     assert sent(world) == []
 
 
-def test_no_verb_names_all_six_verbs(world):
+def test_no_verb_names_all_seven_verbs(world):
     code, _out, err = world.conduct()
-    assert (code, err) == (2, "conduct: say start, stop, dormant, wake, dream or status (conduct --help shows the form)\n")
+    assert (code, err) == (2, "conduct: say start, stop, finish, dormant, wake, dream or status (conduct --help shows the form)\n")
 
 
 def test_start_names_the_session_for_the_project_and_the_day_in_the_message_the_link_and_its_report(world):
@@ -723,3 +723,119 @@ def test_start_that_cannot_keep_the_old_copy_replaces_nothing_and_sends_and_open
     assert err.startswith(f"conduct: a global file in {folder} could not be replaced (")
     assert err.endswith("): nothing was sent or opened\n")
     assert tree(folder) == before and sent(world) == [] and opened(world) == []
+
+
+def feeler(world, name="agents", claws=(), under=""):
+    """A feeler's folder as new-lobster --feeler makes it."""
+    from conftest import write_tree
+    folder = os.path.join(world.non_code, under, name)
+    write_tree(folder, {"lobster.conf": f"KIND=feeler\nSELF={name}\nSISTER=\nCLAWS={' '.join(claws)}\nMODEL=opus\nEFFORT=high\n",
+                        "START-HERE.txt": f"Start {name}.\n"})
+    return folder
+
+
+def test_start_opens_a_feeler_as_a_claude_session_with_its_folder_the_mail_its_claws_and_lobster_tools(world):
+    folder = feeler(world, claws=("knives",), under="one-offs")
+    knives = world.project("knives", "code", sister="")
+    world.duty({"agents": None})
+    code, out, err = world.conduct("start", "agents")
+    assert code == 0, err
+    enc = lambda s: s.replace("/", "%2F").replace(" ", "%20")
+    link = opened(world)[0][0]
+    assert link.startswith("claude://cowork/new?folder=" + enc(folder) + "&folder=" + enc(world.mail)
+                           + "&folder=" + enc(knives) + "&folder=" + enc(world.bin) + "&q=agents%20%C2%B7%2018%20October.%20Read%20START-HERE.txt")
+    assert sent(world)[0]["args"][:7] == ["send", "--as", "bernstein", "--to", "agents", "--subject", "Start: agents"]
+    assert "Opened a Claude session for agents: confirm its folders, then send its first line.\n" in out
+
+
+def test_start_opens_a_feeler_that_uses_no_claw(world):
+    folder = feeler(world)
+    world.duty({"agents": None})
+    code, _out, err = world.conduct("start", "agents")
+    assert code == 0, err
+    enc = lambda s: s.replace("/", "%2F").replace(" ", "%20")
+    assert opened(world)[0][0].startswith("claude://cowork/new?folder=" + enc(folder) + "&folder=" + enc(world.mail)
+                                          + "&folder=" + enc(world.bin) + "&q=")
+
+
+def test_start_refuses_a_feeler_whose_claw_is_missing_or_that_names_a_sister(world):
+    feeler(world, claws=("knives",))
+    world.duty({"agents": None})
+    code, _out, err = world.conduct("start", "agents")
+    assert code == 3 and "knives" in err and "CLAWS" in err
+    folder = feeler(world, name="letters")
+    with open(os.path.join(folder, "lobster.conf"), "a") as f:
+        f.write("SISTER=letters-tools\n")
+    world.duty({"letters": None})
+    code, _out, err = world.conduct("start", "letters")
+    assert code == 3
+    assert err == (f"conduct: {os.path.join(folder, 'lobster.conf')} says KIND=feeler and SISTER=letters-tools: a feeler "
+                   "has no home claw; name the tools projects it uses in CLAWS\n")
+    assert sent(world) == [] and opened(world) == []
+
+
+def test_a_kind_that_is_not_code_non_code_or_feeler_is_still_refused(world):
+    folder = feeler(world)
+    with open(os.path.join(folder, "lobster.conf"), "a") as f:
+        f.write("KIND=tentacle\n")
+    world.duty({"agents": None})
+    code, _out, err = world.conduct("start", "agents")
+    assert code == 3 and err.endswith("says KIND=tentacle: it must be code, non-code or feeler\n")
+
+
+def test_start_brings_a_feelers_global_files_up_to_date_from_the_feeler_half(world):
+    from conftest import tree, write_tree
+    folder = feeler(world, claws=("knives",))
+    world.project("knives", "code", sister="")
+    write_tree(world.template, {"common/global-files": "RULES.md\ninbox/README.md\n",
+                                "feeler/RULES.md": "Feeler rules for {{NAME}}; {{FEELER_CLAWS}}\n"})
+    write_tree(folder, {"RULES.md": "old\n"})
+    world.duty({"agents": None})
+    code, _out, err = world.conduct("start", "agents")
+    assert code == 0, err
+    assert tree(folder)["RULES.md"].startswith(b"Feeler rules for agents; It uses the claw `knives`:")
+
+
+def test_finish_asks_a_running_feeler_to_write_up_offer_its_scripts_and_hand_over(world):
+    feeler(world)
+    world.duty({"agents": "fresh"})
+    code, out, err = world.conduct("finish", "agents")
+    assert code == 0, err
+    (mail,) = sent(world)
+    assert mail["args"][:7] == ["send", "--as", "bernstein", "--to", "agents", "--subject", "Finish: write up and hand over"]
+    assert mail["stdin"] == (
+        "Finish (from bernstein, 18 October 2026).\n\n"
+        "Squirrel has asked this feeler to finish: its one job is done, or as done as it will be. At the\n"
+        "next safe point:\n\n"
+        "1. Write what was found, plainly, in CLAUDE.md under \"What was found\": the answer first, then\n"
+        "   what it rests on, what is unsure, and where each file is.\n"
+        "2. List every script in tools/ with what it did and a proposal for each: offer it to a claw (name\n"
+        "   the claw; the request goes by mail on Squirrel's OK), or leave it here as a record. Run nothing\n"
+        "   new for this.\n"
+        "3. Bring \"Where things stand\" up to date, commit, and send the handover as START-HERE.txt says.\n"
+        "4. Reply to this message with what was found in two lines and the scripts you propose to offer.\n"
+        "5. Last of all, archive this session if you have a tool that archives a session; if you have\n"
+        "   none, say so in your last line to him.\n\n"
+        "Squirrel moves the folder to not-current/ himself when he has read the reply.\n")
+    assert out == "Sent the Finish message to agents.\n"
+
+
+def test_finish_is_only_for_a_feeler_that_has_a_session_on_duty(world):
+    feeler(world)
+    world.project("recipes-tools", "code")
+    world.duty({"agents": None, "recipes-tools": "fresh"})
+    code, out, _err = world.conduct("finish", "agents")
+    assert (code, out) == (0, "Nobody is on duty for agents: nothing to finish.\n")
+    code, _out, err = world.conduct("finish", "recipes-tools")
+    assert code == 3 and err == "conduct: recipes-tools is not a feeler: finish is for a one-off project; use stop\n"
+    code, _out, err = world.conduct("finish", "nobody")
+    assert code == 3
+    assert sent(world) == []
+
+
+def test_finish_dry_run_shows_the_message_and_sends_nothing(world):
+    feeler(world)
+    world.duty({"agents": "fresh"})
+    code, out, _err = world.conduct("finish", "--dry-run", "agents")
+    assert code == 0 and "Would send to agents, as bernstein, subject \"Finish: write up and hand over\":" in out
+    assert out.endswith("Dry run: nothing was sent.\n") and sent(world) == []

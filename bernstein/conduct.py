@@ -82,6 +82,23 @@ def start_message(brief, today, name, updated=(), kept=None):
     return text + "Then this brief, from Squirrel:\n\n" + brief
 
 
+def finish_message(today):
+    """The body of the Finish message: a feeler's one job is done; write it up, offer its scripts, hand over."""
+    return (f"Finish (from bernstein, {day(today)}).\n\n"
+            "Squirrel has asked this feeler to finish: its one job is done, or as done as it will be. At the\n"
+            "next safe point:\n\n"
+            "1. Write what was found, plainly, in CLAUDE.md under \"What was found\": the answer first, then\n"
+            "   what it rests on, what is unsure, and where each file is.\n"
+            "2. List every script in tools/ with what it did and a proposal for each: offer it to a claw (name\n"
+            "   the claw; the request goes by mail on Squirrel's OK), or leave it here as a record. Run nothing\n"
+            "   new for this.\n"
+            "3. Bring \"Where things stand\" up to date, commit, and send the handover as START-HERE.txt says.\n"
+            "4. Reply to this message with what was found in two lines and the scripts you propose to offer.\n"
+            "5. Last of all, archive this session if you have a tool that archives a session; if you have\n"
+            "   none, say so in your last line to him.\n\n"
+            "Squirrel moves the folder to not-current/ himself when he has read the reply.\n")
+
+
 def stop_message(today):
     """The body of the Stop message: hand over at the next safe point, then archive the session."""
     return (f"Stop (from bernstein, {day(today)}).\n\n"
@@ -283,8 +300,8 @@ def find_project(name, non_code_dir, code_dir):
     except OSError as why:
         raise ProjectRefused(f"{conf} cannot be read ({why.strerror}): check its permissions")
     kind = settings.get("KIND", placed)
-    if kind not in ("code", "non-code"):
-        raise ProjectRefused(f"{conf} says KIND={kind}: it must be code or non-code")
+    if kind not in ("code", "non-code", "feeler"):
+        raise ProjectRefused(f"{conf} says KIND={kind}: it must be code, non-code or feeler")
     if not os.path.isfile(os.path.join(folder, "START-HERE.txt")):
         raise ProjectRefused(f"{folder} has no START-HERE.txt, which the session is told to follow: "
                              "bring the project into line with the lobster template first")
@@ -295,6 +312,12 @@ def find_project(name, non_code_dir, code_dir):
     sister = settings.get("SISTER", "")
     claws = []  # (checkout, secrets folder or None), the home claw first
     claw_names = []
+    if kind == "feeler":
+        if sister:
+            raise ProjectRefused(f"{conf} says KIND=feeler and SISTER={sister}: a feeler has no home claw; name "
+                                 "the tools projects it uses in CLAWS")
+        claw_names = settings.get("CLAWS", "").split()
+        claws = [claw_folders(claw, code_dir, conf, "CLAWS") for claw in claw_names]
     if kind == "non-code":
         if not sister:
             raise ProjectRefused(f"{conf} has no SISTER, the tools project a non-code session works with: "
@@ -310,6 +333,9 @@ def find_project(name, non_code_dir, code_dir):
 
 def global_files_of(project, s, home, today):
     """The template's global files rendered for a project found by find_project; none if it names none."""
+    if project.kind == "feeler":
+        return globalfiles.renders(s, "feeler", project.name, "", project.folder, project.checkout, None,
+                                   project.claw_names, home, today.date())
     if project.kind == "non-code":
         other = project.claws[0][0]
     else:
@@ -327,7 +353,7 @@ def encode(params):
 
 def link_for(project, mail_root, lobster_tools, name):
     """The documented desktop-app link that opens the project's session with its first line."""
-    if project.kind == "non-code":
+    if project.kind in ("non-code", "feeler"):
         folders = [project.folder, mail_root]
         for checkout, secrets in project.claws:
             folders += [checkout] + ([secrets] if secrets else [])
@@ -352,6 +378,7 @@ def parser():
                "hand over and stop, by mail as bernstein.",
                epilog="conduct start <project> [--brief FILE] [--pace LEVEL] [--name TEXT] [--dry-run]\n"
                       "conduct stop <project> | --all [--wait SECONDS] [--dry-run]\n"
+                      "conduct finish <feeler> [--dry-run]\n"
                       "conduct dormant <project> | --all [--dry-run]\n"
                       "conduct wake <project> | --all [--dry-run]\n"
                       "conduct dream <project> | --all [--minutes N] [--then dormant|stop] [--dry-run]\n"
@@ -370,6 +397,10 @@ def parser():
     t.add_argument("--all", action="store_true", help="every session on duty except bernstein's")
     t.add_argument("--wait", type=int, metavar="SECONDS", help="wait this long for the handover")
     t.add_argument("--dry-run", action="store_true", help="show the message; send nothing")
+    f = verbs.add_parser("finish", help="ask a running feeler (a one-off project) to write up what it found, "
+                         "propose what to do with its scripts, and hand over")
+    f.add_argument("project")
+    f.add_argument("--dry-run", action="store_true", help="show the message; send nothing")
     d = verbs.add_parser("dormant", help="ask a running session to stop watching mail but keep running, "
                          "with no handover, until Squirrel is back")
     d.add_argument("project", nargs="?")
@@ -537,7 +568,7 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None):
                        claws=list(p.claw_names))
         if row["folder"]:
             real = os.path.realpath(row["folder"])
-            first, second = (cowork, sessions) if row["kind"] == "non-code" else (sessions, cowork)
+            first, second = (cowork, sessions) if row["kind"] in ("non-code", "feeler") else (sessions, cowork)
             row["session"] = (first or {}).get(real) or (second or {}).get(real)
         rows.append(row)
     for row in rows:
@@ -643,7 +674,7 @@ def start(a, s, env, today, out, err, sleep):
     out.write(f"Sent the Start message to {a.project}.\n")
     run(["open", link], env, "open")
     out.write(f"The session is to be named: {name}\n")
-    if project.kind == "non-code":
+    if project.kind in ("non-code", "feeler"):
         out.write(f"Opened a Claude session for {a.project}: confirm its folders, then send its first line.\n")
     else:
         out.write(f"Opened a Claude Code session for {a.project}: confirm its folder, then send its first line.\n")
@@ -690,6 +721,28 @@ def stop(a, s, env, today, out, err, sleep):
             raise Stop(5, f"after {a.wait} seconds, still on duty: {', '.join(left)}")
         sleep(WAIT_STEP)
         waited += WAIT_STEP
+
+
+def finish(a, s, env, today, out, err, sleep):
+    boxes = listing(s, env, sleep)
+    if a.project not in boxes:
+        raise Stop(3, f"there is no mailbox {a.project} in {s['MAIL_ROOT']}")
+    try:
+        project = find_project(a.project, s["NON_CODE_DIR"], s["CODE_DIR"])
+    except ProjectRefused as why:
+        raise Stop(3, str(why))
+    if project.kind != "feeler":
+        raise Stop(3, f"{a.project} is not a feeler: finish is for a one-off project; use stop")
+    if not fresh(boxes[a.project]):
+        out.write(f"Nobody is on duty for {a.project}: nothing to finish.\n")
+        return
+    body = finish_message(today)
+    if a.dry_run:
+        out.write(f"Would send to {a.project}, as bernstein, subject \"Finish: write up and hand over\":\n\n{body}\n")
+        out.write("Dry run: nothing was sent.\n")
+        return
+    send(s, env, a.project, "Finish: write up and hand over", body, err)
+    out.write(f"Sent the Finish message to {a.project}.\n")
 
 
 def targets_for(a, s, env, sleep, what, stale_too=False):
@@ -820,8 +873,9 @@ def main(argv, env, today, out, err, sleep):
         except SettingsRefused as why:
             raise Stop(2, f"{why} (conduct --help shows the form)")
         if a.verb is None:
-            raise Stop(2, "say start, stop, dormant, wake, dream or status (conduct --help shows the form)")
-        verbs = {"start": start, "stop": stop, "dormant": dormant, "wake": wake, "dream": dream, "status": status}
+            raise Stop(2, "say start, stop, finish, dormant, wake, dream or status (conduct --help shows the form)")
+        verbs = {"start": start, "stop": stop, "finish": finish, "dormant": dormant, "wake": wake, "dream": dream,
+                 "status": status}
         verbs[a.verb](a, s, env, today, out, err, sleep)
     except Stop as stopped:
         err.write(f"conduct: {stopped.message}\n")

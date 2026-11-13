@@ -83,7 +83,7 @@ def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, t
     names = declared(s["TEMPLATE"])
     if not names:
         return {}
-    non_code = kind == "non-code"
+    non_code = kind in ("non-code", "feeler")      # the half whose own folder is the project's
     public = (not non_code) and folder != checkout
 
     def on(day):
