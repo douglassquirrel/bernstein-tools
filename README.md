@@ -66,6 +66,7 @@ Each project's first session asks you for its purpose and brief.
 new-lobster [--dry-run] [--public] [--template DIR] [--non-code-dir DIR] [--code-dir DIR]
             [--model MODEL] [--effort EFFORT] <name>
 new-lobster --claw [--dry-run] [--public] <name>
+new-lobster --feeler [--dry-run] [--claws "a b"] <name>
 ```
 
 - `<name>`: the non-code project's name: lower-case letters, digits and single hyphens, starting
@@ -159,11 +160,42 @@ own names, folders and claws, and `conduct start` replaces any that are behind (
 public tools project a global file sits beside the checkout, like `CLAUDE.md`, and is never
 committed in it. A template without the list has no global files, and nothing below changes.
 
+## Feelers: light projects for one-off work
+
+A *feeler* is a lobster project for work that will not be run over and over: looking something up,
+extracting something once, a single piece of analysis. It is one folder under the non-code tree with
+a short CLAUDE.md for what it is for and what was found, the template's few shared rules for
+feelers (`LOBSTER-RULES.md`), a short `START-HERE.txt`, a diary, a git repository and a mailbox. It
+has no tools project of its own, no Backlog, no inbox and no check-in chain: its mail pace is
+`relaxed` from the start.
+
+```
+$ ./new-lobster --feeler --dry-run literary-agents
+Make the feeler literary-agents: /Users/sq/projects/non-code/literary-agents
+Then: git init -b main; lobster-mail init literary-agents in /Users/sq/projects/mail, pace relaxed; a first commit.
+Dry run: nothing was made.
+```
+
+- `--claws "word-tools google-docs-tools"` names the claws it uses (`CLAWS` in its `lobster.conf`,
+  which you may change later); `conduct start` connects each to its session, and a claw that is not
+  there is exit 3. A feeler may ask a claw for a tool or a fix by mail, as any project does.
+- Unlike a project that runs again and again, a feeler may write scripts; each is kept in its
+  `tools/`, and `conduct finish` asks what should become of them.
+- `conduct start`, `stop`, `status`, `dormant`, `wake` and `dream` treat it like any project; it
+  opens as a Claude session with its folder, the mail root, its claws and `lobster-tools`.
+- `conform <feeler>` checks it alone: `lobster.conf` (KIND=feeler, an empty SISTER, MODEL, EFFORT),
+  `START-HERE.txt`, `CLAUDE.md`, its claws, the template's global files, a git repository and the
+  mailbox; it ends "The feeler is in line."
+- `--claw`, `--public` and `--tools` are refused with `--feeler` (exit 2), and a name ending in
+  `-tools` is refused. `--render-into DIR` renders a feeler's files only, for making an existing
+  one-off folder a feeler by hand. The template's feeler files are in its `feeler/` folder.
+
 ## conduct: starting and stopping a project's session
 
 ```
 conduct start   <project> [--brief FILE] [--pace eager|normal|relaxed] [--name TEXT] [--dry-run]
 conduct stop    <project> | --all  [--wait SECONDS] [--dry-run]
+conduct finish  <feeler>  [--dry-run]
 conduct dormant <project> | --all  [--dry-run]
 conduct wake    <project> | --all  [--dry-run]
 conduct dream   <project> | --all  [--minutes N] [--then dormant|stop] [--dry-run]
@@ -200,6 +232,12 @@ at a start (below).
   none), and the prefilled first line begins with the name, which is what the app titles a new
   session from. `--dry-run` prints "Would name the session: …". podium's Start dialog has a field
   for the name.
+- **`finish`** is for a feeler (below): it mails a running feeler a Finish message asking it to write up
+  what it found in its CLAUDE.md, list every script in its `tools/` with a proposal for each (offer it
+  to a claw by mail, on your OK, or leave it as a record), bring its state up to date, commit, hand
+  over, reply with what was found, and archive its session. With nobody on duty it sends nothing
+  (exit 0); a project that is not a feeler is exit 3 ("use stop"). You move the folder to
+  `not-current/` yourself when you have read the reply.
 - **`stop`** mails a Stop message: hand over at the next safe point, then stop, and last of all archive
   the session so that it leaves your list (in Claude Code in the desktop app the session does this with
   the app's archive tool, which you approve on a card; a session with no such tool says so instead). `--all` asks every
@@ -528,6 +566,10 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
   every project's folder. `conform` lists one that is missing or behind, and `conduct start` brings
   those that are behind up to date before it opens the session, keeping the old copies in the
   project's `_to_delete/`. A project without them all is not touched.
+- 13 November 2026: **feelers**: `new-lobster --feeler <name>` makes a light project for one-off work
+  (no tools project, Backlog or inbox; mail at the relaxed pace), `conduct` starts it like any
+  project, and `conduct finish <feeler>` asks it to write up and hand over. A project's
+  `lobster.conf` may now say `KIND=feeler`.
 
 ## Contributing
 
