@@ -253,7 +253,56 @@ def make_claw(o, env, today, out):
     claw_report(o, outer, repo, out)
 
 
+def render_feeler(o, env, today):
+    values = values_for(o.name, "feeler", model=o.model, effort=o.effort, non_code_dir=o.non_code_dir,
+                        code_dir=o.code_dir, mail_root=o.mail_root, lobster_mail=o.lobster_mail, public=False,
+                        today=today, home=env["HOME"], non_code_path=o.non_code_path, claws=o.claws)
+    try:
+        return render_half(o.template, "feeler", values, False)
+    except TemplateRefused as why:
+        raise Stop(4, f"the template cannot be used: {why}")
+
+
+def make_feeler(o, env, today, out):
+    """Make a feeler: a light, one-off project with a folder, a repository and a mailbox, and no tools project."""
+    rendered = render_feeler(o, env, today)
+    if o.render_into:
+        if os.path.lexists(o.render_into):
+            raise Stop(3, f"{o.render_into} already exists; nothing was written")
+        os.makedirs(o.render_into)
+        write_files(o.render_into, {f"feeler/{rel}": text for rel, text in rendered.items()})
+        out.write(f"Rendered the template for the feeler {o.name} into {o.render_into}: {len(rendered)} files. "
+                  "Nothing else was written.\n")
+        return
+    folder = os.path.join(o.non_code_dir, o.name)
+    in_the_way(o, env, (folder,), (o.name,))
+    if o.dry_run:
+        out.write(f"Make the feeler {o.name}: {folder}\n")
+        out.write(f"Then: git init -b main; lobster-mail init {o.name} in {o.mail_root}, pace relaxed; a first commit.\n")
+        out.write("Dry run: nothing was made.\n")
+        return
+    made = []
+    try:
+        os.makedirs(folder)
+    except FileExistsError:
+        raise Stop(3, f"{folder} appeared while new-lobster was running; it was left alone")
+    made.append(folder)
+    write_files(folder, rendered)
+    git_init(folder, env, made)
+    run_program([o.lobster_mail, "init", "--root", o.mail_root, o.name], os.getcwd(), env,
+                f"lobster-mail init {o.name}", made)
+    run_program([o.lobster_mail, "pace", "--as", o.name, "relaxed", "--root", o.mail_root], os.getcwd(), env,
+                f"lobster-mail pace --as {o.name} relaxed", made)
+    commit(folder, rendered, False, f"Start the feeler {o.name} from bernstein's lobster-project template", env, made)
+    out.write(f"Made the feeler {o.name}: {folder}\n")
+    out.write(f"Mailbox {o.name} in {o.mail_root}, at the relaxed pace\n\n")
+    out.write(f"Start it with: conduct start {o.name}\n")
+    out.write("Its first session asks you what it is for.\n")
+
+
 def make(o, env, today, out):
+    if o.feeler:
+        return make_feeler(o, env, today, out)
     if o.render_into:
         return render_into(o, env, today, out)
     if o.claw:

@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from conftest import tree, write_tree
 
 
@@ -411,3 +413,91 @@ def test_a_list_of_global_files_that_names_a_path_outside_a_project_is_exit_4_an
         assert err == ("new-lobster: the template cannot be used: common/global-files: ../CLAUDE.md is not a "
                        "path inside a project\n")
     assert os.listdir(world.non_code) == [] and os.listdir(world.code) == []
+
+
+FEELER = {
+    "common/global-files": "RULES.md\nSTART-HERE.txt\n",
+    "feeler/CLAUDE.md": "# {{NAME}}\n\n{{to fill: what this is for}}\n\n{{FEELER_CLAWS}}\n",
+    "feeler/RULES.md": "Rules for the feeler {{NAME}}.\n",
+    "feeler/START-HERE.txt": "Start {{NAME}}.\n",
+    "feeler/DIARY.md": "# Diary of {{NAME}}\n",
+    "feeler/.gitignore": "_to_delete/\n",
+}
+
+
+def test_a_feeler_is_one_folder_with_its_files_a_repository_and_a_relaxed_mailbox_and_nothing_else(world):
+    write_tree(world.template, FEELER)
+    code, out, err = world.run("--feeler", "--claws", "knives word-tools", "agents")
+    assert code == 0, err
+    folder = os.path.join(world.non_code, "agents")
+    assert tree(folder) == {
+        "CLAUDE.md": b"# agents\n\n{{to fill: what this is for}}\n\nIt uses the claws `knives` and `word-tools`: tools "
+                     b"projects of Squirrel's, connected to its session by `conduct start`.\n",
+        "RULES.md": b"Rules for the feeler agents.\n", "START-HERE.txt": b"Start agents.\n",
+        "DIARY.md": b"# Diary of agents\n", ".gitignore": b"_to_delete/\n",
+        "lobster.conf": b"KIND=feeler\nMODEL=opus\nEFFORT=high\n",
+    }
+    assert os.listdir(world.code) == [] and os.listdir(world.non_code) == ["agents"]
+    calls = [(c["prog"], c["args"][:5], c["cwd"]) for c in world.calls() if c["args"][:2] != ["duty", "status"]]
+    assert calls == [
+        ("git", ["init", "-b", "main"], folder),
+        ("git", ["config", "user.name", "Claude"], folder),
+        ("git", ["config", "user.email", "claude@douglassquirrel.com"], folder),
+        ("lobster-mail", ["init", "--root", world.mail, "agents"], calls[3][2]),
+        ("lobster-mail", ["pace", "--as", "agents", "relaxed", "--root"], calls[4][2]),
+        ("git", ["add", "--", ".gitignore", "CLAUDE.md", "DIARY.md"], folder),
+        ("git", ["commit", "-q", "-m", "Start the feeler agents from bernstein's lobster-project template"], folder),
+    ]
+    assert out == (f"Made the feeler agents: {folder}\n"
+                   f"Mailbox agents in {world.mail}, at the relaxed pace\n\n"
+                   "Start it with: conduct start agents\n"
+                   "Its first session asks you what it is for.\n")
+
+
+def test_a_feeler_dry_run_says_what_would_be_made_and_makes_and_runs_nothing(world):
+    write_tree(world.template, FEELER)
+    code, out, err = world.run("--feeler", "--dry-run", "agents")
+    assert (code, err) == (0, "")
+    assert out == (f"Make the feeler agents: {os.path.join(world.non_code, 'agents')}\n"
+                   f"Then: git init -b main; lobster-mail init agents in {world.mail}, pace relaxed; a first commit.\n"
+                   "Dry run: nothing was made.\n")
+    assert os.listdir(world.non_code) == []
+    assert [c["args"][:2] for c in world.calls()] == [["duty", "status"]]
+
+
+@pytest.mark.parametrize("argv, why", [
+    (("--feeler", "--claw", "agents"), "--feeler cannot be used with --claw: a feeler is not a tools project"),
+    (("--feeler", "--public", "agents"), "--feeler cannot be used with --public: a feeler has no tools project to publish"),
+    (("--feeler", "--tools", "x-tools", "--render-into", "/tmp/x", "agents"),
+     "--tools cannot be used with --feeler, which has no home claw"),
+    (("--feeler", "agents-tools"), "the feeler name agents-tools cannot be used: "),
+    (("--feeler", "--claws", "Bad_Name", "agents"), "the claw name Bad_Name cannot be used: "),
+])
+def test_a_feeler_refuses_flags_and_names_that_belong_to_a_tools_project(world, argv, why):
+    write_tree(world.template, FEELER)
+    code, out, err = world.run(*argv)
+    assert (code, out) == (2, "") and err.startswith("new-lobster: " + why), err
+    assert os.listdir(world.non_code) == []
+
+
+def test_a_feeler_is_refused_when_its_folder_or_its_mailbox_exists_and_nothing_is_touched(world):
+    write_tree(world.template, FEELER)
+    os.makedirs(os.path.join(world.non_code, "agents"))
+    code, _out, err = world.run("--feeler", "agents")
+    assert code == 3 and "already exists" in err
+    os.rmdir(os.path.join(world.non_code, "agents"))
+    world.mailboxes(["agents"])
+    code, _out, err = world.run("--feeler", "agents")
+    assert code == 3 and err == f"new-lobster: the mailbox agents already exists in {world.mail}; nothing was made\n"
+    assert os.listdir(world.non_code) == []
+
+
+def test_a_feeler_can_be_rendered_into_a_new_folder_for_an_existing_one_off_folder(world, tmp_path):
+    write_tree(world.template, FEELER)
+    into = str(tmp_path / "render")
+    code, out, err = world.run("--feeler", "--render-into", into, "--non-code-path", "/elsewhere/agents", "agents")
+    assert code == 0, err
+    assert sorted(tree(into)) == ["feeler/.gitignore", "feeler/CLAUDE.md", "feeler/DIARY.md", "feeler/RULES.md",
+                                  "feeler/START-HERE.txt", "feeler/lobster.conf"]
+    assert out == f"Rendered the template for the feeler agents into {into}: 6 files. Nothing else was written.\n"
+    assert os.listdir(world.non_code) == [] and [c["prog"] for c in world.calls()] == []

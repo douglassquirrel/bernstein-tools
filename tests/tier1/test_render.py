@@ -224,3 +224,39 @@ def test_one_further_claw_is_a_claw_and_two_are_claws():
     assert one["OTHER_CLAWS"] == "It also uses the claw `word-tools`."
     two = values_for("recipes", "non-code", public=False, claws=["word-tools", "book-tools"], **COMMON)
     assert two["OTHER_CLAWS"] == "It also uses the claws `word-tools` and `book-tools`."
+
+
+def feeler_values(claws=()):
+    return values_for("agents", "feeler", model="opus", effort="high", non_code_dir="/h/projects/non-code",
+                      code_dir="/h/projects/code", mail_root="/h/projects/mail", lobster_mail="/h/l/lobster-mail",
+                      public=False, today=datetime.date(2026, 10, 18), home="/h", claws=claws)
+
+
+def test_a_feeler_has_no_sister_and_no_home_claw_and_names_the_claws_it_uses():
+    v = feeler_values(["word-tools", "knives"])
+    assert (v["KIND"], v["SELF"], v["NAME"], v["SISTER"], v["TOOLS"]) == ("feeler", "agents", "agents", "", "")
+    assert v["CLAWS"] == "word-tools knives" and v["NONCODE_PATH"] == "~/projects/non-code/agents"
+    assert v["FEELER_CLAWS"] == ("It uses the claws `word-tools` and `knives`: tools projects of Squirrel's, "
+                                 "connected to its session by `conduct start`.")
+    assert v["THE_CLAWS"] == "the claws (word-tools and knives)"
+    assert v["CLAW_MOUNTS"] == ("| `~/mnt/word-tools` | the claw `word-tools`: read and run only |\n"
+                                "| `~/mnt/knives` | the claw `knives`: read and run only |")
+
+
+def test_a_feeler_with_one_claw_or_none_says_so_in_the_singular():
+    one, none = feeler_values(["knives"]), feeler_values()
+    assert one["FEELER_CLAWS"].startswith("It uses the claw `knives`: a tools project of Squirrel's,")
+    assert one["THE_CLAWS"] == "the claw (knives)"
+    assert none["CLAWS"] == "" and none["THE_CLAWS"] == "no claw yet" and none["CLAW_MOUNTS"] == ""
+    assert none["FEELER_CLAWS"] == ("It uses no claw yet; when it does, `CLAWS` in `lobster.conf` names them and "
+                                    "`conduct start` connects them.")
+
+
+def test_a_feeler_half_has_its_own_files_and_lobster_conf_but_no_inbox(tmp_path):
+    write(tmp_path, {"common/inbox/README.md": "Inbox of {{SELF}}.\n",
+                     "common/lobster.conf": "KIND={{KIND}}\nSELF={{SELF}}\nSISTER={{SISTER}}\nCLAWS={{CLAWS}}\n",
+                     "feeler/CLAUDE.md": "# {{NAME}}\n\n{{FEELER_CLAWS}}\n"})
+    rendered = render_half(str(tmp_path), "feeler", feeler_values(["knives"]), False)
+    assert sorted(rendered) == ["CLAUDE.md", "lobster.conf"]
+    assert rendered["lobster.conf"] == "KIND=feeler\nSELF=agents\nSISTER=\nCLAWS=knives\n"
+    assert rendered["CLAUDE.md"].startswith("# agents\n\nIt uses the claw `knives`:")

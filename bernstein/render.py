@@ -63,7 +63,7 @@ def render_half(template_dir, half, values, public):
     if not os.path.isdir(own):
         raise TemplateRefused(f"the template folder {template_dir} has no {half}/ folder")
     sources = [(rel, os.path.join(own, rel), half + "/" + rel) for rel in files_under(own)]
-    for rel in ("inbox/README.md", "lobster.conf"):
+    for rel in ("lobster.conf",) if half == "feeler" else ("inbox/README.md", "lobster.conf"):
         sources.append((rel, os.path.join(template_dir, "common", rel), "common/" + rel))
     values = dict(values, TEMPLATE_VERSION=version(template_dir))
     rendered = {}
@@ -100,11 +100,41 @@ def listed(names, mark=True):
     return ", ".join(shown[:-1]) + " and " + shown[-1]
 
 
+def feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, today, home, non_code_path, claws):
+    """The placeholder values for a feeler: a one-off project with no home claw, which may use claws."""
+    path = non_code_path or os.path.join(non_code_dir, name)
+    if len(claws) > 1:
+        uses = (f"It uses the claws {listed(claws)}: tools projects of Squirrel's, connected to its session by "
+                "`conduct start`.")
+        the = f"the claws ({listed(claws, mark=False)})"
+    elif claws:
+        uses = (f"It uses the claw `{claws[0]}`: a tools project of Squirrel's, connected to its session by "
+                "`conduct start`.")
+        the = f"the claw ({claws[0]})"
+    else:
+        uses = ("It uses no claw yet; when it does, `CLAWS` in `lobster.conf` names them and `conduct start` "
+                "connects them.")
+        the = "no claw yet"
+    return {
+        "NAME": name, "SELF": name, "TOOLS": "", "SISTER": "", "KIND": "feeler",
+        "DATE": f"{today.day} {MONTHS[today.month - 1]} {today.year}", "YEAR": str(today.year),
+        "MODEL": model[:1].upper() + model[1:], "MODEL_SETTING": model, "EFFORT": effort,
+        "NONCODE_PATH": tilde(path, home), "MAIL_ROOT": tilde(mail_root, home),
+        "MAIL_ROOT_SHELL": shlex.quote(mail_root), "LOBSTER_TOOLS": tilde(os.path.dirname(lobster_mail), home),
+        "CLAWS": " ".join(claws), "CLAW_LIST": listed(claws), "CLAW_NAMES": listed(claws, mark=False),
+        "THE_CLAWS": the, "FEELER_CLAWS": uses,
+        "CLAW_MOUNTS": "\n".join(f"| `~/mnt/{c}` | the claw `{c}`: read and run only |" for c in claws),
+    }
+
+
 def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lobster_mail, public, today, home,
                tools=None, non_code_path=None, tools_path=None, claws=()):
     """The placeholder values for one half of the pair named `name`; an existing pair may give its own
     tools name and folders. `claws` are the further claws a non-code project uses besides its home,
     `tools`. A lone claw (a tools project with no sister) has `name` None and gives `tools`."""
+    if half == "feeler":
+        return feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, today, home,
+                             non_code_path, list(claws))
     lone = name is None
     name = name or ""
     tools = tools or name + "-tools"

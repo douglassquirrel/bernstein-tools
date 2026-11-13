@@ -115,20 +115,32 @@ def parser_for_new_lobster():
     p.add_argument("--claw", action="store_true", help="NAME is a claw, a tools project with no non-code half: "
                    "make only it (or with --render-into, render only the code half)")
     p.add_argument("--claws", metavar="NAMES", help="with --render-into: the further claws the non-code project "
-                   "uses besides its home, <name>-tools or --tools, separated by spaces")
+                   "uses besides its home, <name>-tools or --tools, separated by spaces; with --feeler: the "
+                   "claws the feeler uses")
+    p.add_argument("--feeler", action="store_true", help="NAME is a feeler, a light one-off project with no "
+                   "tools project of its own: make only its folder and mailbox (or with --render-into, render "
+                   "only its files)")
     return p
 
 
 def options_for_new_lobster(argv, settings):
     """The options for one run of new-lobster: the flags over the settings."""
     a = parser_for_new_lobster().parse_args(argv)
+    if a.feeler and a.claw:
+        raise SettingsRefused("--feeler cannot be used with --claw: a feeler is not a tools project")
+    if a.feeler and a.public:
+        raise SettingsRefused("--feeler cannot be used with --public: a feeler has no tools project to publish")
+    for flag, value in (("--tools", a.tools), ("--tools-path", a.tools_path)):
+        if value is not None and a.feeler:
+            raise SettingsRefused(f"{flag} cannot be used with --feeler, which has no home claw")
     try:
         check_name(a.name, claw=a.claw)
     except NameRefused as why:
-        raise SettingsRefused(f"the {'claw ' if a.claw else ''}name {a.name} cannot be used: {why}")
+        kind = "claw " if a.claw else "feeler " if a.feeler else ""
+        raise SettingsRefused(f"the {kind}name {a.name} cannot be used: {why}")
     for flag, value in (("--tools", a.tools), ("--non-code-path", a.non_code_path), ("--tools-path", a.tools_path),
                         ("--claws", a.claws)):
-        if value is not None and a.render_into is None:
+        if value is not None and a.render_into is None and not (flag == "--claws" and a.feeler):
             raise SettingsRefused(f"{flag} needs --render-into")
     for flag, value in (("--tools", a.tools), ("--non-code-path", a.non_code_path), ("--claws", a.claws)):
         if value is not None and a.claw:
@@ -168,4 +180,5 @@ def options_for_new_lobster(argv, settings):
         tools_path=a.tools_path,
         claw=a.claw,
         claws=claws,
+        feeler=a.feeler,
     )
