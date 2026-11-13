@@ -424,3 +424,50 @@ def test_a_global_file_belongs_beside_a_public_checkout_not_in_it(world):
     write(checkout, {"RULES.md": CODE_RULES})
     code, out, _err = world.conform("recipes", "recipes-tools")
     assert code == 1 and f"  missing: RULES.md beside the checkout, not in it ({checkout})\n" in out
+
+
+def feeler_in_line(world, claws=()):
+    """A feeler with everything the template gives one: its folder."""
+    write(world.template, {"common/global-files": "RULES.md\ninbox/README.md\n",
+                           "feeler/RULES.md": "Feeler rules for {{NAME}}; {{THE_CLAWS}}.\n",
+                           "feeler/CLAUDE.md": "# {{NAME}}\n", "feeler/START-HERE.txt": "Start {{NAME}}.\n"})
+    folder = os.path.join(world.non_code, "agents")
+    the = "no claw yet" if not claws else f"the claw ({claws[0]})"
+    write(folder, {"lobster.conf": f"KIND=feeler\nSELF=agents\nSISTER=\nCLAWS={' '.join(claws)}\nMODEL=opus\nEFFORT=high\n",
+                   "START-HERE.txt": "Start agents.\n", "CLAUDE.md": "# agents\n\nOurs.\n",
+                   "RULES.md": f"Feeler rules for agents; {the}.\n"})
+    os.makedirs(os.path.join(folder, ".git"))
+    os.makedirs(os.path.join(world.mail, "agents"))
+    return folder
+
+
+def test_a_feeler_with_its_files_a_repository_and_a_mailbox_is_in_line_without_backlog_inbox_or_hook(world):
+    folder = feeler_in_line(world)
+    code, out, err = world.conform("agents")
+    assert (code, err) == (0, ""), out
+    assert out == f"agents (feeler): {folder}\n  in line\nThe feeler is in line.\n"
+
+
+def test_what_a_feeler_lacks_is_listed(world):
+    folder = feeler_in_line(world, claws=("knives",))
+    os.remove(os.path.join(folder, "START-HERE.txt"))
+    os.rmdir(os.path.join(folder, ".git"))
+    os.rmdir(os.path.join(world.mail, "agents"))
+    write(folder, {"RULES.md": "reworded\n", "lobster.conf": "KIND=feeler\nSELF=agents\nSISTER=agents-tools\nCLAWS=knives\nMODEL=opus\n"})
+    code, out, _err = world.conform("agents")
+    assert code == 1
+    assert out == (f"agents (feeler): {folder}\n"
+                   "  missing: SISTER= (empty: a feeler has no home claw) in lobster.conf (it says agents-tools)\n"
+                   "  missing: EFFORT in lobster.conf\n"
+                   "  missing: START-HERE.txt\n"
+                   f"  missing: the claw knives in {world.code} or a folder directly inside it\n"
+                   "  missing: the template's current RULES.md (a global file: conduct start brings it up to date)\n"
+                   f"  missing: a git repository in {folder}\n"
+                   f"  missing: the mailbox agents in {world.mail}\n"
+                   "7 things to bring into line.\n")
+
+
+def test_a_feeler_is_not_checked_as_a_pair_and_a_claw_is_still_checked_as_a_claw(world):
+    feeler_in_line(world)
+    code, _out, err = world.conform("agents", "agents-tools")
+    assert code == 2 and err == "conform: agents is a feeler, which has no tools project: give its name alone\n"

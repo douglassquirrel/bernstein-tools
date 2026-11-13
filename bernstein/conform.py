@@ -58,7 +58,7 @@ def find(name, kind, s):
     return (folder, folder) if folder else None
 
 
-def conf_gaps(conf, wanted):
+def conf_gaps(conf, wanted, empty="a lone claw"):
     """What lobster.conf lacks: the right KIND, SELF and SISTER, and a MODEL and an EFFORT."""
     try:
         settings = read_conf_file(conf)
@@ -68,7 +68,7 @@ def conf_gaps(conf, wanted):
     for key, value in wanted.items():
         if (settings.get(key) or "") != value:
             said = f" (it says {settings[key]})" if settings.get(key) else ""
-            shown = f"{key}={value}" if value else f"{key}= (empty: a lone claw)"
+            shown = f"{key}={value}" if value else f"{key}= (empty: {empty})"
             gaps.append(f"{shown} in lobster.conf{said}")
     gaps += [f"{key} in lobster.conf" for key in ("MODEL", "EFFORT") if not settings.get(key)]
     return gaps
@@ -183,6 +183,43 @@ def sister_path(kind, sister, s):
     return found[1] if found else None
 
 
+def feeler_folder(name, s):
+    """The folder of the feeler called name, or None if there is no such feeler."""
+    try:
+        found = find(name, "non-code", s)
+    except ProjectRefused:
+        return None
+    if found is None:
+        return None
+    try:
+        kind = read_conf_file(os.path.join(found[0], "lobster.conf")).get("KIND")
+    except (UnicodeDecodeError, OSError):
+        return None
+    return found[0] if kind == "feeler" else None
+
+
+def feeler_gaps(name, folder, s):
+    """What a feeler lacks: far less than a pair, since it has no tools project, Backlog, inbox or hook."""
+    conf = os.path.join(folder, "lobster.conf")
+    gaps = conf_gaps(conf, {"KIND": "feeler", "SELF": name, "SISTER": ""}, empty="a feeler has no home claw")
+    for rel in ("START-HERE.txt", "CLAUDE.md"):
+        if not os.path.isfile(os.path.join(folder, rel)):
+            gaps.append(rel)
+    claws = claws_of(conf)
+    for claw in claws:
+        if not os.path.isdir(tools_folders(claw, s["CODE_DIR"])[1]):
+            gaps.append(f"the claw {claw} in {s['CODE_DIR']} or a folder directly inside it")
+    rendered = globalfiles.renders(s, "feeler", name, "", folder, folder, None, claws, s["HOME"], datetime.date.today())
+    for rel, how in globalfiles.state(rendered, folder):
+        gaps.append(f"{rel}, one of the template's global files" if how == "missing" else
+                    f"the template's current {rel} (a global file: conduct start brings it up to date)")
+    if not os.path.isdir(os.path.join(folder, ".git")):
+        gaps.append(f"a git repository in {folder}")
+    if not os.path.isdir(os.path.join(s["MAIL_ROOT"], name)):
+        gaps.append(f"the mailbox {name} in {s['MAIL_ROOT']}")
+    return gaps
+
+
 class Stop(Exception):
     def __init__(self, code, message):
         super().__init__(message)
@@ -198,7 +235,7 @@ class Parser(argparse.ArgumentParser):
 def parser():
     p = Parser(prog="conform", description="List what an existing lobster pair, or a lone claw (a tools project "
                "with no non-code half), lacks against bernstein's lobster-project template. Reads only; changes nothing.")
-    p.add_argument("project", help="the non-code project's name; or, alone, a lone claw's")
+    p.add_argument("project", help="the non-code project's name; or, alone, a lone claw's or a feeler's")
     p.add_argument("tools", nargs="?", help="the non-code project's home tools project")
     return p
 
@@ -225,6 +262,18 @@ def lone_or(non_code, tools, s):
 def report(a, s, out):
     """Write the report; return the number of things missing."""
     total = 0
+    feeler = feeler_folder(a.project, s)
+    if feeler and a.tools:
+        raise Stop(2, f"{a.project} is a feeler, which has no tools project: give its name alone")
+    if feeler:
+        out.write(f"{a.project} (feeler): {feeler}\n")
+        try:
+            gaps = feeler_gaps(a.project, feeler, s)
+        except (TemplateRefused, OSError) as why:
+            raise Stop(4, f"the template cannot be read: {why}")
+        out.write("".join(f"  missing: {g}\n" for g in gaps) or "  in line\n")
+        a.feeler = True
+        return len(gaps)
     halves = ((a.project, "non-code", a.tools), (a.tools, "code", lone_or(a.project, a.tools, s))) if a.tools else (
         (a.project, "code", ""),)
     for name, kind, sister in halves:
@@ -272,5 +321,6 @@ def main(argv, env, out, err):
     if total:
         out.write(f"{total} thing{'s' if total != 1 else ''} to bring into line.\n")
         return 1
-    out.write("Both halves are in line.\n" if a.tools else "The claw is in line.\n")
+    out.write("Both halves are in line.\n" if a.tools else "The feeler is in line.\n" if getattr(a, "feeler", False)
+              else "The claw is in line.\n")
     return 0
