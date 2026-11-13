@@ -5,9 +5,10 @@ never edits one; bernstein replaces one whole when it no longer equals the templ
 project, keeping the old copy in the project's _to_delete/. A template without the list has none.
 """
 
+import datetime
 import os
 
-from bernstein.render import TemplateRefused
+from bernstein.render import TemplateRefused, render_half, values_for
 
 LIST = os.path.join("common", "global-files")
 
@@ -72,3 +73,32 @@ def bring_up_to_date(rendered, folder, stamp):
             f.write(rendered[rel])
         os.replace(path + ".bernstein-new", path)
     return behind, kept
+
+
+def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, today):
+    """{path: text} of the template's global files for one half of an existing project, rendered with
+    its own names, folders and claws. `sister_path` is the other half's folder (the home claw's checkout
+    for a non-code project), or None when it has none or it cannot be found. Refuses a template whose
+    global file would read differently on another day."""
+    names = declared(s["TEMPLATE"])
+    if not names:
+        return {}
+    non_code = kind == "non-code"
+    public = (not non_code) and folder != checkout
+
+    def on(day):
+        values = values_for(name if non_code else (sister or None), kind, model=s["MODEL"], effort=s["EFFORT"],
+                            non_code_dir=s["NON_CODE_DIR"], code_dir=s["CODE_DIR"], mail_root=s["MAIL_ROOT"],
+                            lobster_mail=s["LOBSTER_MAIL"], public=public, today=day, home=home,
+                            tools=sister if non_code else name,
+                            non_code_path=folder if non_code else sister_path,
+                            tools_path=sister_path if non_code else checkout, claws=claws)
+        rendered = render_half(s["TEMPLATE"], kind, values, public)
+        return {rel: rendered[rel] for rel in names if rel in rendered}
+
+    first, second = on(today), on(today + datetime.timedelta(days=40))
+    for rel in first:
+        if first[rel] != second[rel]:
+            raise TemplateRefused(f"{kind}/{rel} is a global file and must read the same every day: use "
+                                  "{{TEMPLATE_VERSION}} in it, not {{DATE}}")
+    return first

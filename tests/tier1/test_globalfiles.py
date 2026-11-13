@@ -9,6 +9,11 @@ from bernstein.render import TemplateRefused, render_half
 DAY = datetime.date(2026, 10, 18)
 
 
+def read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
 def template(tmp_path, files):
     for rel, text in files.items():
         p = tmp_path / "tmpl" / rel
@@ -68,8 +73,8 @@ def test_bringing_up_to_date_replaces_only_what_is_behind_and_keeps_each_old_cop
     assert kept == os.path.join(str(folder), "_to_delete", "before-global-update-2026-10-18-0940")
     assert (folder / "RULES.md").read_text(encoding="utf-8") == "new rules\n"
     assert (folder / "inbox" / "README.md").read_text(encoding="utf-8") == "new inbox\n"
-    assert open(os.path.join(kept, "RULES.md"), encoding="utf-8").read() == "old rules\n"
-    assert open(os.path.join(kept, "inbox", "README.md"), encoding="utf-8").read() == "old inbox\n"
+    assert read(os.path.join(kept, "RULES.md")) == "old rules\n"
+    assert read(os.path.join(kept, "inbox", "README.md")) == "old inbox\n"
     assert (folder / "CLAUDE.md").read_text(encoding="utf-8") == "the project's own\n"
     assert sorted(os.listdir(folder)) == ["CLAUDE.md", "RULES.md", "START-HERE.txt", "_to_delete", "inbox"]
 
@@ -83,5 +88,5 @@ def test_nothing_behind_writes_nothing_and_a_second_update_the_same_minute_never
     _, first = globalfiles.bring_up_to_date({"RULES.md": "two\n"}, str(folder), "s")
     _, second = globalfiles.bring_up_to_date({"RULES.md": "three\n"}, str(folder), "s")
     assert first.endswith("before-global-update-s") and second.endswith("before-global-update-s-2")
-    assert open(os.path.join(first, "RULES.md")).read() == "one\n"
-    assert open(os.path.join(second, "RULES.md")).read() == "two\n"
+    assert read(os.path.join(first, "RULES.md")) == "one\n"
+    assert read(os.path.join(second, "RULES.md")) == "two\n"

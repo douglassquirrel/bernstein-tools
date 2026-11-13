@@ -1,6 +1,6 @@
 import os
 
-from conftest import tree
+from conftest import tree, write_tree
 
 
 def test_help_describes_the_command_and_exits_0(world):
@@ -388,3 +388,26 @@ def test_a_claw_dry_run_and_its_refusals_name_only_the_claw(world):
     world.mailboxes(["word"])
     code, _out, err = world.run("--claw", "word-tools")
     assert code == 0, err
+
+
+def test_a_global_file_of_a_public_tools_project_goes_beside_the_checkout_and_is_never_committed_in_it(world):
+    write_tree(world.template, {"common/global-files": "RULES.md\n", "code/RULES.md": "Rules for {{TOOLS}}.\n",
+                                "non-code/RULES.md": "Rules for {{NAME}}.\n"})
+    code, _out, err = world.run("--public", "recipes")
+    assert code == 0, err
+    outer = os.path.join(world.code, "recipes-tools-code")
+    assert tree(outer)["RULES.md"] == b"Rules for recipes-tools.\n"
+    assert "RULES.md" not in tree(os.path.join(outer, "recipes-tools"))
+    adds = [c for c in world.calls() if c["prog"] == "git" and c["args"][:1] == ["add"]]
+    assert "RULES.md" not in adds[1]["args"]
+    assert tree(os.path.join(world.non_code, "recipes"))["RULES.md"] == b"Rules for recipes.\n"
+
+
+def test_a_list_of_global_files_that_names_a_path_outside_a_project_is_exit_4_and_nothing_is_made(world):
+    write_tree(world.template, {"common/global-files": "../CLAUDE.md\n"})
+    for argv in (("--public", "recipes"), ("--public", "--claw", "knives"), ("--dry-run", "recipes")):
+        code, out, err = world.run(*argv)
+        assert (code, out) == (4, "")
+        assert err == ("new-lobster: the template cannot be used: common/global-files: ../CLAUDE.md is not a "
+                       "path inside a project\n")
+    assert os.listdir(world.non_code) == [] and os.listdir(world.code) == []

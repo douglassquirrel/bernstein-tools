@@ -10,6 +10,7 @@ import os
 import shlex
 import subprocess
 
+from bernstein.globalfiles import declared
 from bernstein.render import TemplateRefused, render_half, values_for
 from bernstein.settings import (
     SettingsRefused,
@@ -73,11 +74,20 @@ def in_the_way(o, env, folders, boxes):
             raise Stop(3, f"the mailbox {box} already exists in {o.mail_root}; nothing was made")
 
 
-def split_public(files):
-    """For a public tools project: (outer folder's files, checkout's files)."""
+def global_names(o):
+    """The template's global files, which belong beside a public checkout; a bad list stops the run."""
+    try:
+        return declared(o.template)
+    except TemplateRefused as why:
+        raise Stop(4, f"the template cannot be used: {why}")
+
+
+def split_public(files, also=()):
+    """For a public tools project: (outer folder's files, checkout's files). `also` names further
+    files that belong beside the checkout: the template's global files."""
     outer, checkout = {}, {}
     for rel, text in files.items():
-        if rel in OUTER_FILES or rel.startswith(OUTER_FOLDERS):
+        if rel in OUTER_FILES or rel.startswith(OUTER_FOLDERS) or rel in also:
             outer[rel] = text
         else:
             checkout[rel] = text
@@ -215,12 +225,13 @@ def make_claw(o, env, today, out):
     repo = os.path.join(outer, o.name) if o.public else outer
     in_the_way(o, env, (outer,), (o.name,))
     rendered = render_code_half(o, None, o.name, env, today)
+    beside = global_names(o)
     if o.dry_run:
         for line in claw_plan(o, outer, repo):
             out.write(line + "\n")
         out.write("Dry run: nothing was made.\n")
         return
-    outer_files, repo_files = split_public(rendered) if o.public else ({}, rendered)
+    outer_files, repo_files = split_public(rendered, beside) if o.public else ({}, rendered)
     made = []
     try:
         os.makedirs(outer)
@@ -266,6 +277,7 @@ def make(o, env, today, out):
             raise Stop(4, f"the template cannot be used: {why}")
     package = tools.replace("-", "")
     rendered["code"][package + "/__init__.py"] = ""
+    beside = global_names(o)
 
     if o.dry_run:
         for line in plan(o, nc, tools_outer, tools_repo):
@@ -274,7 +286,7 @@ def make(o, env, today, out):
         return
 
     if o.public:
-        outer_files, repo_files = split_public(rendered["code"])
+        outer_files, repo_files = split_public(rendered["code"], beside)
     else:
         outer_files, repo_files = {}, rendered["code"]
 

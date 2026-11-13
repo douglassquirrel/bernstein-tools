@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 
+from bernstein import globalfiles
 from bernstein.conduct import (
     ProjectRefused,
     locate,
@@ -150,8 +151,15 @@ def gaps_of(name, kind, sister, found, s):
             gaps.append(f"the claw {claw} in {s['CODE_DIR']} or a folder directly inside it")
     gaps += claude_gaps(folder, *required_sections(s, kind, non_code, tools, found[0] != found[1], s["HOME"], claws))
     checkout = found[1]
+    other = sister_path(kind, sister, s)
+    rendered = globalfiles.renders(s, kind, name, sister, folder, checkout, other, claws, s["HOME"],
+                                   datetime.date.today())
+    for rel, how in globalfiles.state(rendered, folder):
+        gaps.append(f"{rel}, one of the template's global files" if how == "missing" else
+                    f"the template's current {rel} (a global file: conduct start brings it up to date)")
     if checkout != folder:
-        for rel in OUTER_FILES + OUTER_FOLDERS:
+        beside = OUTER_FILES + OUTER_FOLDERS + tuple(r for r in rendered if not r.startswith(OUTER_FOLDERS))
+        for rel in dict.fromkeys(beside):
             if os.path.lexists(os.path.join(checkout, rel.rstrip("/"))):
                 gaps.append(f"{rel} beside the checkout, not in it ({checkout})")
     if not os.path.isdir(os.path.join(checkout, ".git")):
@@ -161,6 +169,18 @@ def gaps_of(name, kind, sister, found, s):
     if not os.path.isdir(os.path.join(s["MAIL_ROOT"], name)):
         gaps.append(f"the mailbox {name} in {s['MAIL_ROOT']}")
     return gaps
+
+
+def sister_path(kind, sister, s):
+    """Where the other half is, for the template's words: a non-code project's home claw's checkout, or a
+    tools project's non-code folder. None when there is none or it cannot be found."""
+    if not sister:
+        return None
+    try:
+        found = find(sister, "code" if kind == "non-code" else "non-code", s)
+    except ProjectRefused:
+        return None
+    return found[1] if found else None
 
 
 class Stop(Exception):

@@ -365,3 +365,62 @@ def test_the_dreams_section_has_fixed_wording_too(world):
     write(nc, {"CLAUDE.md": claude.replace("Something older.", "Review the dreams of recipes.")})
     code, out, _err = world.conform("recipes", "recipes-tools")
     assert (code, out.splitlines()[-1]) == (0, "Both halves are in line.")
+
+
+GLOBAL = {
+    "common/global-files": "RULES.md\ninbox/README.md\n",
+    "common/version": "v1\n",
+    "common/inbox/README.md": "Inbox, {{TEMPLATE_VERSION}}.\n",
+    "non-code/RULES.md": "Rules for {{SELF}} at {{NONCODE_PATH}}, tools at {{TOOLS_PATH}}, claws {{CLAW_NAMES}}, {{TEMPLATE_VERSION}}.\n",
+    "code/RULES.md": "Rules for {{TOOLS}} at {{TOOLS_PATH}}, serving {{SERVING}}.\n",
+}
+NC_RULES = "Rules for recipes at ~/projects/non-code/eat/recipes, tools at ~/projects/code/eat/recipes-tools-code/recipes-tools, claws recipes-tools and knives, v1.\n"
+CODE_RULES = "Rules for recipes-tools at ~/projects/code/eat/recipes-tools-code/recipes-tools, serving `recipes`.\n"
+
+
+def split_pair(world):
+    """A public pair in a subfolder, with a further claw, that has the template's global files as rendered."""
+    nc, outer, checkout = pair_in_line(world, public=True, under="eat")
+    write(world.template, GLOBAL)
+    with open(os.path.join(nc, "lobster.conf"), "a") as f:
+        f.write("CLAWS=knives\n")
+    os.makedirs(os.path.join(world.code, "knives"))
+    write(nc, {"RULES.md": NC_RULES, "inbox/README.md": "Inbox, v1.\n"})
+    write(outer, {"RULES.md": CODE_RULES, "inbox/README.md": "Inbox, v1.\n"})
+    return nc, outer, checkout
+
+
+def test_a_pair_whose_global_files_equal_the_templates_render_for_its_own_names_and_paths_is_in_line(world):
+    split_pair(world)
+    code, out, err = world.conform("recipes", "recipes-tools")
+    assert (code, err) == (0, ""), out
+    assert out.endswith("Both halves are in line.\n")
+
+
+def test_a_global_file_that_is_missing_or_in_other_words_is_listed_for_its_half(world):
+    nc, outer, _checkout = split_pair(world)
+    os.remove(os.path.join(nc, "RULES.md"))
+    write(outer, {"inbox/README.md": "Inbox, as the project reworded it.\n"})
+    code, out, _err = world.conform("recipes", "recipes-tools")
+    assert code == 1
+    assert out == (f"recipes (non-code): {nc}\n"
+                   "  missing: RULES.md, one of the template's global files\n"
+                   f"recipes-tools (code): {outer}\n"
+                   "  missing: the template's current inbox/README.md (a global file: conduct start brings it up to date)\n"
+                   "2 things to bring into line.\n")
+
+
+def test_a_global_file_that_would_read_differently_tomorrow_is_a_template_error(world):
+    split_pair(world)
+    write(world.template, {"code/RULES.md": "Rules of {{DATE}}.\n"})
+    code, _out, err = world.conform("recipes", "recipes-tools")
+    assert code == 4
+    assert err == ("conform: the template cannot be read: code/RULES.md is a global file and must read the same "
+                   "every day: use {{TEMPLATE_VERSION}} in it, not {{DATE}}\n")
+
+
+def test_a_global_file_belongs_beside_a_public_checkout_not_in_it(world):
+    _nc, _outer, checkout = split_pair(world)
+    write(checkout, {"RULES.md": CODE_RULES})
+    code, out, _err = world.conform("recipes", "recipes-tools")
+    assert code == 1 and f"  missing: RULES.md beside the checkout, not in it ({checkout})\n" in out
