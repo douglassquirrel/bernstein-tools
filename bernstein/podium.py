@@ -78,11 +78,14 @@ def badge(row, now):
 def groups(rows):
     """The rows as the page lays them out: a card per non-code project with its claws under it (its
     sister first, as the home claw), then claws that serve nobody, then mailboxes whose project
-    cannot be read, then bernstein's own."""
+    cannot be read, then bernstein's own, then a card per conductor with its claw under it."""
     by_name = {r["mailbox"]: r for r in rows}
-    cards, lone, unstartable, bernstein = [], [], [], None
+    cards, lone, unstartable, conductors, bernstein = [], [], [], [], None
     for r in rows:
-        if r["mailbox"] == "bernstein":
+        if r["kind"] == "conductor":
+            conductors.append((r, [(by_name.get(name, {"mailbox": name, "missing": True}), "claw")
+                                   for name in r["claws"]]))
+        elif r["mailbox"] == "bernstein":
             bernstein = r
         elif r["kind"] == "non-code":
             claws = [(by_name.get(name, {"mailbox": name, "missing": True}),
@@ -92,7 +95,8 @@ def groups(rows):
             unstartable.append(r)
         elif not r["serves"]:
             lone.append(r)
-    return {"cards": cards, "lone": lone, "unstartable": unstartable, "bernstein": bernstein}
+    return {"cards": cards, "lone": lone, "unstartable": unstartable, "bernstein": bernstein,
+            "conductors": conductors}
 
 
 SESSIONS = {"mac": "Claude Code", "device": "Claude Cowork"}
@@ -110,8 +114,8 @@ ASLEEP = ("dormant", "quiet", "stale")
 
 def buttons(row):
     """The verbs a row offers, from its state. conduct still decides when one is pressed."""
-    if row["mailbox"] == "bernstein" or row.get("missing"):
-        return []
+    if row["mailbox"] == "bernstein" or row.get("missing") or row.get("kind") == "conductor":
+        return []           # conduct has nothing to do to the session that runs it
     state = row["state"]
     if state == "running":
         return ["stop", "dormant", "dream"]
@@ -121,8 +125,8 @@ def buttons(row):
 
 
 def buttons_for_all(rows):
-    """The verbs offered for every session at once: bernstein's own is never among them."""
-    states = {r["state"] for r in rows if r["mailbox"] != "bernstein"}
+    """The verbs offered for every session at once: bernstein's own and a conductor's are never among them."""
+    states = {r["state"] for r in rows if r["mailbox"] != "bernstein" and r["kind"] != "conductor"}
     return (["stop", "dormant", "dream"] if "running" in states else []) + (
         ["wake"] if states.intersection(ASLEEP) else [])
 
@@ -223,6 +227,11 @@ def view(rows, now, error=None, entries=()):
         if members:
             parts.append(f'<h2>{title}</h2><section class="card">'
                          + "".join(row_html(r, now) for r in members) + "</section>")
+    if found["conductors"]:
+        parts.append("<h2>Conductor</h2>")
+    for head, claws in found["conductors"]:
+        parts.append('<section class="card">' + row_html(head, now)
+                     + "".join(row_html(c, now, label, claw=True) for c, label in claws) + "</section>")
     return "".join(parts) + activity(entries)
 
 

@@ -73,6 +73,9 @@ def run(a, s, env, today, out, sleep):
         if found is None:
             raise Stop(3, f"no project {name} in {s['NON_CODE_DIR']} or {s['CODE_DIR']}, or a folder directly "
                           f"inside either; {NONE_MOVED}")
+        if conduct.conductor_folder(name, s["CODE_DIR"]):
+            raise Stop(3, f"{name} is a conductor: its files are its own, and are changed there by hand; "
+                          f"{NONE_MOVED}")
         folder = found[0]
         backlog = os.path.join(folder, "backlog")
         if os.path.islink(backlog) or (os.path.lexists(backlog) and not os.path.isdir(backlog)):

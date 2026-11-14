@@ -14,6 +14,7 @@ import shlex
 from bernstein import globalfiles
 from bernstein.conduct import (
     ProjectRefused,
+    conductor_folder,
     locate,
     non_code_folder_in,
     read_conf_file,
@@ -100,15 +101,15 @@ def folder_gaps(conf, kind, home):
     return gaps
 
 
-def required_sections(s, kind, non_code, tools, public, home, claws=(), backlog=False):
+def required_sections(s, kind, non_code, tools, public, home, claws=(), backlog=False, conductor=None):
     """(headings, wording) for a half's CLAUDE.md. Headings: every heading of each section the template's
     CLAUDE.md for that half includes from common/sections/, and every heading of its own that names the
     pair. Wording: {heading: lines} of the included sections in FIXED_WORDING, filled. A lone claw has
-    non_code None."""
+    non_code None. `conductor` is the folder of the conductor a tools project serves, when its sister is one."""
     values = values_for(non_code, kind, model=s["MODEL"], effort=s["EFFORT"], non_code_dir=s["NON_CODE_DIR"],
                         code_dir=s["CODE_DIR"], mail_root=s["MAIL_ROOT"], lobster_mail=s["LOBSTER_MAIL"],
                         public=public, today=datetime.date.today(), home=home, tools=tools, claws=claws,
-                        backlog=backlog)
+                        backlog=backlog, non_code_path=conductor, conductor=bool(conductor))
     where = f"{kind}/CLAUDE.md"
     with open(os.path.join(s["TEMPLATE"], kind, "CLAUDE.md"), encoding="utf-8") as f:
         raw = f.read()
@@ -140,8 +141,8 @@ def claude_gaps(folder, headings, wording):
                for h, lines in wording.items() if h in have and have[h] != lines])
 
 
-def gaps_of(name, kind, sister, found, s):
-    """What one half lacks, as lines."""
+def gaps_of(name, kind, sister, found, s, conductor=None):
+    """What one half lacks, as lines. `conductor` is the folder of the conductor a tools half serves, if any."""
     folder, _checkout = found
     gaps = []
     conf = os.path.join(folder, "lobster.conf")
@@ -170,11 +171,11 @@ def gaps_of(name, kind, sister, found, s):
         if not os.path.isdir(tools_folders(claw, s["CODE_DIR"])[1]):
             gaps.append(f"the claw {claw} in {s['CODE_DIR']} or a folder directly inside it")
     gaps += claude_gaps(folder, *required_sections(s, kind, non_code, tools, found[0] != found[1], s["HOME"], claws,
-                                                       globalfiles.keeps_tickets(folder)))
+                                                       globalfiles.keeps_tickets(folder), conductor))
     checkout = found[1]
-    other = sister_path(kind, sister, s)
+    other = conductor or sister_path(kind, sister, s)
     rendered = globalfiles.renders(s, kind, name, sister, folder, checkout, other, claws, s["HOME"],
-                                   datetime.date.today())
+                                   datetime.date.today(), conductor=bool(conductor))
     for rel, how in globalfiles.state(rendered, folder):
         gaps.append(f"{rel}, one of the template's global files" if how == "missing" else
                     f"the template's current {rel} (a global file: conduct start brings it up to date)")
@@ -200,6 +201,33 @@ def sister_path(kind, sister, s):
     except ProjectRefused:
         return None
     return found[1] if found else None
+
+
+def conductor_gaps(name, claw, folder, s):
+    """What a conductor lacks. It is outside the template, so only what a conductor has is asked of it: its
+    lobster.conf, a CLAUDE.md, a git repository and a mailbox."""
+    conf = os.path.join(folder, "lobster.conf")
+    gaps = conf_gaps(conf, {"KIND": "conductor", "SELF": name, "SISTER": claw})
+    if claws_of(conf):
+        gaps.append("an empty CLAWS in lobster.conf (a conductor has one claw, the one SISTER names)")
+    gaps += folder_gaps(conf, "code", s["HOME"])
+    if not os.path.isfile(os.path.join(folder, "CLAUDE.md")):
+        gaps.append("CLAUDE.md")
+    if not os.path.isdir(os.path.join(folder, ".git")):
+        gaps.append(f"a git repository in {folder}")
+    if not os.path.isdir(os.path.join(s["MAIL_ROOT"], name)):
+        gaps.append(f"the mailbox {name} in {s['MAIL_ROOT']}")
+    return gaps
+
+
+def served_conductor(tools, s):
+    """The name of the conductor a tools project's lobster.conf names as its sister, or None."""
+    try:
+        found = find(tools, "code", s)
+        sister = read_conf_file(os.path.join(found[0], "lobster.conf")).get("SISTER", "") if found else ""
+    except (ProjectRefused, UnicodeDecodeError, OSError):
+        return None
+    return sister if conductor_folder(sister, s["CODE_DIR"]) else None
 
 
 def feeler_folder(name, s):
@@ -294,8 +322,21 @@ def report(a, s, out):
         out.write("".join(f"  missing: {g}\n" for g in gaps) or "  in line\n")
         a.feeler = True
         return len(gaps)
-    halves = ((a.project, "non-code", a.tools), (a.tools, "code", lone_or(a.project, a.tools, s))) if a.tools else (
-        (a.project, "code", ""),)
+    conductor = conductor_folder(a.project, s["CODE_DIR"])
+    if conductor and not a.tools:
+        raise Stop(2, f"{a.project} is a conductor: give its claw too, as in conform {a.project} {a.project}-tools")
+    if not a.tools and served_conductor(a.project, s):
+        raise Stop(2, f"{a.project} is the claw of the conductor {served_conductor(a.project, s)}: check them "
+                      f"together, conform {served_conductor(a.project, s)} {a.project}")
+    if conductor:
+        out.write(f"{a.project} (conductor): {conductor}\n")
+        gaps = conductor_gaps(a.project, a.tools, conductor, s)
+        out.write("".join(f"  missing: {g}\n" for g in gaps) or "  in line\n")
+        total += len(gaps)
+        halves = ((a.tools, "code", a.project),)
+    else:
+        halves = ((a.project, "non-code", a.tools), (a.tools, "code", lone_or(a.project, a.tools, s))) if a.tools else (
+            (a.project, "code", ""),)
     for name, kind, sister in halves:
         base = s["CODE_DIR"] if kind == "code" else s["NON_CODE_DIR"]
         try:
@@ -309,7 +350,7 @@ def report(a, s, out):
             continue
         out.write(f"{name} ({kind}): {found[0]}\n")
         try:
-            gaps = gaps_of(name, kind, sister, found, s)
+            gaps = gaps_of(name, kind, sister, found, s, conductor if kind == "code" else None)
         except globalfiles.ProjectUnreadable as why:
             raise Stop(4, str(why))
         except (TemplateRefused, OSError) as why:

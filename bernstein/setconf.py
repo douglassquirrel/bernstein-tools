@@ -162,6 +162,8 @@ def run(a, s, env, today, out, sleep):
     if found is None:
         raise Stop(3, f"no project {name} in {s['NON_CODE_DIR']} or {s['CODE_DIR']}, or a folder directly inside "
                       f"either; {NOTHING}")
+    if conduct.conductor_folder(name, s["CODE_DIR"]):
+        raise Stop(3, f"{name} is a conductor: its lobster.conf is its own, and is changed there by hand; {NOTHING}")
     folder = found[0]
     conf = os.path.join(folder, "lobster.conf")
     if not os.path.lexists(conf):

@@ -129,11 +129,14 @@ def feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, to
 
 def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lobster_mail, public, today, home,
                tools=None, non_code_path=None, tools_path=None, claws=(), backlog_prefix=None,
-               backlog=False):
+               backlog=False, conductor=False):
     """The placeholder values for one half of the pair named `name`; an existing pair may give its own
     tools name and folders, and the prefix its tickets already carry (else it is worked out from the name).
     `backlog` says whether the project keeps tickets: BACKLOG is "yes" or "no", for a template to choose by. `claws` are the further claws a non-code project uses besides its home,
-    `tools`. A lone claw (a tools project with no sister) has `name` None and gives `tools`."""
+    `tools`. A lone claw (a tools project with no sister) has `name` None and gives `tools`. `conductor` says
+    that the tools project's sister `name` is a conductor, the project whose session runs the commands, at
+    `non_code_path`: the words that name the sister then name it, and SERVED is "conductor".
+    """
     if half == "feeler":
         return feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, today, home,
                              non_code_path, list(claws))
@@ -183,6 +186,16 @@ def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lob
                                     f"   {nc_shown}/CLAUDE.md, its Purpose and The brief) and offer its answers for "
                                     "\"What this is\",\n   so Squirrel need not say them twice.",
         }
+    if conductor and not lone and not non_code:
+        sister_words.update({
+            "SERVED": "conductor",
+            "FOR_WHOM": f"the work done by its conductor, `{name}` (`{nc_shown}`)",
+            "TALKS_TO": f"its conductor, `{name}`",
+            "OF_WHOM": f"the claw of the conductor `{name}`: the tools project that builds the commands `{name}` runs",
+            "SISTER_FIRST_SESSION": "This claw's one customer is its conductor: read the conductor's CLAUDE.md first "
+                                    f"(read only:\n   {nc_shown}/CLAUDE.md) and offer its answers for \"What this "
+                                    "is\",\n   so Squirrel need not say them twice.",
+        })
     built = "Claude Code builds, tests and maintains in its own repository, with its own CLAUDE.md, PLAN.md and DIARY.md"
     home_claw = f"`{tools}` (`{tilde(tools_path, home)}`)"
     if claws:           # several claws: the plural, with the home claw named

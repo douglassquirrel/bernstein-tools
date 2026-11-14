@@ -226,6 +226,17 @@ class World:
             f.write(f"Start {name}.\n")
         return folder
 
+    def conductor(self, name, claw=None, under="", outer=True, extra=""):
+        """A conductor's folder in the code folder (<name>-code/, or <name>/ without outer): its lobster.conf,
+        a CLAUDE.md and a git repository, and no START-HERE.txt, for it is outside the template. claw is
+        what its SISTER names (default <name>-tools); the claw itself is laid down with project()."""
+        folder = os.path.join(self.code, under, name + "-code" if outer else name)
+        claw = name + "-tools" if claw is None else claw
+        write_tree(folder, {"lobster.conf": f"KIND=conductor\nSELF={name}\nSISTER={claw}\nMODEL=fable\nEFFORT=xhigh\n"
+                                            + extra,
+                            "CLAUDE.md": "The conductor's own rules.\n", ".git/HEAD": "ref: refs/heads/main\n"})
+        return folder
+
     def conduct(self, *argv, sleep=None):
         from bernstein import conduct
         out, err = io.StringIO(), io.StringIO()

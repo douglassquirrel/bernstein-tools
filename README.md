@@ -210,6 +210,58 @@ Dry run: nothing was made.
   `-tools` is refused. `--render-into DIR` renders a feeler's files only, for making an existing
   one-off folder a feeler by hand. The template's feeler files are in its `feeler/` folder.
 
+## A conductor and its claw
+
+The project whose session runs these commands is a **conductor**. It is a fourth kind of project,
+beside a non-code project, a tools project and a feeler, and it and the tools project that builds its
+commands are a pair. The two say so in their `lobster.conf`:
+
+```
+# the conductor's, in <name>-code/ or <name>/ in the code folder
+KIND=conductor
+SELF=maestro
+SISTER=maestro-tools
+MODEL=fable
+EFFORT=xhigh
+
+# its claw's
+KIND=code
+SELF=maestro-tools
+SISTER=maestro
+```
+
+A conductor is outside the template: its folder is the whole of it, with no checkout, and it needs no
+`START-HERE.txt`, hook or `inbox/`. It has one claw, the one `SISTER` names; `CLAWS` or `FOLDERS` in its
+`lobster.conf` are refused. What each command does with it:
+
+- **`conduct start`, `finish`, `dormant`, `wake`, `dream`** refuse a conductor by name (exit 3, nothing
+  sent, set or opened): it is the session that runs `conduct`, and you start and stop it yourself. With
+  `--all`, `stop`, `dormant`, `wake` and `dream` pass over every conductor's mailbox, as they pass over
+  the mailbox `bernstein`. `conduct reset` and `conduct stop <name>` work on a conductor as on any mailbox.
+- **Its claw** is found, started, stopped and reset exactly as any tools project is. Its global files
+  are rendered for a conductor: the template's `{{SERVED}}` is `conductor`, so a line `{{> sections/served-{{SERVED}}.md}}`
+  takes `common/sections/served-conductor.md`, **which the template must have**, and the words that name
+  the sister (`{{FOR_WHOM}}`, `{{REQUESTER}}`, `{{SERVING}}`, `{{TALKS_TO}}`, `{{ASKING}}`, `{{SEND_TO}}`,
+  `{{OF_WHOM}}`, `{{NONCODE_PATH}}`) name the conductor and its folder. Without that section, `conduct
+  start` and `conform` stop with exit 4, naming the file.
+- **`conduct status`** gives a conductor the kind `conductor` and its claw in `claws`; the claw's row has
+  the conductor in `serves`. **`podium`** shows the two as one card under "Conductor", the claw beneath
+  the conductor; the conductor's line has no buttons, and the claw is not among the lone claws.
+- **`conform <conductor> <claw>`** checks the claw as the tools half of the pair and, of the conductor,
+  only what a conductor has: `lobster.conf` (`KIND=conductor`, `SELF`, `SISTER` naming the claw, `MODEL`,
+  `EFFORT`, no `CLAWS` or `FOLDERS`), a CLAUDE.md, a git repository and a mailbox.
+- **`set-conf` and `drop-backlog`** refuse a conductor (exit 3): its files are its own.
+
+```
+$ ./conduct status
+maestro        running  conductor  on duty mac, last beat 2026-11-14T14:22:16Z (0 minutes ago)  new 0  open 0  pace normal
+maestro-tools  off      code       nobody on duty  new 0  open 0  pace normal
+$ ./conduct start maestro --dry-run
+conduct: maestro is a conductor, the session that runs conduct: conduct start has nothing to do to it; Squirrel starts and stops it himself
+$ ./conform maestro
+conform: maestro is a conductor: give its claw too, as in conform maestro maestro-tools
+```
+
 ## conduct: starting and stopping a project's session
 
 ```
@@ -435,7 +487,8 @@ too.
 Each line has buttons for what can be done to that session now: **Start** when nobody is on duty and
 `conduct` could start the project; **Stop**, **Dormant** and **Dream** when it is running; **Wake** when
 it is dormant, quiet or stale. A bar at the top has **Stop all**, **Dormant all**, **Dream all** and
-**Wake all** when any session but bernstein's is in that state; bernstein's own line has no buttons.
+**Wake all** when any session but bernstein's or a conductor's is in that state; bernstein's own line
+and a conductor's have no buttons.
 Nothing happens at one press:
 
 1. The button opens a dialog. Start asks for an optional brief (sent word for word) and mail pace; Dream
@@ -495,12 +548,15 @@ It runs only while this command runs: stop it with Ctrl-C.
 ```
 conform <non-code> <home claw>
 conform <lone claw>
+conform <conductor> <its claw>
 ```
 
 `conform` reads an existing pair and lists, half by half, what it lacks against the template; it
 changes nothing. With one name it checks a lone claw alone, as a code half with an empty SISTER,
 and ends "The claw is in line." In a pair's check, a home claw whose `lobster.conf` has an empty
-SISTER is a lone claw serving this project among others, and is checked as one. It finds each half
+SISTER is a lone claw serving this project among others, and is checked as one. A conductor and its
+claw are checked as "A conductor and its claw" above says; either of the two named alone is exit 2,
+saying to name both. It finds each half
 where `conduct` looks (one subfolder down included), then checks: `lobster.conf` (readable, with the right KIND, SELF and SISTER and a MODEL
 and EFFORT), for a non-code project every claw in CLAWS present in the code folder, `START-HERE.txt`,
 `.claude/settings.json` with the `lobster-mail start` hook passing this mail root to `--root`,
@@ -739,6 +795,14 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: **a conductor is a kind of project.** The project whose session runs these commands
+  can say `KIND=conductor` and `SISTER=<its claw>` in a `lobster.conf` of its own, and its claw
+  `SISTER=<the conductor>`: `conduct status` and `podium` then show the two as a pair, `conform <conductor>
+  <claw>` checks both, and the claw's global files are rendered for a conductor, which needs a new
+  section in the template, `common/sections/served-conductor.md`. `conduct start`, `finish`, `dormant`,
+  `wake` and `dream` refuse a conductor, `--all` passes it over, and `set-conf` and `drop-backlog` refuse
+  it. `conduct status --json`: a row's `kind` may now be `conductor`. An unknown `KIND` is now refused
+  with "it must be code, non-code, feeler or conductor". Nothing changes for other projects.
 - 14 November 2026: new command `set-conf [--dry-run] PROJECT KEY=VALUE` sets one of `SISTER`, `CLAWS`,
   `FOLDERS`, `MODEL` or `EFFORT` in a project's `lobster.conf`, keeping the file as it was in the
   project's `_to_delete/`. It refuses while anyone is on duty for the project, and any value with which

@@ -254,7 +254,7 @@ def test_start_refuses_a_kind_that_is_neither_code_nor_non_code(world):
     with open(conf, "w") as f:
         f.write("KIND=weird\nMODEL=opus\nEFFORT=high\n")
     assert refused(world, "recipes-tools") == (
-        3, f"conduct: {conf} says KIND=weird: it must be code, non-code or feeler\n")
+        3, f"conduct: {conf} says KIND=weird: it must be code, non-code, feeler or conductor\n")
 
 
 def test_start_refuses_a_project_with_no_start_here(world):
@@ -781,7 +781,7 @@ def test_a_kind_that_is_not_code_non_code_or_feeler_is_still_refused(world):
         f.write("KIND=tentacle\n")
     world.duty({"agents": None})
     code, _out, err = world.conduct("start", "agents")
-    assert code == 3 and err.endswith("says KIND=tentacle: it must be code, non-code or feeler\n")
+    assert code == 3 and err.endswith("says KIND=tentacle: it must be code, non-code, feeler or conductor\n")
 
 
 def test_start_brings_a_feelers_global_files_up_to_date_from_the_feeler_half(world):

@@ -97,10 +97,11 @@ def bring_up_to_date(rendered, folder, stamp):
     return behind, kept
 
 
-def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, today):
+def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, today, conductor=False):
     """{path: text} of the template's global files for one half of an existing project, rendered with
     its own names, folders, claws and ticket prefix. `sister_path` is the other half's folder (the home claw's checkout
-    for a non-code project), or None when it has none or it cannot be found. Refuses a template whose
+    for a non-code project), or None when it has none or it cannot be found. `conductor` says that a tools
+    project's sister is a conductor, whose folder `sister_path` then is. Refuses a template whose
     global file would read differently on another day."""
     names = declared(s["TEMPLATE"])
     if not names:
@@ -120,7 +121,7 @@ def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, t
                             tools=sister if non_code else name,
                             non_code_path=folder if non_code else sister_path,
                             tools_path=sister_path if non_code else checkout, claws=claws,
-                            backlog_prefix=prefix, backlog=keeps_tickets(folder))
+                            backlog_prefix=prefix, backlog=keeps_tickets(folder), conductor=conductor)
         rendered = render_half(s["TEMPLATE"], kind, values, public)
         return {rel: rendered[rel] for rel in names if rel in rendered}
 

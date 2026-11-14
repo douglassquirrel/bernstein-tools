@@ -104,7 +104,7 @@ def test_a_claw_named_by_a_project_but_with_no_mailbox_is_shown_as_such():
 
 
 def test_groups_with_nothing_in_them_are_empty_and_bernstein_may_be_absent():
-    assert podium.groups([]) == {"cards": [], "lone": [], "unstartable": [], "bernstein": None}
+    assert podium.groups([]) == {"cards": [], "lone": [], "unstartable": [], "bernstein": None, "conductors": []}
 
 
 def test_the_view_says_when_it_was_made_and_lays_out_cards_then_sections():
@@ -354,3 +354,62 @@ def test_the_session_on_duty_is_named_by_the_app_it_runs_in_not_by_its_mail_name
     assert "<li>desk-1 &lt;b&gt;, 3 min ago</li>" in other
     assert podium.session_name("mac") == "Claude Code" and podium.session_name("device") == "Claude Cowork"
     assert podium.session_name(None) == "None"
+
+
+def an_orchestra():
+    """a_factory's rows and, as conduct status lists them, a conductor and its claw."""
+    return a_factory() + [
+        row("maestro", "running", kind="conductor", duty="mac", sister="maestro-tools", claws=["maestro-tools"]),
+        row("maestro-tools", "off", sister="maestro", serves=["maestro"]),
+    ]
+
+
+def test_a_conductor_and_its_claw_are_one_card_and_neither_a_lone_claw_nor_unstartable():
+    g = podium.groups(an_orchestra())
+    assert [(head["mailbox"], [(c["mailbox"], label) for c, label in claws]) for head, claws in g["conductors"]] == [
+        ("maestro", [("maestro-tools", "claw")])]
+    assert [r["mailbox"] for r in g["lone"]] == ["lone-tools"]
+    assert [r["mailbox"] for r in g["unstartable"]] == ["old-thing"]
+    assert [head["mailbox"] for head, _claws in g["cards"]] == ["menus", "recipes"]
+    assert g["bernstein"]["mailbox"] == "bernstein"
+
+
+def test_the_mailbox_bernstein_once_it_is_a_conductor_is_shown_as_one_with_its_claw_under_it():
+    rows = [row("bernstein", "running", kind="conductor", duty="mac", sister="bernstein-tools", claws=["bernstein-tools"]),
+            row("bernstein-tools", "running", duty="mac", sister="bernstein", serves=["bernstein"]),
+            row("gone", "off", kind="conductor", sister="gone-tools", claws=["gone-tools"])]
+    g = podium.groups(rows)
+    assert (g["bernstein"], g["lone"], g["unstartable"], g["cards"]) == (None, [], [], [])
+    assert [(head["mailbox"], [(c["mailbox"], c.get("missing", False)) for c, _label in claws])
+            for head, claws in g["conductors"]] == [("bernstein", [("bernstein-tools", False)]),
+                                                    ("gone", [("gone-tools", True)])]
+    html = podium.view(rows, NOW)
+    assert "<h2>bernstein</h2>" not in html and "<h2>Lone claws</h2>" not in html
+    assert html.count("<h2>Conductor</h2>") == 1 and html.count('<section class="card">') == 2
+    card = html[html.index("<h2>Conductor</h2>"):]
+    assert card.index('<span class="name">bernstein</span> <span class="kind">conductor</span>') < card.index(
+        '<div class="row claw"><div class="who"><span class="name">bernstein-tools</span> <span class="kind">claw</span>')
+
+
+def test_the_conductors_card_comes_last_under_its_own_heading():
+    html = podium.view(an_orchestra(), NOW)
+    order = [html.index(mark) for mark in (
+        '<span class="name">recipes</span>', "<h2>Lone claws</h2>", "<h2>Cannot be started</h2>",
+        "<h2>bernstein</h2>", "<h2>Conductor</h2>", '<span class="name">maestro</span>',
+        '<span class="name">maestro-tools</span>')]
+    assert order == sorted(order)
+    assert html.count('<span class="name">maestro-tools</span>') == 1
+    assert html.count('<section class="card">') == 6
+
+
+def test_a_conductor_has_no_button_in_any_state_and_is_not_counted_for_the_buttons_for_all():
+    for state in ("off", "handed-over", "running", "dormant", "quiet", "stale"):
+        assert podium.buttons(row("maestro", state, kind="conductor", duty="mac", sister="maestro-tools")) == []
+    assert podium.buttons(row("maestro-tools", "off", sister="maestro", serves=["maestro"])) == ["start"]
+    assert podium.buttons(row("maestro-tools", "running", duty="mac", sister="maestro", serves=["maestro"])) == [
+        "stop", "dormant", "dream"]
+    assert podium.buttons_for_all([row("maestro", "running", kind="conductor", duty="mac"),
+                                   row("other", "stale", kind="conductor", duty="mac"), row("a-tools", "off")]) == []
+    html = podium.view(an_orchestra(), NOW)
+    assert 'data-project="maestro"' not in html and 'data-project="maestro-tools"' in html
+

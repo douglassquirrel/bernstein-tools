@@ -333,8 +333,8 @@ def further_folders(settings, conf, kind, home, connected):
     named = [part.strip() for part in raw.split(":") if part.strip()]
     if not named:
         return []
-    if kind == "code":
-        raise ProjectRefused(f"{conf} says KIND=code and FOLDERS={raw}: a Claude Code session opens in one "
+    if kind in ("code", "conductor"):
+        raise ProjectRefused(f"{conf} says KIND={kind} and FOLDERS={raw}: a Claude Code session opens in one "
                              "folder, so only a non-code project or a feeler can name further folders")
     folders, seen = [], {os.path.basename(path.rstrip("/")): path for path in connected}
     for part in named:
@@ -375,15 +375,33 @@ def find_project(name, non_code_dir, code_dir, home=None):
     return checked_project(name, found, settings, code_dir, home)
 
 
+def conductor_folder(name, code_dir):
+    """The folder of the conductor called name: a project in the code folder whose lobster.conf says
+    KIND=conductor. None if there is none, or its lobster.conf cannot be read."""
+    if not name:
+        return None
+    try:
+        found = locate(name, code_dir, tools_folders_in)
+        return found[0] if found and read_conf_file(os.path.join(found[0], "lobster.conf")).get(
+            "KIND") == "conductor" else None
+    except (ProjectRefused, UnicodeDecodeError, OSError):
+        return None
+
+
 def checked_project(name, found, settings, code_dir, home=None):
     """The project that these settings of its lobster.conf describe, in the place find_folder found; refused
     if conduct start could not start it. set-conf checks a file as it would be with this, before writing it."""
     folder, checkout, placed = found
     conf = os.path.join(folder, "lobster.conf")
     kind = settings.get("KIND", placed)
-    if kind not in ("code", "non-code", "feeler"):
-        raise ProjectRefused(f"{conf} says KIND={kind}: it must be code, non-code or feeler")
-    if not os.path.isfile(os.path.join(folder, "START-HERE.txt")):
+    if kind not in ("code", "non-code", "feeler", "conductor"):
+        raise ProjectRefused(f"{conf} says KIND={kind}: it must be code, non-code, feeler or conductor")
+    if kind == "conductor":         # outside the template: its folder is the whole of it, with no START-HERE.txt
+        if placed != "code":
+            raise ProjectRefused(f"{conf} says KIND=conductor, but {folder} is in the non-code folder: a "
+                                 f"conductor lives in {code_dir}, in {name}-code/ or {name}/")
+        checkout = folder
+    elif not os.path.isfile(os.path.join(folder, "START-HERE.txt")):
         raise ProjectRefused(f"{folder} has no START-HERE.txt, which the session is told to follow: "
                              "bring the project into line with the lobster template first")
     for key, example in (("MODEL", "opus"), ("EFFORT", "high")):
@@ -399,6 +417,15 @@ def checked_project(name, found, settings, code_dir, home=None):
                                  "the tools projects it uses in CLAWS")
         claw_names = settings.get("CLAWS", "").split()
         claws = [claw_folders(claw, code_dir, conf, "CLAWS") for claw in claw_names]
+    if kind == "conductor":
+        if not sister:
+            raise ProjectRefused(f"{conf} has no SISTER, the claw a conductor works with: add a line such as "
+                                 f"SISTER={name}-tools")
+        if settings.get("CLAWS"):
+            raise ProjectRefused(f"{conf} says KIND=conductor and CLAWS={settings['CLAWS']}: a conductor has one "
+                                 "claw, the one SISTER names")
+        claws = [claw_folders(sister, code_dir, conf, "SISTER")]
+        claw_names = [sister]
     if kind == "non-code":
         if not sister:
             raise ProjectRefused(f"{conf} has no SISTER, the tools project a non-code session works with: "
@@ -411,7 +438,8 @@ def checked_project(name, found, settings, code_dir, home=None):
     folders = further_folders(settings, conf, kind, home, connected)
     return SimpleNamespace(name=name, kind=kind, folder=folder, checkout=checkout, sister=sister, claws=claws,
                            claw_names=claw_names, model=settings.get("MODEL", ""),
-                           effort=settings.get("EFFORT", ""), folders=folders)
+                           effort=settings.get("EFFORT", ""), folders=folders,
+                           serves_conductor=conductor_folder(sister, code_dir) if kind == "code" else None)
 
 
 def global_files_of(project, s, home, today):
@@ -421,13 +449,16 @@ def global_files_of(project, s, home, today):
                                    project.claw_names, home, today.date())
     if project.kind == "non-code":
         other = project.claws[0][0]
+    elif project.serves_conductor:
+        other = project.serves_conductor
     else:
         try:
             other = locate(project.sister, s["NON_CODE_DIR"], non_code_folder_in) if project.sister else None
         except ProjectRefused:
             other = None
     return globalfiles.renders(s, project.kind, project.name, project.sister, project.folder, project.checkout,
-                               other, project.claw_names[1:], home, today.date())
+                               other, project.claw_names[1:], home, today.date(),
+                               conductor=bool(project.serves_conductor))
 
 
 def encode(params):
@@ -702,7 +733,8 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None):
             row["session"] = (first or {}).get(real) or (second or {}).get(real)
         rows.append(row)
     for row in rows:
-        row["serves"] = [r["mailbox"] for r in rows if r["kind"] == "non-code" and row["mailbox"] in r["claws"]]
+        row["serves"] = [r["mailbox"] for r in rows
+                         if r["kind"] in ("non-code", "conductor") and row["mailbox"] in r["claws"]]
     return rows
 
 
@@ -719,12 +751,13 @@ def status_text(rows, now):
     """The rows as text, one aligned line per mailbox, in the style of lobster-mail duty status --all."""
     wide = max((len(r["mailbox"]) for r in rows), default=0)
     states = max((len(r["state"]) for r in rows), default=0)
+    kinds = max([8] + [len(r["kind"] or "-") for r in rows])     # 8, as ever, unless a conductor is listed
     lines = []
     for r in rows:
         duty = r["duty"]
         who = "nobody on duty" if duty is None else (
             f"on duty {duty.get('holder')}, last beat {duty.get('last_beat')} ({duty.get('minutes')} minutes ago)")
-        line = (f"{r['mailbox'].ljust(wide)}  {r['state'].ljust(states)}  {(r['kind'] or '-').ljust(8)}  {who}"
+        line = (f"{r['mailbox'].ljust(wide)}  {r['state'].ljust(states)}  {(r['kind'] or '-').ljust(kinds)}  {who}"
                 f"  new {r['new']}  open {r['open']}  pace {r['pace']}")
         said = r["reported"]
         if said:
@@ -824,12 +857,18 @@ def start(a, s, env, today, out, err, sleep):
                   f"{project.model}, {project.effort}.\n")
 
 
+def own(mailbox, s):
+    """Whether a mailbox is one that --all passes over: bernstein's, or any conductor's. A conductor is the
+    session that runs conduct, so no message to every session is meant for it."""
+    return mailbox == "bernstein" or conductor_folder(mailbox, s["CODE_DIR"]) is not None
+
+
 def stop(a, s, env, today, out, err, sleep):
     if a.all == (a.project is not None):
         raise Stop(2, "name one project, or give --all")
     boxes = listing(s, env, sleep)
     if a.all:
-        targets = [n for n, m in boxes.items() if n != "bernstein" and fresh(m)]
+        targets = [n for n, m in boxes.items() if not own(n, s) and fresh(m)]
         if not targets:
             out.write("Nobody is on duty anywhere but bernstein: nothing to stop.\n")
             return
@@ -974,7 +1013,7 @@ def targets_for(a, s, env, sleep, what, stale_too=False):
         return entry.get("duty") is not None if stale_too else fresh(entry)
 
     if a.all:
-        found = [n for n, m in boxes.items() if n != "bernstein" and on_duty(m)]
+        found = [n for n, m in boxes.items() if not own(n, s) and on_duty(m)]
         if not found:
             return None, f"Nobody is on duty anywhere but bernstein: nothing to {what}.\n"
         return found, None
@@ -1072,6 +1111,9 @@ def status(a, s, env, now, out, err, sleep):
         out.write(status_text(rows, now))
 
 
+NOT_FOR_A_CONDUCTOR = ("start", "finish", "dormant", "wake", "dream")
+
+
 def main(argv, env, today, out, err, sleep):
     """Run conduct; return its exit code. today is a datetime in UTC (a dream needs the time of day)."""
     if argv[:1] in (["-h"], ["--help"]) or (len(argv) == 2 and argv[1] in ("-h", "--help")):
@@ -1095,6 +1137,9 @@ def main(argv, env, today, out, err, sleep):
             raise Stop(2, "say start, stop, finish, reset, dormant, wake, dream or status (conduct --help shows the form)")
         verbs = {"start": start, "stop": stop, "finish": finish, "reset": reset, "dormant": dormant, "wake": wake,
                  "dream": dream, "status": status}
+        if a.verb in NOT_FOR_A_CONDUCTOR and a.project and conductor_folder(a.project, s["CODE_DIR"]):
+            raise Stop(3, f"{a.project} is a conductor, the session that runs conduct: conduct {a.verb} has nothing "
+                          "to do to it; Squirrel starts and stops it himself")
         verbs[a.verb](a, s, env, today, out, err, sleep)
     except Stop as stopped:
         err.write(f"conduct: {stopped.message}\n")

@@ -280,3 +280,25 @@ def test_a_template_is_told_whether_the_project_keeps_tickets_and_a_new_one_keep
     assert values_for("recipes", "code", backlog=True, **common)["BACKLOG"] == "yes"
     assert values_for(None, "code", tools="knives", backlog=False, **common)["BACKLOG"] == "no"
     assert "BACKLOG" not in values_for("recipes", "feeler", backlog=True, **common)
+
+
+def test_values_for_a_conductors_claw_name_the_conductor_and_its_folder_and_choose_its_own_section():
+    claw = values_for("maestro", "code", public=True, tools="maestro-tools", conductor=True,
+                      non_code_path="/h/projects/code/maestro-code", **COMMON)
+    assert (claw["SERVED"], claw["KIND"], claw["SELF"], claw["SISTER"], claw["NAME"], claw["TOOLS"]) == (
+        "conductor", "code", "maestro-tools", "maestro", "maestro", "maestro-tools")
+    assert claw["NONCODE_PATH"] == "~/projects/code/maestro-code"
+    assert claw["TOOLS_PATH"] == "~/projects/code/maestro-tools-code/maestro-tools"
+    assert claw["FOR_WHOM"] == "the work done by its conductor, `maestro` (`~/projects/code/maestro-code`)"
+    assert (claw["REQUESTER"], claw["SERVING"]) == ("`maestro`", "`maestro`")
+    assert (claw["TALKS_TO"], claw["ASKING"], claw["SEND_TO"]) == ("its conductor, `maestro`", "`maestro`", "maestro")
+    assert claw["OF_WHOM"] == ("the claw of the conductor `maestro`: the tools project that builds the commands "
+                               "`maestro` runs")
+    assert claw["SISTER_FIRST_SESSION"] == (
+        "This claw's one customer is its conductor: read the conductor's CLAUDE.md first (read only:\n"
+        "   ~/projects/code/maestro-code/CLAUDE.md) and offer its answers for \"What this is\",\n"
+        "   so Squirrel need not say them twice.")
+    assert (claw["BACKLOG_PREFIX"], claw["PACKAGE"], claw["CLAWS"]) == ("MA", "maestrotools", "")
+    pair = values_for("maestro", "code", public=True, tools="maestro-tools",
+                      non_code_path="/h/projects/code/maestro-code", **COMMON)
+    assert {k for k in claw if claw[k] != pair[k]} == {"SERVED", "FOR_WHOM", "TALKS_TO", "OF_WHOM", "SISTER_FIRST_SESSION"}
