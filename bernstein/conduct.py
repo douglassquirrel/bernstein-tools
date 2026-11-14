@@ -21,6 +21,7 @@ from bernstein.settings import SettingsRefused, read_settings
 
 PACES = ("eager", "normal", "relaxed")
 WAIT_STEP = 10
+START_WAIT = datetime.timedelta(minutes=10)   # how long an unread Start holds off another (PLAN.md, Settled 140)
 CHANGING_TRIES = 3
 DELIVERED = 7  # lobster-mail: delivered, but the sender's sent copy could not be written
 
@@ -382,7 +383,7 @@ class Parser(argparse.ArgumentParser):
 def parser():
     p = Parser(prog="conduct", description="Start a lobster project's session, or ask a running one to "
                "hand over and stop, by mail as bernstein.",
-               epilog="conduct start <project> [--brief FILE] [--pace LEVEL] [--name TEXT] [--dry-run]\n"
+               epilog="conduct start <project> [--brief FILE] [--pace LEVEL] [--name TEXT] [--again] [--dry-run]\n"
                       "conduct stop <project> | --all [--wait SECONDS] [--dry-run]\n"
                       "conduct finish <feeler> [--dry-run]\n"
                       "conduct dormant <project> | --all [--dry-run]\n"
@@ -397,6 +398,8 @@ def parser():
     s.add_argument("--pace", choices=PACES, help="set the mailbox's mail pace first")
     s.add_argument("--name", metavar="TEXT", help="what the session is called in the app's list, one line "
                    f"of at most {NAME_LIMIT} characters (default: the project and the day)")
+    s.add_argument("--again", action="store_true", help="send another Start although one sent in the last "
+                   f"{START_WAIT.seconds // 60} minutes still waits unread in the project's mailbox")
     s.add_argument("--dry-run", action="store_true", help="show the message and the link; send and open nothing")
     t = verbs.add_parser("stop", help="ask a running session to hand over and stop")
     t.add_argument("project", nargs="?")
@@ -465,6 +468,30 @@ def listing(s, env, sleep, skipped=None):
             raise Stop(4, f"the duty of {', '.join(changing)} kept changing while it was read; run conduct again")
         sleep(1)
     raise AssertionError("unreachable")  # pragma: no cover
+
+
+def sent_at(message):
+    """When a listed message was sent, or None when its date cannot be read."""
+    try:
+        return datetime.datetime.strptime(message["date"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except ValueError:
+        return None
+
+
+def waiting_start(s, env, project, now):
+    """When the newest Start from bernstein still unread in a project's mailbox was sent, if that is less
+    than START_WAIT ago; None when there is none so young."""
+    text = run([s["LOBSTER_MAIL"], "check", "--as", project, "--json", "--root", s["MAIL_ROOT"]],
+               env, f"lobster-mail check for {project}")
+    try:
+        listed = json.loads(text)
+        if not isinstance(listed, list):
+            raise TypeError
+        sent = [sent_at(m) for m in listed if m["from"] == "bernstein" and m["subject"] == f"Start: {project}"]
+    except (ValueError, KeyError, TypeError):
+        raise Stop(4, f"lobster-mail check --json did not print the expected JSON for {project}")
+    young = [when for when in sent if when is not None and now - when < START_WAIT]
+    return max(young) if young else None
 
 
 def fresh(entry):
@@ -645,6 +672,12 @@ def start(a, s, env, today, out, err, sleep):
         d = boxes[a.project]["duty"]
         raise Stop(3, f"a session is already running for {a.project}: {d['holder']} has been on duty since "
                       f"{d['since']}, last beat {d['last_beat']}")
+    earlier = None if a.again else waiting_start(s, env, a.project, today)
+    if earlier is not None:
+        raise Stop(3, f"a Start sent to {a.project} at {earlier:%H:%M}Z is still waiting unread in its mailbox, "
+                      "so its session may be opening now: confirm its folder and send its first line. If no "
+                      f"session opened, run conduct start again after {earlier + START_WAIT:%H:%M}Z, or now "
+                      "with --again")
     name = session_name(a.project, today, a.name)
     try:
         rendered = global_files_of(project, s, env["HOME"], today)

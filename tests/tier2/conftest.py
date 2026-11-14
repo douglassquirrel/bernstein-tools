@@ -3,7 +3,8 @@
 Each stub records its arguments and working folder as one JSON line in calls.jsonl. A stub
 fails when its name is listed in the file `fail` in the stub folder, as `name`, `name:verb` (only that
 first argument) or `name:verb:code` (that exit code; 1 otherwise). The lobster-mail stub's
-`duty status --all --json` prints the JSON in `duty.json` (default: no mailboxes). The conduct stub's
+`duty status --all --json` prints the JSON in `duty.json` (default: no mailboxes), and its `check` prints
+the text in `check.json` (default: `[]`, no new mail). The conduct stub's
 `status` prints the text in `status.json` (default: no mailboxes); its other verbs print "conduct stub: "
 and their first two arguments, and a `--brief FILE` is read into the call's record as `brief`.
 """
@@ -41,6 +42,9 @@ STUB = textwrap.dedent('''\
     if name == "lobster-mail" and args[:3] == ["duty", "status", "--all"]:
         duty = os.path.join(here, "duty.json")
         print(open(duty).read() if os.path.exists(duty) else json.dumps({{"root": "", "mailboxes": [], "skipped": []}}))
+    if name == "lobster-mail" and args[:1] == ["check"]:
+        waiting = os.path.join(here, "check.json")
+        print(open(waiting).read() if os.path.exists(waiting) else "[]")
     if name == "conduct" and args[:1] != ["status"]:
         print("conduct stub: " + " ".join(args[:2]))
     if name == "conduct" and args[:1] == ["status"]:
@@ -149,6 +153,14 @@ class World:
         """Set the duty listing to these mailbox entries, as lobster-mail would print them."""
         with open(os.path.join(self.bin, "duty.json"), "w") as f:
             json.dump({"root": self.mail, "mailboxes": entries, "skipped": list(skipped)}, f)
+
+    def waiting(self, messages):
+        """Set the new mail `lobster-mail check --json` lists: (sender, date, subject) each, or the raw text."""
+        text = messages if isinstance(messages, str) else json.dumps(
+            [{"id": f"m{i}", "from": who, "date": date, "subject": subject, "box": "new"}
+             for i, (who, date, subject) in enumerate(messages)])
+        with open(os.path.join(self.bin, "check.json"), "w") as f:
+            f.write(text)
 
     def project(self, name, kind, public=False, under="", sister=None, claws=()):
         """A project folder with its lobster.conf, as new-lobster makes it, perhaps in a subfolder. A code

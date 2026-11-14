@@ -196,7 +196,7 @@ Dry run: nothing was made.
 ## conduct: starting and stopping a project's session
 
 ```
-conduct start   <project> [--brief FILE] [--pace eager|normal|relaxed] [--name TEXT] [--dry-run]
+conduct start   <project> [--brief FILE] [--pace eager|normal|relaxed] [--name TEXT] [--again] [--dry-run]
 conduct stop    <project> | --all  [--wait SECONDS] [--dry-run]
 conduct finish  <feeler>  [--dry-run]
 conduct dormant <project> | --all  [--dry-run]
@@ -208,10 +208,15 @@ conduct status  [--json]
 `conduct` talks to a lobster project's session by mail, as `bernstein`; each project's guidance
 says to act on bernstein's mail at once (since 8 November 2026, apart from a request for a tool,
 which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty status
---all`, and writes in a project's folder only to bring the template's global files up to date
+--all` and, at a start, the project's unread mail with `lobster-mail check`, and writes in a project's folder only to bring the template's global files up to date
 at a start (below).
 
-- **`start`** refuses if a session is already on duty for the project. Otherwise it sets the mail
+- **`start`** refuses if a session is already on duty for the project. It also refuses while a Start
+  it sent less than ten minutes ago still waits unread in the project's mailbox, since that session is
+  probably still opening and a second Start would only open a second one: the message gives the time
+  the first was sent and when the ten minutes end, and `--dry-run` refuses the same way. If no session
+  came of the first (the app's form was closed, or the session opened in the wrong folder), wait for
+  that time or add `--again`, which sends another at once. Otherwise it sets the mail
   pace if `--pace` is given, mails a Start message (follow `START-HERE.txt` from the top, clear any
   status an earlier session left reported for the mailbox, name the session, then the brief from
   `--brief FILE`, or wait), and opens the session in the Claude desktop app with the
@@ -328,8 +333,8 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 |---|---|
 | 0 | Sent (and, with `--wait`, handed over); or, for `stop`, `dormant`, `wake` and `dream`, nobody on duty; or, for `status`, shown |
 | 2 | Bad arguments or settings, or `--minutes` outside 5 to 240 |
-| 3 | No such project or mailbox, or the project lacks a part `start` needs; or, for `start`, a session is already on duty |
-| 4 | A program failed, or the duty listing could not be read |
+| 3 | No such project or mailbox, or the project lacks a part `start` needs; or, for `start`, a session is already on duty, or a Start sent in the last ten minutes still waits unread |
+| 4 | A program failed, or the duty listing or the project's list of new mail could not be read |
 | 5 | `--wait` ran out before the handover arrived |
 
   `session` is the project's newest session in the Claude desktop app: `{"id", "link", "app",
@@ -565,6 +570,9 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: `conduct start` now refuses (exit 3) while a Start it sent to the same project less
+  than ten minutes ago still waits unread, so pressing Start twice no longer sends two. To send another
+  anyway, add `--again`.
 - 13 November 2026: `new-lobster --public` (with or without `--claw`) now also starts a local history, with
   no remote, in the new tools project's outer folder. A private tools project is made as before.
 - 13 November 2026: new command `local-history`: a git repository with no remote for the folder around a

@@ -65,8 +65,8 @@ def test_start_sends_the_start_message_as_bernstein_then_opens_the_session(world
     assert link[0].startswith("claude://cowork/new?folder=" + nc.replace("/", "%2F").replace(" ", "%20"))
     assert tools.replace("/", "%2F").replace(" ", "%20") in link[0]
     assert "Sent the Start message to recipes" in out and "Opened a Claude session" in out
-    progs = [c["prog"] for c in world.calls()]
-    assert progs == ["lobster-mail", "lobster-mail", "open"]
+    steps = [c["prog"] + " " + c["args"][0].split(":")[0] for c in world.calls()]
+    assert steps == ["lobster-mail duty", "lobster-mail check", "lobster-mail send", "open claude"]
 
 
 def test_start_of_a_tools_project_says_who_sets_its_model_and_effort(world):
@@ -87,7 +87,8 @@ def test_start_sets_the_pace_first_and_carries_a_brief(world, tmp_path):
     code, _out, err = world.conduct("start", "recipes", "--pace", "relaxed", "--brief", str(brief))
     assert code == 0, err
     lm = [c["args"] for c in world.calls() if c["prog"] == "lobster-mail"]
-    assert lm[1] == ["pace", "--as", "recipes", "relaxed", "--root", world.mail]
+    assert [args[0] for args in lm] == ["duty", "check", "pace", "send"]
+    assert lm[2] == ["pace", "--as", "recipes", "relaxed", "--root", world.mail]
     assert sent(world)[0]["stdin"].endswith("Then this brief, from Squirrel:\n\nPlan Sunday's menu.\n")
 
 
@@ -853,3 +854,89 @@ def test_only_a_claude_code_session_is_asked_to_give_itself_its_name(world):
     for message in (cowork, one_off):
         assert "If you have a tool that names or renames a" not in message
         assert "there is nothing to do or to report about the name." in message
+
+
+def test_start_refuses_while_a_start_sent_minutes_ago_still_waits_unread_and_sends_and_opens_nothing(world):
+    world.project("recipes", "non-code")
+    world.project("recipes-tools", "code")
+    world.duty({"recipes": None})
+    world.waiting([("bernstein", "2026-10-18T09:35:10Z", "Start: recipes")])     # NOW is 09:40
+    for argv in (("start", "recipes"), ("start", "recipes", "--dry-run")):
+        code, out, err = world.conduct(*argv)
+        assert code == 3 and out == ""
+        assert err == ("conduct: a Start sent to recipes at 09:35Z is still waiting unread in its mailbox, so its "
+                       "session may be opening now: confirm its folder and send its first line. If no session "
+                       "opened, run conduct start again after 09:45Z, or now with --again\n")
+    assert sent(world) == [] and opened(world) == []
+    asked = [c["args"] for c in world.calls() if c["prog"] == "lobster-mail" and c["args"][:1] == ["check"]]
+    assert asked == [["check", "--as", "recipes", "--json", "--root", world.mail]] * 2
+
+
+@pytest.mark.parametrize("waiting", [
+    [("bernstein", "2026-10-18T09:30:00Z", "Start: recipes")],                   # ten minutes old: no longer held
+    [("bernstein", "2026-10-17T16:00:00Z", "Start: recipes")],                   # yesterday's, never read
+    [("bernstein", "2026-10-18T09:39:00Z", "Stop: recipes")],                    # not a Start
+    [("bernstein", "2026-10-18T09:39:00Z", "Start: recipes-tools")],             # another project's
+    [("recipes-tools", "2026-10-18T09:39:00Z", "Start: recipes")],               # not from bernstein
+    [("recipes", "2026-10-18T09:39:00Z", "Handover 2026-10-18 09:39Z"), ("bernstein", "not a date", "Start: recipes")],
+])
+def test_start_goes_ahead_when_no_start_from_bernstein_younger_than_ten_minutes_waits(world, waiting):
+    world.project("recipes", "non-code")
+    world.project("recipes-tools", "code")
+    world.duty({"recipes": None})
+    world.waiting(waiting)
+    code, out, err = world.conduct("start", "recipes")
+    assert code == 0 and err == "" and "Sent the Start message to recipes." in out
+    assert len(sent(world)) == 1 and len(opened(world)) == 1
+
+
+def test_start_holds_off_from_the_newest_waiting_start_up_to_the_last_second_of_its_ten_minutes(world):
+    world.project("recipes", "non-code")
+    world.project("recipes-tools", "code")
+    world.duty({"recipes": None})
+    world.waiting([("bernstein", "2026-10-18T09:20:00Z", "Start: recipes"),
+                   ("bernstein", "2026-10-18T09:30:01Z", "Start: recipes")])
+    code, _out, err = world.conduct("start", "recipes")
+    assert code == 3 and "sent to recipes at 09:30Z" in err and "again after 09:40Z" in err
+    world.waiting([("bernstein", "2026-10-18T09:31:00Z", "Start: recipes"),
+                   ("bernstein", "2026-10-18T09:35:00Z", "Start: recipes"),
+                   ("bernstein", "2026-10-18T09:33:00Z", "Start: recipes")])
+    code, _out, err = world.conduct("start", "recipes")
+    assert code == 3 and "sent to recipes at 09:35Z" in err and "again after 09:45Z" in err
+    assert sent(world) == [] and opened(world) == []
+
+
+def test_start_again_sends_another_start_although_one_still_waits(world):
+    world.project("recipes", "non-code")
+    world.project("recipes-tools", "code")
+    world.duty({"recipes": None})
+    world.waiting([("bernstein", "2026-10-18T09:39:00Z", "Start: recipes")])
+    code, out, err = world.conduct("start", "recipes", "--again", "--dry-run")
+    assert code == 0 and err == "" and "Would send to recipes" in out
+    code, out, err = world.conduct("start", "recipes", "--again")
+    assert code == 0 and err == "" and "Sent the Start message to recipes." in out
+    assert len(sent(world)) == 1 and len(opened(world)) == 1
+    assert [c for c in world.calls() if c["args"][:1] == ["check"]] == []      # not asked: the answer is not used
+    assert "--again" in world.conduct("start", "--help")[1]
+
+
+@pytest.mark.parametrize("printed", ["", "not json", "{}", '[{"id": "m0"}]', '["text"]', "[3]"])
+def test_start_with_a_mailbox_listing_that_cannot_be_read_is_exit_4_and_sends_and_opens_nothing(world, printed):
+    world.project("recipes", "non-code")
+    world.project("recipes-tools", "code")
+    world.duty({"recipes": None})
+    world.waiting(printed)
+    code, out, err = world.conduct("start", "recipes")
+    assert code == 4 and out == ""
+    assert err == "conduct: lobster-mail check --json did not print the expected JSON for recipes\n"
+    assert sent(world) == [] and opened(world) == []
+
+
+def test_start_when_the_look_at_the_mailbox_fails_is_exit_4_and_sends_and_opens_nothing(world):
+    world.project("recipes", "non-code")
+    world.project("recipes-tools", "code")
+    world.duty({"recipes": None})
+    world.fail("lobster-mail:check:3")
+    code, _out, err = world.conduct("start", "recipes")
+    assert code == 4 and err == "conduct: lobster-mail check for recipes failed (exit 3)\n  lobster-mail: stub failure\n"
+    assert sent(world) == [] and opened(world) == []
