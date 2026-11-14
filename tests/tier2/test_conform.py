@@ -179,7 +179,7 @@ def test_a_half_that_cannot_be_found_or_is_in_two_places_is_reported_and_the_oth
 
 def test_help_bad_arguments_bad_settings_and_an_unreadable_template_are_plain_errors(world):
     code, out, _err = world.conform("--help")
-    assert code == 0 and out.startswith("usage: conform [-h] project [tools]")
+    assert code == 0 and out.startswith("usage: conform [-h] [--all] [--json] [project] [tools]")
     code, _out, err = world.conform()
     assert code == 2 and err.startswith("conform: ") and err.endswith("(conform --help shows the form)\n")
     world.write_conf("EFFORT=extreme\n")

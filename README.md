@@ -549,6 +549,7 @@ It runs only while this command runs: stop it with Ctrl-C.
 conform <non-code> <home claw>
 conform <lone claw>
 conform <conductor> <its claw>
+conform --all [--json]
 ```
 
 `conform` reads an existing pair and lists, half by half, what it lacks against the template; it
@@ -585,6 +586,63 @@ Both halves are in line.
 A gap is a line `missing: …`; a half that cannot be found, or is in two places, says so. Exit codes:
 0 nothing missing, 1 something missing, 2 bad arguments or settings, 4 the template, or a project's `backlog/config.yml`, cannot be read.
 Use it with `new-lobster --render-into` to bring an older pair into line.
+
+### conform --all: every project in one run
+
+`conform --all` finds every lobster project the settings can find and checks each once, in the form
+that fits it. A project is a folder holding a `lobster.conf`, directly in the non-code or the code folder
+or one folder down; hidden folders are left out, and a folder that is a project is not searched for
+more. The blocks come in this order: each non-code project with the home claw its `SISTER` names; each
+conductor with its claw; each feeler; then every tools project not yet checked, alone if its `SISTER` is
+empty, otherwise as the tools half of the pair its `SISTER` names. A half checked in an earlier block
+(a lone claw that is home to two projects) says "see above" the second time.
+
+Each gap is one of two kinds, and the last line counts them apart:
+
+- **`a start mends:`** a global file that is behind the template, in a project that keeps every global
+  file: the project's next `conduct start` replaces it, so nobody need act.
+- **`missing:`** everything else, which nothing mends by itself. That includes a global file that is
+  behind in a project that lacks another global file, since `conduct start` leaves such a project's
+  files as they are.
+
+```
+$ ./conform --all
+menus (non-code): /Users/me/projects/non-code/menus
+  in line
+menus-tools (code): /Users/me/projects/code/menus-tools
+  in line
+
+recipes (non-code): /Users/me/projects/non-code/eat/recipes
+  a start mends: the template's current RULES.md (a global file: conduct start brings it up to date)
+recipes-tools (code): /Users/me/projects/code/eat/recipes-tools-code
+  a start mends: the template's current RULES.md (a global file: conduct start brings it up to date)
+
+word-tools (code): /Users/me/projects/code/word-tools
+  missing: START-HERE.txt
+  missing: the mailbox word-tools in /Users/me/projects/mail
+
+odd: cannot be checked
+  /Users/me/projects/non-code/odd/lobster.conf is not plain UTF-8 text: save it again as UTF-8
+
+bernstein: a mailbox in /Users/me/projects/mail with no lobster project
+6 projects: 2 things to bring into line, 2 more that a conduct start mends, 1 project that could not be checked.
+```
+
+A project that cannot be checked is listed with the reason and the run goes on: a name in two places,
+a `lobster.conf` that cannot be read or is not UTF-8, an unknown `KIND`, a non-code project or conductor
+that names no `SISTER`, a tools project that names a feeler as its sister, a project whose own Backlog
+settings cannot be read. A half listed that way further down says "see below" where a pair names it. A
+template that cannot be used still stops the run (exit 4). A folder in the mail root that is no found
+project's mailbox is said in a line and counted nowhere.
+
+`--json` prints the same as data: `blocks`, each a list of halves (`name`, `kind`, `folder`, `state`:
+`checked`, `not found`, `cannot be checked`, `see above` or `see below`; `why`; `gaps`, each with
+`missing` and `start_mends`), `mailboxes_without_a_project`, and `totals` (`projects`,
+`nothing_mends`, `a_start_mends`, `cannot_be_checked`).
+
+Exit codes with `--all`: 0 when nothing is of the second kind and everything could be checked (gaps a
+start mends do not count); 1 otherwise; 2 `--all` with a project named, or `--json` without `--all`; 4
+the template cannot be used. It reads only, and runs no other program.
 
 ## drop-backlog: take Backlog out of a project that never used it
 
@@ -795,6 +853,10 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: new form `conform --all [--json]` checks every lobster project the settings can
+  find in one run, each once, and counts apart the gaps a `conduct start` mends by itself ("a start
+  mends:") from those nothing mends ("missing:"). Its exit code is 0 unless something is of the second
+  kind or a project could not be checked. `conform` with a project named prints and exits as before.
 - 14 November 2026: **a conductor is a kind of project.** The project whose session runs these commands
   can say `KIND=conductor` and `SISTER=<its claw>` in a `lobster.conf` of its own, and its claw
   `SISTER=<the conductor>`: `conduct status` and `podium` then show the two as a pair, `conform <conductor>

@@ -18,6 +18,7 @@ from bernstein.conduct import (
     locate,
     non_code_folder_in,
     read_conf_file,
+    subfolders,
     tools_folders,
     tools_folders_in,
 )
@@ -141,6 +142,25 @@ def claude_gaps(folder, headings, wording):
                for h, lines in wording.items() if h in have and have[h] != lines])
 
 
+class StartMends(str):
+    """A gap that the project's next conduct start mends by itself: a global file behind the template."""
+
+
+def global_gaps(rendered, folder):
+    """What a project's global files lack. One that is behind is mended by a start only where the project
+    keeps every global file: conduct start leaves the files of a project that lacks one as they are."""
+    found = globalfiles.state(rendered, folder)
+    whole = all(how != "missing" for _rel, how in found)
+    gaps = []
+    for rel, how in found:
+        if how == "missing":
+            gaps.append(f"{rel}, one of the template's global files")
+        else:
+            behind = f"the template's current {rel} (a global file: conduct start brings it up to date)"
+            gaps.append(StartMends(behind) if whole else behind)
+    return gaps
+
+
 def gaps_of(name, kind, sister, found, s, conductor=None):
     """What one half lacks, as lines. `conductor` is the folder of the conductor a tools half serves, if any."""
     folder, _checkout = found
@@ -176,9 +196,7 @@ def gaps_of(name, kind, sister, found, s, conductor=None):
     other = conductor or sister_path(kind, sister, s)
     rendered = globalfiles.renders(s, kind, name, sister, folder, checkout, other, claws, s["HOME"],
                                    datetime.date.today(), conductor=bool(conductor))
-    for rel, how in globalfiles.state(rendered, folder):
-        gaps.append(f"{rel}, one of the template's global files" if how == "missing" else
-                    f"the template's current {rel} (a global file: conduct start brings it up to date)")
+    gaps += global_gaps(rendered, folder)
     if checkout != folder:
         beside = OUTER_FILES + OUTER_FOLDERS + tuple(r for r in rendered if not r.startswith(OUTER_FOLDERS))
         for rel in dict.fromkeys(beside):
@@ -258,9 +276,7 @@ def feeler_gaps(name, folder, s):
         if not os.path.isdir(tools_folders(claw, s["CODE_DIR"])[1]):
             gaps.append(f"the claw {claw} in {s['CODE_DIR']} or a folder directly inside it")
     rendered = globalfiles.renders(s, "feeler", name, "", folder, folder, None, claws, s["HOME"], datetime.date.today())
-    for rel, how in globalfiles.state(rendered, folder):
-        gaps.append(f"{rel}, one of the template's global files" if how == "missing" else
-                    f"the template's current {rel} (a global file: conduct start brings it up to date)")
+    gaps += global_gaps(rendered, folder)
     if not os.path.isdir(os.path.join(folder, ".git")):
         gaps.append(f"a git repository in {folder}")
     if not os.path.isdir(os.path.join(s["MAIL_ROOT"], name)):
@@ -283,8 +299,12 @@ class Parser(argparse.ArgumentParser):
 def parser():
     p = Parser(prog="conform", description="List what an existing lobster pair, or a lone claw (a tools project "
                "with no non-code half), lacks against bernstein's lobster-project template. Reads only; changes nothing.")
-    p.add_argument("project", help="the non-code project's name; or, alone, a lone claw's or a feeler's")
+    p.add_argument("project", nargs="?", help="the non-code project's name; or, alone, a lone claw's or a "
+                   "feeler's; or a conductor's, with its claw")
     p.add_argument("tools", nargs="?", help="the non-code project's home tools project")
+    p.add_argument("--all", action="store_true", help="every lobster project the settings can find, each checked "
+                   "once in the form that fits it; gaps that a conduct start mends are counted apart")
+    p.add_argument("--json", action="store_true", help="with --all: print what was found as JSON")
     return p
 
 
@@ -307,37 +327,44 @@ def lone_or(non_code, tools, s):
     return "" if "SISTER" in settings and not settings["SISTER"] else non_code
 
 
-def report(a, s, out):
-    """Write the report; return the number of things missing."""
-    total = 0
-    feeler = feeler_folder(a.project, s)
-    if feeler and a.tools:
-        raise Stop(2, f"{a.project} is a feeler, which has no tools project: give its name alone")
+def half(name, kind, folder=None, state="checked", why=None, gaps=()):
+    """One half of a check, as data: state is "checked", "not found", "cannot be checked" or "see above"."""
+    return {"name": name, "kind": kind, "folder": folder, "state": state, "why": why, "gaps": list(gaps)}
+
+
+def halves_of(project, tools, s, seen=(), later=()):
+    """The halves of one check, each as it is made: a pair's two, a conductor and its claw, a lone claw or a
+    feeler. A half whose name is in seen was checked before, and is only said to be; one in later is
+    listed further down, as something that cannot be checked."""
+    elsewhere = {name: "see below" for name in later}
+    elsewhere.update({name: "see above" for name in seen})
+    feeler = feeler_folder(project, s)
+    if feeler and tools:
+        raise Stop(2, f"{project} is a feeler, which has no tools project: give its name alone")
     if feeler:
-        out.write(f"{a.project} (feeler): {feeler}\n")
         try:
-            gaps = feeler_gaps(a.project, feeler, s)
+            gaps = feeler_gaps(project, feeler, s)
         except (TemplateRefused, OSError) as why:
             raise Stop(4, f"the template cannot be read: {why}")
-        out.write("".join(f"  missing: {g}\n" for g in gaps) or "  in line\n")
-        a.feeler = True
-        return len(gaps)
-    conductor = conductor_folder(a.project, s["CODE_DIR"])
-    if conductor and not a.tools:
-        raise Stop(2, f"{a.project} is a conductor: give its claw too, as in conform {a.project} {a.project}-tools")
-    if not a.tools and served_conductor(a.project, s):
-        raise Stop(2, f"{a.project} is the claw of the conductor {served_conductor(a.project, s)}: check them "
-                      f"together, conform {served_conductor(a.project, s)} {a.project}")
+        yield half(project, "feeler", feeler, gaps=gaps)
+        return
+    conductor = conductor_folder(project, s["CODE_DIR"])
+    if conductor and not tools:
+        raise Stop(2, f"{project} is a conductor: give its claw too, as in conform {project} {project}-tools")
+    if not tools and served_conductor(project, s):
+        raise Stop(2, f"{project} is the claw of the conductor {served_conductor(project, s)}: check them "
+                      f"together, conform {served_conductor(project, s)} {project}")
     if conductor:
-        out.write(f"{a.project} (conductor): {conductor}\n")
-        gaps = conductor_gaps(a.project, a.tools, conductor, s)
-        out.write("".join(f"  missing: {g}\n" for g in gaps) or "  in line\n")
-        total += len(gaps)
-        halves = ((a.tools, "code", a.project),)
+        yield (half(project, "conductor", state=elsewhere[project]) if project in elsewhere else
+               half(project, "conductor", conductor, gaps=conductor_gaps(project, tools, conductor, s)))
+        todo = ((tools, "code", project),)
     else:
-        halves = ((a.project, "non-code", a.tools), (a.tools, "code", lone_or(a.project, a.tools, s))) if a.tools else (
-            (a.project, "code", ""),)
-    for name, kind, sister in halves:
+        todo = ((project, "non-code", tools), (tools, "code", lone_or(project, tools, s))) if tools else (
+            (project, "code", ""),)
+    for name, kind, sister in todo:
+        if name in elsewhere:
+            yield half(name, kind, state=elsewhere[name])
+            continue
         base = s["CODE_DIR"] if kind == "code" else s["NON_CODE_DIR"]
         try:
             found = find(name, kind, s)
@@ -345,19 +372,168 @@ def report(a, s, out):
         except ProjectRefused as refused:
             found, why = None, str(refused)
         if found is None:
-            out.write(f"{name} ({kind}): not found\n  {why}\n")
-            total += 1
+            yield half(name, kind, state="not found", why=why)
             continue
-        out.write(f"{name} ({kind}): {found[0]}\n")
         try:
             gaps = gaps_of(name, kind, sister, found, s, conductor if kind == "code" else None)
-        except globalfiles.ProjectUnreadable as why:
-            raise Stop(4, str(why))
+        except globalfiles.ProjectUnreadable:
+            yield half(name, kind, found[0], state="unfinished")      # its first line is printed, as ever
+            raise
         except (TemplateRefused, OSError) as why:
+            yield half(name, kind, found[0], state="unfinished")
             raise Stop(4, f"the template cannot be read: {why}")
-        out.write("".join(f"  missing: {g}\n" for g in gaps) or "  in line\n")
-        total += len(gaps)
+        yield half(name, kind, found[0], gaps=gaps)
+
+
+def text_of(h):
+    """A half as conform prints it."""
+    if h["state"] == "not found":
+        return f"{h['name']} ({h['kind']}): not found\n  {h['why']}\n"
+    head = f"{h['name']} ({h['kind']}): {h['folder']}\n"
+    if h["state"] == "unfinished":
+        return head
+    return head + ("".join(f"  missing: {g}\n" for g in h["gaps"]) or "  in line\n")
+
+
+def report(a, s, out):
+    """Write the report; return the number of things missing."""
+    total = 0
+    try:
+        for h in halves_of(a.project, a.tools, s):
+            out.write(text_of(h))
+            total += 1 if h["state"] == "not found" else len(h["gaps"])
+            a.feeler = h["kind"] == "feeler"
+    except globalfiles.ProjectUnreadable as why:
+        raise Stop(4, str(why))
     return total
+
+
+KINDS = ("non-code", "code", "feeler", "conductor")
+
+
+def discovered(s):
+    """{name: [(folder, the kind its place suggests)]} for every folder holding a lobster.conf, directly in
+    the non-code or the code folder or one folder down. A folder that is a project is not looked into."""
+    found = {}
+    for base, placed in ((s["NON_CODE_DIR"], "non-code"), (s["CODE_DIR"], "code")):
+        for top in subfolders(base):
+            for folder in [top] if os.path.isfile(os.path.join(top, "lobster.conf")) else subfolders(top):
+                if os.path.isfile(os.path.join(folder, "lobster.conf")):
+                    name = os.path.basename(folder)
+                    if placed == "code" and name.endswith("-code"):
+                        name = name[: -len("-code")]
+                    found.setdefault(name, []).append((folder, placed))
+    return found
+
+
+def sorted_out(found):
+    """({name: (kind, sister)} for the projects that can be checked, {name: why} for those that cannot)."""
+    known, cannot = {}, {}
+    for name in sorted(found):
+        folders = [folder for folder, _placed in found[name]]
+        if len(folders) > 1:
+            count = {2: "two", 3: "three"}.get(len(folders), str(len(folders)))
+            cannot[name] = (f"{name} is in {count} places, {', '.join(folders[:-1])} and {folders[-1]}: keep one, "
+                            "or rename the other")
+            continue
+        conf = os.path.join(folders[0], "lobster.conf")
+        try:
+            settings = read_conf_file(conf)
+        except UnicodeDecodeError:
+            cannot[name] = f"{conf} is not plain UTF-8 text: save it again as UTF-8"
+            continue
+        except OSError as why:
+            cannot[name] = f"{conf} cannot be read ({why.strerror}): check its permissions"
+            continue
+        kind, sister = settings.get("KIND", found[name][0][1]), settings.get("SISTER", "")
+        if kind not in KINDS:
+            cannot[name] = f"{conf} says KIND={kind}: it must be code, non-code, feeler or conductor"
+        elif kind == "non-code" and not sister:
+            cannot[name] = f"{conf} names no SISTER, the tools project a non-code project works with"
+        elif kind == "conductor" and not sister:
+            cannot[name] = f"{conf} names no SISTER, the claw a conductor works with"
+        else:
+            known[name] = (kind, sister)
+    return known, cannot
+
+
+def survey(s):
+    """Everything conform --all says, as data: each project checked once, in the form that fits it."""
+    found = discovered(s)
+    known, cannot = sorted_out(found)
+    units = [(name, sister) for kind in ("non-code", "conductor") for name, (k, sister) in known.items() if k == kind]
+    units += [(name, None) for name, (kind, _sister) in known.items() if kind == "feeler"]
+    second = {tools for _name, tools in units}
+    units += [((sister, name) if sister else (name, None)) for name, (kind, sister) in known.items()
+              if kind == "code" and name not in second]
+    blocks, seen = [], set()
+    for project, tools in units:
+        block = []
+        try:
+            for h in halves_of(project, tools, s, seen, cannot):
+                block.append(h)         # noqa: PERF402 (one at a time: what came before a failure is kept)
+        except globalfiles.ProjectUnreadable as why:
+            block[-1] = dict(block[-1], kind=None, folder=None, state="cannot be checked", why=str(why))
+        except Stop as stopped:
+            if stopped.code != 2:       # only a pair that cannot be one is the project's own fault
+                raise
+            block = [half(tools or project, None, state="cannot be checked", why=stopped.message)]
+        seen.update(h["name"] for h in block)
+        blocks.append(block)
+    blocks += [[half(name, None, state="cannot be checked", why=why)] for name, why in cannot.items()]
+    for block in blocks:
+        for h in block:
+            h["gaps"] = [{"missing": str(g), "start_mends": isinstance(g, StartMends)} for g in h["gaps"]]
+    halves = [h for block in blocks for h in block]
+    gaps = [g for h in halves for g in h["gaps"]]
+    return {
+        "blocks": blocks,
+        "mailboxes_without_a_project": [os.path.basename(box) for box in subfolders(s["MAIL_ROOT"])
+                                        if os.path.basename(box) not in found],
+        "totals": {"projects": len(found),
+                   "nothing_mends": sum(1 for g in gaps if not g["start_mends"])
+                   + sum(1 for h in halves if h["state"] == "not found"),
+                   "a_start_mends": sum(1 for g in gaps if g["start_mends"]),
+                   "cannot_be_checked": sum(1 for h in halves if h["state"] == "cannot be checked")},
+    }
+
+
+def counted(n, one, many=None):
+    return f"{n} {one if n == 1 else many or one + 's'}"
+
+
+def survey_text(data, s):
+    """What survey found, as conform --all prints it: a block a check, then the totals."""
+    totals = data["totals"]
+    if not totals["projects"]:
+        return (f"No lobster project in {s['NON_CODE_DIR']} or {s['CODE_DIR']}, or a folder directly inside "
+                "either.\n")
+    lines = []
+    for block in data["blocks"]:
+        for h in block:
+            if h["state"] == "cannot be checked":
+                lines.append(f"{h['name']}: cannot be checked\n  {h['why']}\n")
+            elif h["state"] == "not found":
+                lines.append(f"{h['name']} ({h['kind']}): not found\n  {h['why']}\n")
+            elif h["state"] != "checked":
+                lines.append(f"{h['name']} ({h['kind']}): {h['state']}\n")
+            else:
+                lines.append(f"{h['name']} ({h['kind']}): {h['folder']}\n" + ("".join(
+                    f"  {'a start mends' if g['start_mends'] else 'missing'}: {g['missing']}\n" for g in h["gaps"])
+                    or "  in line\n"))
+        lines.append("\n")
+    lines += [f"{box}: a mailbox in {s['MAIL_ROOT']} with no lobster project\n"
+              for box in data["mailboxes_without_a_project"]]
+    nothing, mends, cannot = totals["nothing_mends"], totals["a_start_mends"], totals["cannot_be_checked"]
+    if not (nothing or mends or cannot):
+        said = ["all in line"]
+    else:
+        said = [f"{counted(nothing, 'thing')} to bring into line" if nothing else "nothing to bring into line"]
+        if mends:
+            said.append(f"{mends} {'more ' if nothing else ''}that a conduct start mends")
+        if cannot:
+            said.append(f"{counted(cannot, 'project')} that could not be checked")
+    return "".join(lines) + f"{counted(totals['projects'], 'project')}: {', '.join(said)}.\n"
 
 
 def main(argv, env, out, err):
@@ -377,6 +553,16 @@ def main(argv, env, out, err):
             raise Stop(2, f"{path}: {why}")
         s["HOME"] = env["HOME"]
         a = parser().parse_args(argv)
+        if a.all and a.project:
+            raise Stop(2, "--all checks every project: name none with it (conform --help shows the form)")
+        if a.json and not a.all:
+            raise Stop(2, "--json goes with --all (conform --help shows the form)")
+        if a.all:
+            data = survey(s)
+            out.write(json.dumps(data, indent=1, ensure_ascii=False) + "\n" if a.json else survey_text(data, s))
+            return 1 if data["totals"]["nothing_mends"] or data["totals"]["cannot_be_checked"] else 0
+        if not a.project:
+            raise Stop(2, "the following arguments are required: project (conform --help shows the form)")
         total = report(a, s, out)
     except Stop as stopped:
         err.write(f"conform: {stopped.message}\n")
