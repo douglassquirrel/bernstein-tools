@@ -22,8 +22,8 @@ projects; the projects talk by `lobster-mail`, from the
 ## Installation
 
 ```bash
-git clone https://github.com/douglassquirrel/bernstein.git
-cd bernstein
+git clone https://github.com/douglassquirrel/bernstein-tools.git
+cd bernstein-tools
 cp bernstein.conf.example ~/.bernstein.conf      # then edit what differs on your machine
 ./new-lobster --help
 ```
@@ -662,6 +662,9 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: this repository is now named `bernstein-tools` (it was `bernstein`). An existing
+  clone needs its address changed once: `git remote set-url origin
+  https://github.com/douglassquirrel/bernstein-tools.git`.
 - 14 November 2026: a non-code project or a feeler can name further folders for its session in its
   `lobster.conf`, `FOLDERS=~/models/kokoro` (colons between several); `conduct start` connects them and
   `conform` checks they are there.
