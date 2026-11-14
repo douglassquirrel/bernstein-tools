@@ -41,13 +41,18 @@ def _read(path):
         return f.read()
 
 
+def keeps_tickets(folder):
+    """Whether a project keeps tickets: its folder has Backlog's settings file. Nothing else says so."""
+    return os.path.isfile(os.path.join(folder, "backlog", "config.yml"))
+
+
 def ticket_prefix(folder):
     """The prefix of a project's tickets as its own Backlog has it (task_prefix in backlog/config.yml), in
     capitals; None when the folder has no Backlog settings or they name no prefix of letters and figures.
     A project set up before the template may have chosen its own, which is the one its tickets carry."""
-    path = os.path.join(folder, "backlog", "config.yml")
-    if not os.path.isfile(path):
+    if not keeps_tickets(folder):
         return None
+    path = os.path.join(folder, "backlog", "config.yml")
     found = TASK_PREFIX.search(_read(path))
     return found.group(1).upper() if found else None
 
@@ -115,7 +120,7 @@ def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, t
                             tools=sister if non_code else name,
                             non_code_path=folder if non_code else sister_path,
                             tools_path=sister_path if non_code else checkout, claws=claws,
-                            backlog_prefix=prefix)
+                            backlog_prefix=prefix, backlog=keeps_tickets(folder))
         rendered = render_half(s["TEMPLATE"], kind, values, public)
         return {rel: rendered[rel] for rel in names if rel in rendered}
 

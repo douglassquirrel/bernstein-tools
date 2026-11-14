@@ -102,6 +102,8 @@ def parser_for_new_lobster():
     p.add_argument("name", help="the non-code project's name; the tools project is <name>-tools")
     p.add_argument("--dry-run", action="store_true", help="check and show everything, write nothing")
     p.add_argument("--public", action="store_true", help="make the tools project public (default private)")
+    p.add_argument("--backlog", action="store_true", help="the project keeps tickets: set Backlog up in each "
+                   "half (default: no tickets); with --render-into, render the rules of a project that keeps them")
     p.add_argument("--template", metavar="DIR", help="the lobster-project template (setting TEMPLATE)")
     p.add_argument("--non-code-dir", metavar="DIR", help="where non-code projects go (setting NON_CODE_DIR)")
     p.add_argument("--code-dir", metavar="DIR", help="where code projects go (setting CODE_DIR)")
@@ -128,6 +130,8 @@ def options_for_new_lobster(argv, settings):
     a = parser_for_new_lobster().parse_args(argv)
     if a.feeler and a.claw:
         raise SettingsRefused("--feeler cannot be used with --claw: a feeler is not a tools project")
+    if a.feeler and a.backlog:
+        raise SettingsRefused("--backlog cannot be used with --feeler: a feeler keeps no tickets")
     if a.feeler and a.public:
         raise SettingsRefused("--feeler cannot be used with --public: a feeler has no tools project to publish")
     for flag, value in (("--tools", a.tools), ("--tools-path", a.tools_path)):
@@ -166,6 +170,7 @@ def options_for_new_lobster(argv, settings):
         name=a.name,
         dry_run=a.dry_run,
         public=a.public,
+        backlog=a.backlog,
         template=a.template or settings["TEMPLATE"],
         non_code_dir=a.non_code_dir or settings["NON_CODE_DIR"],
         code_dir=a.code_dir or settings["CODE_DIR"],

@@ -112,7 +112,8 @@ def plan(o, nc, tools_outer, tools_repo):
         "Make {}-tools: {}{}".format(o.name, tools_repo,
                                  f" (inside {tools_outer}, which holds its guidance files)"
                                  if tools_outer != tools_repo else ""),
-        (f"Then: git init -b main in each repository; backlog init in each half; lobster-mail init {o.name} "
+        (f"Then: git init -b main in each repository; {'backlog init in each half; ' if o.backlog else ''}"
+         f"lobster-mail init {o.name} "
         f"and {o.name}-tools in {o.mail_root}; a first commit in each; the tools' .venv."),
     ]
     return lines + outer_history_plan(o, tools_outer)
@@ -137,7 +138,8 @@ def claw_plan(o, outer, repo):
     return [
         "Make the claw {}: {}{}".format(o.name, repo, f" (inside {outer}, which holds its guidance files)"
                                         if outer != repo else ""),
-        f"Then: git init -b main; backlog init; lobster-mail init {o.name} in {o.mail_root}; a first commit; the .venv.",
+        (f"Then: git init -b main; {'backlog init; ' if o.backlog else ''}lobster-mail init {o.name} in "
+         f"{o.mail_root}; a first commit; the .venv."),
     ] + outer_history_plan(o, outer)
 
 
@@ -182,7 +184,8 @@ def render_into(o, env, today, out):
         values = values_for(name, half, model=o.model, effort=o.effort, non_code_dir=o.non_code_dir,
                             code_dir=o.code_dir, mail_root=o.mail_root, lobster_mail=o.lobster_mail,
                             public=o.public, today=today, home=env["HOME"], tools=tools,
-                            non_code_path=o.non_code_path, tools_path=o.tools_path, claws=o.claws)
+                            non_code_path=o.non_code_path, tools_path=o.tools_path, claws=o.claws,
+                            backlog=o.backlog)
         try:
             rendered = render_half(o.template, half, values, o.public)
         except TemplateRefused as why:
@@ -203,7 +206,7 @@ def render_code_half(o, name, tools, env, today):
     """The tools half's files, with the empty package added; exit 4 if the template cannot be used."""
     values = values_for(name, "code", model=o.model, effort=o.effort, non_code_dir=o.non_code_dir,
                         code_dir=o.code_dir, mail_root=o.mail_root, lobster_mail=o.lobster_mail,
-                        public=o.public, today=today, home=env["HOME"], tools=tools)
+                        public=o.public, today=today, home=env["HOME"], tools=tools, backlog=o.backlog)
     try:
         rendered = render_half(o.template, "code", values, o.public)
     except TemplateRefused as why:
@@ -260,10 +263,11 @@ def make_claw(o, env, today, out):
     for empty in (os.path.join(repo, "tests", "tier1"), os.path.join(repo, "tests", "tier2")):
         os.makedirs(empty, exist_ok=True)
     git_init(repo, env, made)
-    backlog_init(outer, o.name, o.name.replace("-", "")[:2], env, made)
+    if o.backlog:
+        backlog_init(outer, o.name, o.name.replace("-", "")[:2], env, made)
     run_program([o.lobster_mail, "init", "--root", o.mail_root, o.name], os.getcwd(), env,
                 f"lobster-mail init {o.name}", made)
-    commit(repo, repo_files, not o.public, f"Start the claw {o.name} from the lobster-project template", env, made)
+    commit(repo, repo_files, o.backlog and not o.public, f"Start the claw {o.name} from the lobster-project template", env, made)
     venv(o, repo, env, made)
     if o.public:
         outer_history(outer, repo, env, made, out)
@@ -336,7 +340,7 @@ def make(o, env, today, out):
     for half in ("non-code", "code"):
         values = values_for(o.name, half, model=o.model, effort=o.effort, non_code_dir=o.non_code_dir,
                             code_dir=o.code_dir, mail_root=o.mail_root, lobster_mail=o.lobster_mail,
-                            public=o.public, today=today, home=home)
+                            public=o.public, today=today, home=home, backlog=o.backlog)
         try:
             rendered[half] = render_half(o.template, half, values, o.public)
         except TemplateRefused as why:
@@ -375,13 +379,13 @@ def make(o, env, today, out):
     for repo in (nc, tools_repo):
         git_init(repo, env, made)
     prefix = o.name.replace("-", "")[:2]
-    for folder, project in ((nc, o.name), (tools_outer, tools)):
+    for folder, project in ((nc, o.name), (tools_outer, tools)) if o.backlog else ():
         backlog_init(folder, project, prefix, env, made)
     for box in (o.name, tools):
         run_program([o.lobster_mail, "init", "--root", o.mail_root, box], os.getcwd(), env,
                     f"lobster-mail init {box}", made)
-    commit(nc, rendered["non-code"], True, f"Start {o.name} from bernstein's lobster-project template", env, made)
-    commit(tools_repo, repo_files, not o.public, f"Start {tools} from the lobster-project template", env, made)
+    commit(nc, rendered["non-code"], o.backlog, f"Start {o.name} from bernstein's lobster-project template", env, made)
+    commit(tools_repo, repo_files, o.backlog and not o.public, f"Start {tools} from the lobster-project template", env, made)
     venv(o, tools_repo, env, made)
     if o.public:
         outer_history(tools_outer, tools_repo, env, made, out)

@@ -129,19 +129,17 @@ def test_claude_md_needs_the_templates_shared_sections_and_the_heading_naming_th
                    "3 things to bring into line.\n")
 
 
-def test_each_half_needs_a_git_repository_backlog_and_a_mailbox(world):
+def test_each_half_needs_a_git_repository_and_a_mailbox(world):
     nc, outer, _checkout = pair_in_line(world, public=True, under="kitchen")
     os.rmdir(os.path.join(nc, ".git"))
-    os.rmdir(os.path.join(outer, "backlog"))
     os.rmdir(os.path.join(world.mail, "recipes-tools"))
     code, out, _err = world.conform("recipes", "recipes-tools")
     assert code == 1
     assert out == (f"recipes (non-code): {nc}\n"
                    f"  missing: a git repository in {nc}\n"
                    f"recipes-tools (code): {outer}\n"
-                   f"  missing: backlog/ in {outer}\n"
                    f"  missing: the mailbox recipes-tools in {world.mail}\n"
-                   "3 things to bring into line.\n")
+                   "2 things to bring into line.\n")
 
 
 def test_a_public_checkout_must_not_hold_the_files_that_belong_beside_it(world):
@@ -513,3 +511,29 @@ def test_a_feeler_has_no_tickets_so_backlog_settings_in_its_folder_are_never_rea
         os.chmod(settings, 0o644)
     assert (code, err) == (0, ""), out
     assert out == f"agents (feeler): {folder}\n  in line\nThe feeler is in line.\n"
+
+
+def test_a_half_that_keeps_no_tickets_is_in_line_without_a_backlog_folder(world):
+    nc, outer, _checkout = pair_in_line(world, public=True)
+    os.rmdir(os.path.join(nc, "backlog"))
+    os.rmdir(os.path.join(outer, "backlog"))
+    code, out, err = world.conform("recipes", "recipes-tools")
+    assert (code, err) == (0, ""), out
+    assert out == (f"recipes (non-code): {nc}\n  in line\nrecipes-tools (code): {outer}\n  in line\n"
+                   "Both halves are in line.\n")
+
+
+def test_a_section_the_template_gives_only_to_projects_with_tickets_is_asked_only_of_those(world):
+    nc, outer, _checkout = pair_in_line(world)
+    for half in ("non-code", "code"):
+        with open(os.path.join(world.template, half, "CLAUDE.md"), "a") as f:
+            f.write("\n{{> sections/tickets-{{BACKLOG}}.md}}\n")
+    write(world.template, {"common/sections/tickets-yes.md": "## Tracking issues (Backlog)\n\nIds.\n",
+                           "common/sections/tickets-no.md": "## Tracking issues: none here\n\nNo tickets.\n"})
+    os.rmdir(os.path.join(outer, "backlog"))
+    write(nc, {"backlog/config.yml": 'task_prefix: "re"\n'})
+    code, out, _err = world.conform("recipes", "recipes-tools")
+    assert code == 1 and out == (
+        f"recipes (non-code): {nc}\n  missing: the section \"## Tracking issues (Backlog)\" in CLAUDE.md\n"
+        f"recipes-tools (code): {outer}\n  missing: the section \"## Tracking issues: none here\" in CLAUDE.md\n"
+        "2 things to bring into line.\n")

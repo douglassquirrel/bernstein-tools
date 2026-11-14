@@ -994,3 +994,19 @@ def test_start_with_backlog_settings_that_cannot_be_read_is_exit_3_and_changes_s
         os.chmod(settings, 0o644)
     assert tree(folder)["RULES.md"] == b"old\n" and "_to_delete" not in os.listdir(folder)
     assert sent(world) == [] and opened(world) == []
+
+
+@pytest.mark.parametrize("kind", ["non-code", "code"])
+@pytest.mark.parametrize("settings, section", [
+    ('task_prefix: "fd"', "Tickets: ids `FD-nnn`.\n"), (None, "No tickets here.\n"),
+])
+def test_start_gives_the_global_rules_the_tickets_section_only_for_a_project_that_keeps_tickets(world, kind, settings, section):
+    from conftest import tree, write_tree
+    folder = ticketed(world, kind, settings)
+    write_tree(world.template, {kind + "/RULES.md": "Rules.\n{{> sections/tickets-{{BACKLOG}}.md}}\n",
+                                "common/sections/tickets-yes.md": "Tickets: ids `{{BACKLOG_PREFIX}}-nnn`.\n",
+                                "common/sections/tickets-no.md": "No tickets here.\n"})
+    name = os.path.basename(folder)
+    code, _out, err = world.conduct("start", name)
+    assert code == 0, err
+    assert tree(folder)["RULES.md"] == ("Rules.\n" + section).encode()

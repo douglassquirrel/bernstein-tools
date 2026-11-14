@@ -103,7 +103,7 @@ def test_a_private_pair_is_made_with_both_folders_filled_in(world):
 
 
 def test_the_programs_run_in_order_in_the_right_folders(world):
-    code, _out, err = world.run("recipes")
+    code, _out, err = world.run("--backlog", "recipes")
     assert code == 0, err
     nc, tools = made(world)
     lm = os.path.join(world.bin, "lobster-mail")
@@ -148,7 +148,7 @@ def test_the_report_names_both_folders_and_gives_the_github_steps(world):
 
 
 def test_a_public_tools_project_gets_the_outer_folder_with_the_checkout_inside(world):
-    code, out, err = world.run("--public", "recipes")
+    code, out, err = world.run("--public", "--backlog", "recipes")
     assert code == 0, err
     outer = os.path.join(world.code, "recipes-tools-code")
     checkout = os.path.join(outer, "recipes-tools")
@@ -168,7 +168,7 @@ def test_a_public_tools_project_gets_the_outer_folder_with_the_checkout_inside(w
 
 def test_a_failing_program_stops_with_exit_5_saying_what_failed_and_what_was_made(world):
     world.fail("backlog")
-    code, _out, err = world.run("recipes")
+    code, _out, err = world.run("--backlog", "recipes")
     assert code == 5
     nc, tools = made(world)
     assert err.startswith(f"new-lobster: backlog init recipes failed (exit 1) in {nc}\n")
@@ -343,7 +343,7 @@ def test_render_into_passes_the_further_claws_to_the_template(world, tmp_path):
 
 
 def test_a_claw_is_made_on_its_own_with_one_mailbox_and_one_repository(world):
-    code, out, err = world.run("--claw", "--public", "word-tools")
+    code, out, err = world.run("--claw", "--public", "--backlog", "word-tools")
     assert code == 0, err
     outer = os.path.join(world.code, "word-tools-code")
     checkout = os.path.join(outer, "word-tools")
@@ -386,7 +386,7 @@ def test_a_claw_dry_run_and_its_refusals_name_only_the_claw(world):
     code, out, err = world.run("--claw", "--dry-run", "word-tools")
     assert (code, err) == (0, "")
     assert out == (f"Make the claw word-tools: {os.path.join(world.code, 'word-tools')}\n"
-                   f"Then: git init -b main; backlog init; lobster-mail init word-tools in {world.mail}; a first commit; "
+                   f"Then: git init -b main; lobster-mail init word-tools in {world.mail}; a first commit; "
                    "the .venv.\nDry run: nothing was made.\n")
     assert os.listdir(world.code) == [] and [c["prog"] for c in world.calls()] == ["lobster-mail"]
     world.mailboxes(["word-tools"])

@@ -271,3 +271,12 @@ def test_a_project_whose_tickets_carry_a_prefix_of_their_own_keeps_it_in_both_ha
     assert values_for("recipes", "non-code", backlog_prefix=None, **common)["BACKLOG_PREFIX"] == "RE"
     assert values_for("recipes", "non-code", backlog_prefix="", **common)["BACKLOG_PREFIX"] == "RE"
     assert "BACKLOG_PREFIX" not in values_for("recipes", "feeler", backlog_prefix="FD", **common)
+
+
+def test_a_template_is_told_whether_the_project_keeps_tickets_and_a_new_one_keeps_none_unless_asked():
+    common = {"model": "opus", "effort": "high", "non_code_dir": "/h/nc", "code_dir": "/h/code", "mail_root": "/h/mail",
+              "lobster_mail": "/h/l/lobster-mail", "today": datetime.date(2026, 10, 8), "home": "/h", "public": False}
+    assert values_for("recipes", "non-code", **common)["BACKLOG"] == "no"
+    assert values_for("recipes", "code", backlog=True, **common)["BACKLOG"] == "yes"
+    assert values_for(None, "code", tools="knives", backlog=False, **common)["BACKLOG"] == "no"
+    assert "BACKLOG" not in values_for("recipes", "feeler", backlog=True, **common)

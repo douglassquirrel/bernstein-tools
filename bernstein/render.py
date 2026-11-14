@@ -128,9 +128,11 @@ def feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, to
 
 
 def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lobster_mail, public, today, home,
-               tools=None, non_code_path=None, tools_path=None, claws=(), backlog_prefix=None):
+               tools=None, non_code_path=None, tools_path=None, claws=(), backlog_prefix=None,
+               backlog=False):
     """The placeholder values for one half of the pair named `name`; an existing pair may give its own
-    tools name and folders, and the prefix its tickets already carry (else it is worked out from the name). `claws` are the further claws a non-code project uses besides its home,
+    tools name and folders, and the prefix its tickets already carry (else it is worked out from the name).
+    `backlog` says whether the project keeps tickets: BACKLOG is "yes" or "no", for a template to choose by. `claws` are the further claws a non-code project uses besides its home,
     `tools`. A lone claw (a tools project with no sister) has `name` None and gives `tools`."""
     if half == "feeler":
         return feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, today, home,
@@ -220,6 +222,7 @@ def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lob
         "MAIL_ROOT_SHELL": shlex.quote(mail_root),
         "LOBSTER_TOOLS": tilde(os.path.dirname(lobster_mail), home),
         "VISIBILITY": "public" if public else "private",
+        "BACKLOG": "yes" if backlog else "no",
         "BACKLOG_PREFIX": backlog_prefix or (tools if lone else name).replace("-", "")[:2].upper(),
         "QUESTIONS_AT": 'CLAUDE.md, "Open questions for Squirrel"' if non_code else 'PLAN.md, "Open questions"',
         "CLAWS": " ".join(claws) if non_code else "",

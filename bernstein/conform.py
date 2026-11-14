@@ -82,14 +82,15 @@ def claws_of(conf):
         return []
 
 
-def required_sections(s, kind, non_code, tools, public, home, claws=()):
+def required_sections(s, kind, non_code, tools, public, home, claws=(), backlog=False):
     """(headings, wording) for a half's CLAUDE.md. Headings: every heading of each section the template's
     CLAUDE.md for that half includes from common/sections/, and every heading of its own that names the
     pair. Wording: {heading: lines} of the included sections in FIXED_WORDING, filled. A lone claw has
     non_code None."""
     values = values_for(non_code, kind, model=s["MODEL"], effort=s["EFFORT"], non_code_dir=s["NON_CODE_DIR"],
                         code_dir=s["CODE_DIR"], mail_root=s["MAIL_ROOT"], lobster_mail=s["LOBSTER_MAIL"],
-                        public=public, today=datetime.date.today(), home=home, tools=tools, claws=claws)
+                        public=public, today=datetime.date.today(), home=home, tools=tools, claws=claws,
+                        backlog=backlog)
     where = f"{kind}/CLAUDE.md"
     with open(os.path.join(s["TEMPLATE"], kind, "CLAUDE.md"), encoding="utf-8") as f:
         raw = f.read()
@@ -149,7 +150,8 @@ def gaps_of(name, kind, sister, found, s):
     for claw in claws:
         if not os.path.isdir(tools_folders(claw, s["CODE_DIR"])[1]):
             gaps.append(f"the claw {claw} in {s['CODE_DIR']} or a folder directly inside it")
-    gaps += claude_gaps(folder, *required_sections(s, kind, non_code, tools, found[0] != found[1], s["HOME"], claws))
+    gaps += claude_gaps(folder, *required_sections(s, kind, non_code, tools, found[0] != found[1], s["HOME"], claws,
+                                                       globalfiles.keeps_tickets(folder)))
     checkout = found[1]
     other = sister_path(kind, sister, s)
     rendered = globalfiles.renders(s, kind, name, sister, folder, checkout, other, claws, s["HOME"],
@@ -164,8 +166,6 @@ def gaps_of(name, kind, sister, found, s):
                 gaps.append(f"{rel} beside the checkout, not in it ({checkout})")
     if not os.path.isdir(os.path.join(checkout, ".git")):
         gaps.append(f"a git repository in {checkout}")
-    if not os.path.isdir(os.path.join(folder, "backlog")):
-        gaps.append(f"backlog/ in {folder}")
     if not os.path.isdir(os.path.join(s["MAIL_ROOT"], name)):
         gaps.append(f"the mailbox {name} in {s['MAIL_ROOT']}")
     return gaps

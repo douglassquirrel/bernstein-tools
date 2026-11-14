@@ -3,7 +3,7 @@
 Tools that set up and run "lobster" projects: pairs of projects worked on with Claude, where a
 non-code project does the work and asks a companion tools project, by mail, for every routine task
 as a tested command. `new-lobster` makes such a pair in one step: both folders from a template,
-git, a Backlog issue tracker, a mailbox each, and the first commits. `conduct` starts a project's
+git, a mailbox each, the first commits, and a Backlog issue tracker if you ask for one. `conduct` starts a project's
 session and asks a running one to hand over, and `podium` shows every session on a page in your
 browser, with buttons for what `conduct` does. `local-history` gives the private folder around a public
 checkout a git history of its own, with no remote. They are for one person's Mac and their own
@@ -13,7 +13,8 @@ projects; the projects talk by `lobster-mail`, from the
 ## Requirements
 
 - macOS with `/usr/bin/python3` (3.9 or later) and `git`.
-- Backlog, the `backlog.md` package (`backlog` on `PATH`; tested with 1.53.0).
+- Only for a project that keeps tickets (`--backlog`): Backlog, the `backlog.md` package (`backlog` on
+  `PATH`; tested with 1.53.0).
 - A checkout of `lobster-tools` for `lobster-mail`, and a mail root it can use.
 - A lobster-project template: a folder with `common/`, `non-code/` and `code/`. It is not part of
   this repository; `new-lobster` reads it from the `TEMPLATE` setting. See "The template" below.
@@ -35,7 +36,7 @@ See what would be made, without making anything:
 $ ./new-lobster --dry-run recipes
 Make recipes: /Users/me/projects/non-code/recipes
 Make recipes-tools: /Users/me/projects/code/recipes-tools
-Then: git init -b main in each repository; backlog init in each half; lobster-mail init recipes and recipes-tools in /Users/me/projects/mail; a first commit in each; the tools' .venv.
+Then: git init -b main in each repository; lobster-mail init recipes and recipes-tools in /Users/me/projects/mail; a first commit in each; the tools' .venv.
 Dry run: nothing was made.
 ```
 
@@ -64,9 +65,9 @@ Each project's first session asks you for its purpose and brief.
 ## Usage
 
 ```
-new-lobster [--dry-run] [--public] [--template DIR] [--non-code-dir DIR] [--code-dir DIR]
+new-lobster [--dry-run] [--public] [--backlog] [--template DIR] [--non-code-dir DIR] [--code-dir DIR]
             [--model MODEL] [--effort EFFORT] <name>
-new-lobster --claw [--dry-run] [--public] <name>
+new-lobster --claw [--dry-run] [--public] [--backlog] <name>
 new-lobster --feeler [--dry-run] [--claws "a b"] <name>
 ```
 
@@ -74,6 +75,12 @@ new-lobster --feeler [--dry-run] [--claws "a b"] <name>
   with a letter, 2 to 40 characters, not ending in `-tools`. The tools project is `<name>-tools`.
 - `--dry-run`: check everything and render every file, print what would be made, and stop.
   Nothing is written; the only program run is the read-only mailbox listing.
+- `--backlog`: the project keeps tickets. Each half gets Backlog (`backlog init`, ids `RE-001` on for
+  `recipes`), committed with its first commit, and its rules get the template's section on tickets.
+  Without it, which is the default since 14 November 2026, `backlog` is never run and the rules say the
+  project keeps no tickets. A project keeps tickets if and only if its folder has `backlog/config.yml`:
+  a project that wants them later runs `backlog init` in its own folder, and one that never used them
+  loses them with `drop-backlog` (below). Not with `--feeler`: a feeler keeps none.
 - `--public`: the tools project is public. Its guidance files then stay in an outer folder,
   `<name>-tools-code/`, beside a checkout `<name>-tools/` that holds the code and an MIT licence. The outer folder also gets a git repository of its own, with no remote, started last of all with
   everything beside the checkout in it (what `local-history` does, below); a dry run says so in a line
@@ -81,7 +88,7 @@ new-lobster --feeler [--dry-run] [--claws "a b"] <name>
 - `--template`, `--non-code-dir`, `--code-dir`, `--model`, `--effort`: override the settings below.
 
 What it makes, for `recipes`: `<non-code dir>/recipes/` and `<code dir>/recipes-tools/`, each a git
-repository on `main` with a first commit and Backlog (ids `RE-001` on); the mailboxes `recipes` and
+repository on `main` with a first commit (and Backlog, with `--backlog`); the mailboxes `recipes` and
 `recipes-tools`; and the tools project's `.venv` with its dev tooling. It never writes over
 anything, never changes the template, never deletes, and never touches GitHub.
 
@@ -93,7 +100,7 @@ google-docs-tools` line. A claw that serves any project and has no non-code half
 
 **Making a lone claw.** `new-lobster --claw [--public] [--dry-run] <name>` makes one tools project
 on its own: its folder (the public layout with `--public`), a git repository with a first commit,
-Backlog, one mailbox and the `.venv`, and prints the commands for its one GitHub repository. The
+one mailbox and the `.venv` (and Backlog, with `--backlog`), and prints the commands for its one GitHub repository. The
 name may end in `-tools`. Its first session asks you which projects will use it.
 
 **Bringing an existing pair, or an existing claw, into line.** `new-lobster --render-into DIR [--tools NAME]
@@ -160,7 +167,10 @@ A global file must read the same every day, so it may not use `{{DATE}}`; `{{TEM
 is the line in `common/version` (empty when there is none). A project never edits a global file.
 `conform` lists one that is missing or no longer equals the template's render for that project's
 own names, folders and claws, and `conduct start` replaces any that are behind (below).
-**Ticket ids.** In a global file `{{BACKLOG_PREFIX}}` is the prefix the project's own tickets carry:
+**Tickets.** In any template file `{{BACKLOG}}` is `yes` for a project that keeps tickets and `no` for one
+that does not, so an include can choose between two sections, as in `{{> sections/backlog-{{BACKLOG}}.md}}`.
+For a new project that is the `--backlog` flag; for an existing one, whether its folder has
+`backlog/config.yml`. In a global file `{{BACKLOG_PREFIX}}` is the prefix the project's own tickets carry:
 `task_prefix` in its `backlog/config.yml`, in capitals, when that names one of letters and figures.
 Only a project with no such setting gets the prefix worked out from its name (the first two letters),
 which is also what `new-lobster` gives a new project. The settings file is only read; if it is there
@@ -487,7 +497,7 @@ and EFFORT), for a non-code project every claw in CLAWS present in the code fold
 `.claude/settings.json` with the `lobster-mail start` hook passing this mail root to `--root`,
 `inbox/README.md`, CLAUDE.md having each section the template's CLAUDE.md for that half takes from
 `common/sections/` and each heading naming the pair, the Inbox and Mail sections in the template's
-exact wording (blank lines aside), a git repository, `backlog/`, the mailbox, and, for a public tools
+exact wording (blank lines aside), a git repository, the mailbox, and, for a public tools
 project, none of the outer files (CLAUDE.md, PLAN.md, DIARY.md, START-HERE.txt, `lobster.conf`,
 `inbox/`, `.claude/`, and the template's global files) inside the checkout. When the template names
 global files, each must be in the project's folder and equal the template's render for that project:
@@ -509,6 +519,39 @@ Both halves are in line.
 A gap is a line `missing: …`; a half that cannot be found, or is in two places, says so. Exit codes:
 0 nothing missing, 1 something missing, 2 bad arguments or settings, 4 the template, or a project's `backlog/config.yml`, cannot be read.
 Use it with `new-lobster --render-into` to bring an older pair into line.
+
+## drop-backlog: take Backlog out of a project that never used it
+
+```
+drop-backlog [--dry-run] PROJECT [PROJECT ...]
+```
+
+Backlog used to be set up in every project. For one that has never held a ticket, `drop-backlog` moves
+the whole `backlog/` folder into that project's `_to_delete/backlog-removed-<date>-<time>/`, so nothing
+is lost and it can be put back by moving it back. It changes nothing else in the project and commits
+nothing: the project's next session commits the removal, and its shared rules say "no tickets" from its
+next `conduct start`. Run it with `--dry-run` first.
+
+Everything is checked before anything moves, and one refusal stops the whole run (exit 3):
+
+- a Backlog that holds any file besides its `config.yml` (a ticket, a draft, a decision, a document) is
+  in use and is left alone; the message counts the files and names the first three;
+- a project with anyone on duty, fresh or stale, is not changed under its session: stop it with
+  `conduct stop`, or `conduct reset` if it is gone;
+- a project that cannot be found, or is in two places, or whose `backlog` is a link.
+
+A project with no `backlog/` already is passed over with a line. A project with no mailbox has nobody
+on duty and is done like any other.
+
+```
+$ ./drop-backlog --dry-run recipes recipes-tools
+recipes: would move /Users/me/projects/non-code/recipes/backlog to /Users/me/projects/non-code/recipes/_to_delete/backlog-removed-2026-11-14-1210/backlog
+recipes-tools: would move /Users/me/projects/code/recipes-tools/backlog to /Users/me/projects/code/recipes-tools/_to_delete/backlog-removed-2026-11-14-1210/backlog
+Dry run: nothing was moved.
+```
+
+Exit codes: 0 moved, would move, or nothing to remove; 2 bad arguments or settings; 3 refused, nothing
+moved; 4 the duty listing could not be had, or a move failed (the message says which were moved).
 
 ## local-history: a history for the folder around a public checkout
 
@@ -558,7 +601,7 @@ commit -m "..."`, run in the outer folder, not the checkout).
 ## Errors and exit codes
 
 Every failure is one line on standard error starting `new-lobster:`, saying what happened. (`conduct`,
-`conform` and `local-history` give their own codes in their sections above.)
+`conform`, `drop-backlog` and `local-history` give their own codes in their sections above.)
 
 | Code | Meaning | What to do |
 |---|---|---|
@@ -566,7 +609,7 @@ Every failure is one line on standard error starting `new-lobster:`, saying what
 | 2 | A bad name, flag or settings line | The message names the rule or the line; `--help` shows the form |
 | 3 | A folder or a mailbox it would make already exists | Choose another name, or move the existing one yourself |
 | 4 | The template cannot be used (missing, a missing include, an unknown placeholder) | Fix the template; nothing was written |
-| 5 | A program it runs failed (`git`, `backlog`, `lobster-mail`, Python) | The message says what failed and lists what was already made, which is left as it is |
+| 5 | A program it runs failed (`git`, `lobster-mail`, Python, or `backlog` with `--backlog`) | The message says what failed and lists what was already made, which is left as it is |
 
 ## Testing
 
@@ -578,7 +621,7 @@ Every failure is one line on standard error starting `new-lobster:`, saying what
 
 `tests/tier1/` tests the pure parts (names, settings, rendering) against small invented templates;
 `tests/tier2/` runs `new-lobster` end to end against stubs of `git`, `backlog`, `lobster-mail` and
-Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
+Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `drop-backlog` against invented projects and the stub of `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
 handling as a plain function; three tests fetch the page from a real socket on `127.0.0.1`, which is this
 machine and not the network), and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
 that appears while `new-lobster` is running, a race the tests cannot stage.
@@ -610,6 +653,10 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: **Backlog is optional.** `new-lobster` no longer sets it up unless you add
+  `--backlog`; `conform` no longer asks for a `backlog/` folder; a template can choose a section by
+  `{{BACKLOG}}` (`yes` or `no`); and the new command `drop-backlog` moves an unused `backlog/` out of an
+  existing project into its `_to_delete/`. A project that holds tickets is never touched.
 - 14 November 2026: new verb `conduct reset <project> [--handover FILE] [--dry-run]`, for a session that
   ended without handing over: it closes the messages `conduct` had sent it, gives up its duty and leaves a
   note for the next session. Run it with `--dry-run` first.
