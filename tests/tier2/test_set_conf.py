@@ -38,7 +38,7 @@ def pair(world, conf=None):
 def test_help_names_the_command_and_its_form(world):
     code, out, err = setconf(world, "--help")
     assert (code, err) == (0, "")
-    assert "usage: set-conf [-h] [--dry-run] PROJECT KEY=VALUE" in out
+    assert "usage: set-conf [-h] [--dry-run] [--facts-to FILE] PROJECT KEY=VALUE" in out
     for word in ("SISTER", "CLAWS", "FOLDERS", "MODEL", "EFFORT", "_to_delete"):
         assert word in out
 

@@ -68,3 +68,33 @@ def test_a_file_that_is_not_a_facts_file_is_refused_saying_why(text, why):
 def test_when_is_the_day_and_the_time_in_utc_as_a_notice_says_it():
     assert facts.when(datetime.datetime(2026, 11, 4, 9, 7, tzinfo=datetime.timezone.utc)) == "4 November 2026, 09:07Z"
     assert facts.when(datetime.datetime(2026, 1, 31, 23, 59, tzinfo=datetime.timezone.utc)) == "31 January 2026, 23:59Z"
+
+
+def test_recording_a_block_makes_the_file_or_adds_to_it_and_replaces_only_that_projects_block(tmp_path):
+    path = str(tmp_path / "facts.json")
+    assert facts.held(path) == {}
+    facts.record(path, "recipes", {"KEPT": "/a café", "WHEN": "now"})
+    facts.record(path, "menus", {"KEPT": "/b"})
+    assert facts.held(path) == {"recipes": {"KEPT": "/a café", "WHEN": "now"}, "menus": {"KEPT": "/b"}}
+    facts.record(path, "recipes", {"KEPT": "/c"})
+    assert facts.held(path) == {"recipes": {"KEPT": "/c"}, "menus": {"KEPT": "/b"}}
+    with open(path, encoding="utf-8") as f:
+        assert f.read() == facts.text_of({"recipes": {"KEPT": "/c"}, "menus": {"KEPT": "/b"}})
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["facts.json"]         # no temporary file is left
+
+
+def test_a_file_that_is_there_and_is_not_a_facts_file_is_never_added_to(tmp_path):
+    path = tmp_path / "notes.md"
+    path.write_text("Not facts.\n")
+    for call in (lambda: facts.held(str(path)), lambda: facts.record(str(path), "recipes", {"KEPT": "/a"})):
+        with pytest.raises(facts.FactsRefused) as refused:
+            call()
+        assert str(refused.value) == f"{path} is not JSON"
+    assert path.read_text() == "Not facts.\n"
+    path.write_bytes(b"\xff\xfe")
+    with pytest.raises(facts.FactsRefused) as refused:
+        facts.held(str(path))
+    assert str(refused.value) == f"{path} is not plain UTF-8 text"
+    with pytest.raises(facts.FactsRefused) as refused:
+        facts.held(str(tmp_path))
+    assert str(refused.value) == f"{tmp_path} cannot be read (Is a directory)"

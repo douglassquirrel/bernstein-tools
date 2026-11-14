@@ -10,7 +10,7 @@ import re
 import stat
 from collections import namedtuple
 
-from bernstein import conduct
+from bernstein import conduct, facts
 from bernstein.settings import SettingsRefused, check_effort, check_model, read_settings
 
 # was, now: the line before and after, without its ending (was is None for a line that is added).
@@ -94,6 +94,7 @@ def parser():
                    "FOLDERS=~/models/voices; an empty value (CLAWS=) is allowed")
     p.add_argument("--dry-run", action="store_true", help="show the line as it is and as it would be, and where "
                    "the file as it is would be kept; change nothing")
+    p.add_argument("--facts-to", metavar="FILE", help=facts.HELP)
     return p
 
 
@@ -153,6 +154,8 @@ def counted(numbers):
 
 
 def run(a, s, env, today, out, sleep):
+    if a.facts_to and facts.refusal(a.facts_to):
+        raise Stop(2, facts.refusal(a.facts_to))
     key, value = setting(a.setting)
     name = a.project
     try:
@@ -223,10 +226,18 @@ def run(a, s, env, today, out, sleep):
         out.write(f"{head}  is:       {was_line}\n  would be: {now_line}\n"
                   f"  the file as it is would be kept in {kept}\n"
                   f"Dry run: nothing was changed. After the real run {name} is owed a notice by mail of the change.\n")
+        if a.facts_to:
+            out.write(f"The facts for a notice would be written to {a.facts_to}.\n")
         return
     write(conf, temp, kept, was, changed.text.encode("utf-8"), mode)
     out.write(f"{head}  was: {was_line}\n  now: {now_line}\n  the file as it was is kept in {kept}\n"
               f"Nothing was committed and nothing was sent: {name} is owed a notice by mail of this change.\n")
+    if a.facts_to:
+        why = facts.unwritten(a.facts_to, name, {"KEPT": kept, "KEY": key, "WAS": changed.was or "",
+                                                 "NOW": changed.now, "WHEN": facts.when(today)})
+        if why:
+            raise Stop(4, why)
+        out.write(f"The facts for a notice are in {a.facts_to}.\n")
 
 
 def main(argv, env, today, out, err, sleep):

@@ -8,7 +8,7 @@ nothing else there: no commit, no other file. The project's shared rules follow 
 import argparse
 import os
 
-from bernstein import conduct
+from bernstein import conduct, facts
 from bernstein.settings import SettingsRefused, read_settings
 
 
@@ -29,6 +29,7 @@ def parser():
                "move its backlog/ folder into the project's _to_delete/. A project that holds a ticket is refused.")
     p.add_argument("projects", nargs="+", metavar="PROJECT", help="a lobster project's name")
     p.add_argument("--dry-run", action="store_true", help="say what would be moved; move nothing")
+    p.add_argument("--facts-to", metavar="FILE", help=facts.HELP)
     return p
 
 
@@ -60,6 +61,8 @@ def listed(names):
 
 
 def run(a, s, env, today, out, sleep):
+    if a.facts_to and facts.refusal(a.facts_to):
+        raise Stop(2, facts.refusal(a.facts_to))
     try:
         boxes = conduct.listing(s, env, sleep)
     except conduct.Stop as stopped:
@@ -109,14 +112,21 @@ def run(a, s, env, today, out, sleep):
             raise Stop(4, f"{backlog} could not be moved to {kept} ({why.strerror}): it is where it was.{before}")
         moved.append(name)
         out.write(f"{name}: moved {backlog} to {kept}\n")
+        if a.facts_to:
+            why = facts.unwritten(a.facts_to, name, {"KEPT": kept, "WHEN": facts.when(today)})
+            if why:
+                raise Stop(4, f"{why}. Moved: {', '.join(moved)}")
     if not moving:
         out.write("Nothing to remove.\n")
     elif a.dry_run:
-        out.write("Dry run: nothing was moved.\n")
+        out.write("Dry run: nothing was moved."
+                  + (f" The facts for a notice would be written to {a.facts_to}." if a.facts_to else "") + "\n")
     else:
         count = "1 project" if len(moving) == 1 else f"{len(moving)} projects"
         out.write(f"Backlog removed from {count}. Nothing was committed: each project's next session commits the "
                   "removal.\n")
+        if a.facts_to:
+            out.write(f"The facts for a notice are in {a.facts_to}.\n")
 
 
 def main(argv, env, today, out, err, sleep):

@@ -6,6 +6,7 @@ is written in capitals and underscores, as its place in a notice's body is ({{KE
 
 
 import json
+import os
 import re
 
 from bernstein.render import MONTHS
@@ -48,3 +49,51 @@ def text_of(facts):
 def when(now):
     """A moment as a notice says it: 14 November 2026, 11:47Z."""
     return f"{now.day} {MONTHS[now.month - 1]} {now.year}, {now:%H:%M}Z"
+
+
+def held(path):
+    """The facts in the file at path, none if there is no such file; FactsRefused if it is not a facts file."""
+    if not os.path.lexists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return read(f.read(), path)
+    except UnicodeDecodeError:
+        raise FactsRefused(f"{path} is not plain UTF-8 text")
+    except OSError as why:
+        raise FactsRefused(f"{path} cannot be read ({why.strerror})")
+
+
+def record(path, project, block):
+    """Add one project's block to the facts file at path, or replace it there, keeping every other block."""
+    facts = held(path)
+    facts[project] = dict(block)
+    with open(path + ".new", "w", encoding="utf-8") as f:
+        f.write(text_of(facts))
+    os.replace(path + ".new", path)
+
+
+HELP = ("write what was done in each project to this facts file, for notice --facts (made if it is not there; "
+        "a project's block is added or replaced)")
+
+
+def refusal(path):
+    """Why the file at path cannot take facts, or None: asked before a command does anything."""
+    folder = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(folder):
+        return f"--facts-to {path}: the folder {folder} is not there: make it first"
+    try:
+        held(path)
+    except FactsRefused as why:
+        return f"--facts-to {path} is there already and is not a facts file ({why})"
+    return None
+
+
+def unwritten(path, project, block):
+    """Record a block; None, or why it could not be written (the command's own change is made by then)."""
+    try:
+        record(path, project, block)
+    except (OSError, FactsRefused) as why:
+        return (f"the change was made, but the facts for a notice could not be written to {path} "
+                f"({getattr(why, 'strerror', None) or why})")
+    return None

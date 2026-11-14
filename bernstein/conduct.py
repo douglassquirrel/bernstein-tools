@@ -15,7 +15,7 @@ import subprocess
 import urllib.parse
 from types import SimpleNamespace
 
-from bernstein import globalfiles
+from bernstein import facts, globalfiles
 from bernstein.render import MONTHS, TemplateRefused
 from bernstein.settings import SettingsRefused, read_settings
 
@@ -510,6 +510,7 @@ def parser():
     s.add_argument("--again", action="store_true", help="send another Start although one sent in the last "
                    f"{START_WAIT.seconds // 60} minutes still waits unread in the project's mailbox")
     s.add_argument("--dry-run", action="store_true", help="show the message and the link; send and open nothing")
+    s.add_argument("--facts-to", metavar="FILE", help="when global files are replaced: " + facts.HELP)
     t = verbs.add_parser("stop", help="ask a running session to hand over and stop")
     t.add_argument("project", nargs="?")
     t.add_argument("--all", action="store_true", help="every session on duty except bernstein's")
@@ -782,6 +783,8 @@ def send(s, env, to, subject, body, err):
 
 
 def start(a, s, env, today, out, err, sleep):
+    if a.facts_to and facts.refusal(a.facts_to):
+        raise Stop(2, facts.refusal(a.facts_to))
     if a.name is not None and name_refusal(a.name):
         raise Stop(2, f"{name_refusal(a.name)}: give --name one line of at most {NAME_LIMIT} characters")
     brief = None
@@ -823,6 +826,8 @@ def start(a, s, env, today, out, err, sleep):
         out.write(f"Would send to {a.project}, as bernstein, subject \"Start: {a.project}\":\n\n{body}\n")
         if behind:
             out.write(f"Would bring up to date in {project.folder}: {', '.join(behind)}\n")
+            if a.facts_to:
+                out.write(f"Would write the facts for a notice to {a.facts_to}.\n")
         out.write(f"Would open:\n  {link}\n")
         if project.folders:
             out.write(f"Would also connect, from FOLDERS in its lobster.conf: {', '.join(project.folders)}\n")
@@ -837,6 +842,12 @@ def start(a, s, env, today, out, err, sleep):
             raise Stop(4, f"a global file in {project.folder} could not be replaced ({why.strerror}): "
                           "nothing was sent or opened")
         out.write(f"Brought up to date in {project.folder}: {', '.join(updated)} (the old copies are in {kept})\n")
+        if a.facts_to:
+            why = facts.unwritten(a.facts_to, a.project, {"KEPT": kept, "FILES": ", ".join(updated),
+                                                          "WHEN": facts.when(today)})
+            if why:
+                raise Stop(4, f"{why}; nothing was sent or opened")
+            out.write(f"The facts for a notice are in {a.facts_to}.\n")
     elif rendered and not split:
         out.write(f"{a.project} does not keep the template's global files apart yet: its files are left as "
                   "they are.\n")

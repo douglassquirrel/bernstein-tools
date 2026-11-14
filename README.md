@@ -745,6 +745,85 @@ Exit codes: 0 changed, would change, or nothing to change; 2 bad arguments or se
 nothing changed; 4 the duty listing could not be had, or the write failed (`lobster.conf` is as it was,
 and what the run had made is taken away again, or named if it could not be).
 
+## notice: one notice to several projects, each with its own facts
+
+```
+notice [--dry-run] --subject TEXT --body FILE [--facts FILE] [--keep DIR] PROJECT [PROJECT ...]
+```
+
+When something is changed in several projects, each is told by mail what was changed, when, and where
+the old copy is. `notice` sends that message to each project named, as `bernstein` (the mailbox
+`conduct` sends from), with each project's own facts filled into the same body. Run it with `--dry-run`
+first: it prints every notice whole, exactly as it would be sent, and sends nothing.
+
+**The body** is a text file. A place to fill is written `{{NAME}}`, in capitals and underscores;
+anything else in double braces is left as written. `{{PROJECT}}` is the project's name and `{{FOLDER}}`
+its folder; every other name comes from the facts file. A value is put in once and is never itself
+filled. The subject is sent as given.
+
+**The facts file** (`--facts`) is JSON, one block a project, a name in capitals for each fact, each
+value text:
+
+```
+{
+ "demo": {
+  "KEPT": "/Users/me/projects/non-code/demo/_to_delete/before-conf-change-2026-11-14-1555/lobster.conf",
+  "KEY": "EFFORT",
+  "WAS": "EFFORT=high",
+  "NOW": "EFFORT=max",
+  "WHEN": "14 November 2026, 15:55Z"
+ }
+}
+```
+
+Nobody need type one: `drop-backlog`, `set-conf` and `conduct start` each take **`--facts-to FILE`** and
+write there what they did, so that what the notice says is what the command did. The file is made if
+it is not there; otherwise the project's block is added or replaced and the others are kept. A dry run
+writes nothing there. `drop-backlog` gives `KEPT` and `WHEN` for each project it moved; `set-conf` gives
+`KEPT`, `KEY`, `WAS`, `NOW` and `WHEN` when it changed the file; `conduct start` gives `KEPT`, `FILES` and
+`WHEN` when it replaced global files. A file there that is not a facts file, or a folder that is not
+there, is exit 2 before the command does anything.
+
+```
+$ ./set-conf --facts-to facts.json demo EFFORT=max
+$ ./notice --dry-run --subject "Notice: a trial of notice" --body body.md --facts facts.json demo
+Would send to demo, as bernstein, subject "Notice: a trial of notice":
+
+To demo, a trial.
+
+In /Users/me/projects/non-code/demo the line EFFORT=high became EFFORT=max on 14 November 2026, 15:55Z.
+The file as it was: /Users/me/projects/non-code/demo/_to_delete/before-conf-change-2026-11-14-1555/lobster.conf
+
+Dry run: nothing was sent.
+$ ./notice --subject "Notice: a trial of notice" --body body.md --facts facts.json --keep kept demo
+Sent to demo: 2026-11-14-1555-bernstein-notice-a-trial-of-notice (kept as kept/2026-11-14-1555-bernstein-notice-a-trial-of-notice.md)
+Sent 1 notice as bernstein, subject "Notice: a trial of notice".
+$ ./notice --subject "Notice: a trial of notice" --body body.md --facts facts.json demo
+demo already has this notice unread (2026-11-14-1555-bernstein-notice-a-trial-of-notice): it is passed over.
+Nothing was sent: every project named already has this notice unread.
+```
+
+Everything is checked before anything is sent, and one fault means nothing is sent to anyone:
+
+- exit 2: a subject of more than one line; a body or facts file that cannot be read or is not what it
+  should be; `--keep` naming something that is not a folder; a project named twice;
+- exit 3: an empty subject or body; a facts block for a project that is not named; a project with no
+  mailbox; a place in the body with no fact for some project (the message names the place and the
+  project; `{{FOLDER}}` for a project with no folder is one).
+
+**Never twice.** A project that already has this very notice unread (a message from `bernstein` in its
+`new/` with the same subject and the same body, by its `Body-SHA-256`) is passed over with a line, in a
+dry run too. One it has already claimed or closed does not count.
+
+**`--keep DIR`** writes each notice as it was sent to `DIR/<id>.md` (`From`, `To`, `Subject` and `Id`
+lines, a blank line, the body), never over a file.
+
+If a send fails, the run stops there with exit 4, naming those already sent, with their ids, and those
+not attempted; nothing is retried. Run it again naming only those that did not get it. A message that
+`lobster-mail` delivered without keeping bernstein's own copy (its exit 7) counts as sent and is said on
+standard error. Exit codes: 0 sent, would send, or everyone already had it; 2 bad arguments or
+settings; 3 refused, nothing sent; 4 a listing could not be had, or a send or a kept copy failed.
+
 ## local-history: a history for the folder around a public checkout
 
 ```
@@ -793,7 +872,7 @@ commit -m "..."`, run in the outer folder, not the checkout).
 ## Errors and exit codes
 
 Every failure is one line on standard error starting `new-lobster:`, saying what happened. (`conduct`,
-`conform`, `drop-backlog`, `set-conf` and `local-history` give their own codes in their sections above.)
+`conform`, `drop-backlog`, `set-conf`, `notice` and `local-history` give their own codes in their sections above.)
 
 | Code | Meaning | What to do |
 |---|---|---|
@@ -813,7 +892,7 @@ Every failure is one line on standard error starting `new-lobster:`, saying what
 
 `tests/tier1/` tests the pure parts (names, settings, rendering) against small invented templates;
 `tests/tier2/` runs `new-lobster` end to end against stubs of `git`, `backlog`, `lobster-mail` and
-Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `drop-backlog` and `set-conf` against invented projects and the stub of `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
+Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `drop-backlog`, `set-conf` and `notice` against invented projects and the stub of `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
 handling as a plain function; three tests fetch the page from a real socket on `127.0.0.1`, which is this
 machine and not the network), and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
 that appears while `new-lobster` is running, a race the tests cannot stage.
@@ -830,6 +909,11 @@ folders, make a project there by hand (a `lobster.conf` and a `START-HERE.txt`) 
 with a copy (`cmp`); run it for real and compare the kept copy with that same copy; run it again to see
 "nothing to change"; take the duty with `lobster-mail duty take` and see the refusal; then `./conduct
 start --dry-run <name>` names the folder under "Would also connect".
+
+Manual check of `notice` against the real `lobster-mail` (Tier 3), only ever on a scratch mail root: with
+`MAIL_ROOT` a scratch folder, make there the mailboxes of two scratch projects and one named `bernstein`
+(`lobster-mail init`); write facts with `./set-conf --facts-to`; run `./notice --dry-run`, then for real
+with `--keep`, and read the mailboxes with `lobster-mail list`; run it again to see both passed over.
 
 Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a settings file whose
 `NON_CODE_DIR`, `CODE_DIR` and `MAIL_ROOT` are scratch folders, then run `./new-lobster --dry-run
@@ -853,6 +937,11 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: new command `notice [--dry-run] --subject TEXT --body FILE [--facts FILE] [--keep DIR]
+  PROJECT ...` sends one notice to several projects as `bernstein`, each with its own facts filled in,
+  checks everything before sending anything, and passes over a project that already has the notice
+  unread. And `drop-backlog`, `set-conf` and `conduct start` take a new flag, `--facts-to FILE`, which
+  writes what they did as the facts file `notice --facts` reads. Without the flag they behave as before.
 - 14 November 2026: new form `conform --all [--json]` checks every lobster project the settings can
   find in one run, each once, and counts apart the gaps a `conduct start` mends by itself ("a start
   mends:") from those nothing mends ("missing:"). Its exit code is 0 unless something is of the second
