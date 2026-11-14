@@ -561,9 +561,9 @@ def test_dream_needs_a_project_or_all_and_refuses_an_unknown_mailbox(world):
     assert sent(world) == []
 
 
-def test_no_verb_names_all_seven_verbs(world):
+def test_no_verb_names_all_eight_verbs(world):
     code, _out, err = world.conduct()
-    assert (code, err) == (2, "conduct: say start, stop, finish, dormant, wake, dream or status (conduct --help shows the form)\n")
+    assert (code, err) == (2, "conduct: say start, stop, finish, reset, dormant, wake, dream or status (conduct --help shows the form)\n")
 
 
 def test_start_names_the_session_for_the_project_and_the_day_in_the_message_the_link_and_its_report(world):

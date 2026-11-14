@@ -257,3 +257,40 @@ def test_a_session_that_cannot_rename_itself_is_told_its_name_and_asked_for_noth
         "that the app titles the session from it. A Claude Cowork session has no tool for naming a session,\n"
         "so there is nothing to do or to report about the name.\n\n"
         "Then wait for Squirrel.\n")
+
+
+CLOSED = [("2026-10-18-0812-bernstein-stop-hand-over", "Stop: hand over"),
+          ("2026-10-18-0930-bernstein-start-recipes", "Start: recipes")]
+DUTY = {"holder": "device", "since": "2026-10-18T07:00:00Z", "last_beat": "2026-10-18T08:05:00Z", "stale": True}
+
+
+def test_the_reset_note_says_who_reset_the_mailbox_what_was_closed_whose_duty_went_and_gives_the_lost_note():
+    from bernstein.conduct import reset_note
+    assert reset_note(DAY, CLOSED, DUTY, "Where I stopped: the menu.\nNext: the shopping list.\n") == (
+        "Reset by bernstein (conduct reset, 18 October 2026), at Squirrel's word: the session that was working\n"
+        "here ended without handing over. This note stands in for its handover.\n\n"
+        "- Closed, so that nobody acts on them now: 2 messages from bernstein to that session, moved to done/:\n"
+        "  2026-10-18-0812-bernstein-stop-hand-over (\"Stop: hand over\")\n"
+        "  2026-10-18-0930-bernstein-start-recipes (\"Start: recipes\")\n"
+        "- Given up with this note: the duty of device, whose last beat was 2026-10-18T08:05:00Z.\n"
+        "- What that session left for you follows the line below, as it was given to bernstein.\n"
+        "- Say in your diary that the mailbox was reset, and check DIARY.md against what you find: its last\n"
+        "  entries may be missing.\n\n"
+        "---\n\n"
+        "Where I stopped: the menu.\nNext: the shopping list.\n")
+
+
+def test_the_reset_note_says_so_when_nothing_was_closed_nobody_was_on_duty_or_no_note_was_given():
+    from bernstein.conduct import reset_note
+    assert reset_note(DAY, CLOSED[:1], None, None) == (
+        "Reset by bernstein (conduct reset, 18 October 2026), at Squirrel's word: the session that was working\n"
+        "here ended without handing over. This note stands in for its handover.\n\n"
+        "- Closed, so that nobody acts on them now: 1 message from bernstein to that session, moved to done/:\n"
+        "  2026-10-18-0812-bernstein-stop-hand-over (\"Stop: hand over\")\n"
+        "- Nobody was on duty: no duty was given up.\n"
+        "- That session left no note: go by DIARY.md and the project's own files.\n"
+        "- Say in your diary that the mailbox was reset, and check DIARY.md against what you find: its last\n"
+        "  entries may be missing.\n")
+    text = reset_note(DAY, [], DUTY, "é “quoted” $HOME </script> \\n {{NAME}}")
+    assert "- Closed: nothing. No message from bernstein to that session was waiting.\n" in text
+    assert text.endswith("---\n\né “quoted” $HOME </script> \\n {{NAME}}\n")

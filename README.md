@@ -205,6 +205,7 @@ Dry run: nothing was made.
 conduct start   <project> [--brief FILE] [--pace eager|normal|relaxed] [--name TEXT] [--again] [--dry-run]
 conduct stop    <project> | --all  [--wait SECONDS] [--dry-run]
 conduct finish  <feeler>  [--dry-run]
+conduct reset   <project> [--handover FILE] [--dry-run]
 conduct dormant <project> | --all  [--dry-run]
 conduct wake    <project> | --all  [--dry-run]
 conduct dream   <project> | --all  [--minutes N] [--then dormant|stop] [--dry-run]
@@ -215,7 +216,7 @@ conduct status  [--json]
 says to act on bernstein's mail at once (since 8 November 2026, apart from a request for a tool,
 which waits for Squirrel's OK). It reads who is on duty with `lobster-mail duty status
 --all` and, at a start, the project's unread mail with `lobster-mail check`, and writes in a project's folder only to bring the template's global files up to date
-at a start (below).
+at a start (below). Only `reset` acts in a project's mailbox as the project itself.
 
 - **`start`** refuses if a session is already on duty for the project. It also refuses while a Start
   it sent less than ten minutes ago still waits unread in the project's mailbox, since that session is
@@ -253,6 +254,34 @@ at a start (below).
   over, reply with what was found, and archive its session. With nobody on duty it sends nothing
   (exit 0); a project that is not a feeler is exit 3 ("use stop"). You move the folder to
   `not-current/` yourself when you have read the reply.
+- **`reset`** is for a session that ended without handing over (the app lost it, the Mac slept, it was
+  closed by mistake), so that the project's next session starts clean. It works in the project's mailbox,
+  as the project, and does three things:
+  1. closes every message `conduct` itself sent that session and that still waits, unread or claimed: the
+     ones from `bernstein` whose subject begins `Start:`, `Stop:`, `Finish:`, `Dormant:`, `Wake:` or
+     `Dream:`. A new session would otherwise act on a Stop meant for the one that is gone. Notices,
+     requests, replies and the project's own handovers are left for the next session to read;
+  2. gives up the lost session's duty, and with it the status that session reported;
+  3. leaves a note in the mailbox as a handover, which the next session reads first: that bernstein reset
+     the mailbox, which messages were closed, whose duty was given up, and then the lost session's own
+     note if you have it (`--handover FILE`, passed on unchanged), or a line saying none was given.
+
+  It refuses (exit 3) while a session is fresh on duty: stop that one with `stop`; if it has just died,
+  run `reset` again once its duty has gone stale. A dormant session, and one at the relaxed pace, have a
+  stale duty while they are still open in the app, so `reset` says so first and `--dry-run` shows
+  everything it would do, the note included, and changes nothing: read it before the real run. With
+  nobody on duty, nothing of `conduct`'s waiting and no note given, it does nothing and says so (exit 0).
+  A `--handover` file that is missing, empty or not UTF-8 text is exit 2. Nothing is deleted: closed
+  messages move to the mailbox's `done/`, and the duty's record to its `duty-log/`. If a step fails part
+  way (exit 4), the message says what was closed and that the duty stands; run it again to finish.
+
+  ```
+  $ ./conduct reset recipes --handover ~/note-from-the-lost-session.md
+  recipes: device is on duty but stale (last beat 2026-11-14T08:05:00Z).
+  Closed in recipes's mailbox: 2026-11-14-0812-bernstein-stop-hand-over ("Stop: hand over")
+  Left a note for recipes's next session, with the note from /Users/sq/note-from-the-lost-session.md, and gave up the duty of device (last beat 2026-11-14T08:05:00Z).
+  recipes is reset: conduct start recipes will start it afresh.
+  ```
 - **`stop`** mails a Stop message: hand over at the next safe point, then stop, and last of all archive
   the session so that it leaves your list (in Claude Code in the desktop app the session does this with
   the app's archive tool, which you approve on a card; a session with no such tool says so instead). `--all` asks every
@@ -337,10 +366,10 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 
 | Code | Meaning |
 |---|---|
-| 0 | Sent (and, with `--wait`, handed over); or, for `stop`, `dormant`, `wake` and `dream`, nobody on duty; or, for `status`, shown |
-| 2 | Bad arguments or settings, or `--minutes` outside 5 to 240 |
-| 3 | No such project or mailbox, or the project lacks a part `start` needs; or, for `start`, a session is already on duty, or a Start sent in the last ten minutes still waits unread |
-| 4 | A program failed, or the duty listing or the project's list of new mail could not be read |
+| 0 | Sent (and, with `--wait`, handed over); or, for `stop`, `dormant`, `wake` and `dream`, nobody on duty; or, for `status`, shown; or, for `reset`, reset or nothing to reset |
+| 2 | Bad arguments or settings, or `--minutes` outside 5 to 240, or a brief or handover note that cannot be read |
+| 3 | No such project or mailbox, or the project lacks a part `start` needs; or, for `start`, a session is already on duty, or a Start sent in the last ten minutes still waits unread; or, for `reset`, a session is fresh on duty |
+| 4 | A program failed, or the duty listing or a list of the project's mail could not be read |
 | 5 | `--wait` ran out before the handover arrived |
 
   `session` is the project's newest session in the Claude desktop app: `{"id", "link", "app",
@@ -565,6 +594,10 @@ Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a set
 `./conduct status` and `./conduct status --json` read only, so they are run against the real mail root
 and projects as they are. So is `./podium`: open its link, look at the page at full and at phone width,
 in light and dark, press Refresh, then stop it with Ctrl-C and press Refresh again to see the page say so.
+`conduct reset` is tried only on a scratch mail root (`MAIL_ROOT` in a scratch settings file): make a
+mailbox there with the real `lobster-mail`, send it a Stop as `bernstein`, take its duty, give the duty's
+`heartbeat` file an old time, then run `./conduct reset <name> --dry-run` and the real run, and read the
+mailbox with `lobster-mail start`.
 Its buttons are tried as far as Preview, which is `conduct`'s own dry run and sends nothing; Send is
 tried only against a stand-in for `conduct`, never the real one, unless the message is really wanted.
 
@@ -577,6 +610,9 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: new verb `conduct reset <project> [--handover FILE] [--dry-run]`, for a session that
+  ended without handing over: it closes the messages `conduct` had sent it, gives up its duty and leaves a
+  note for the next session. Run it with `--dry-run` first.
 - 14 November 2026: a project's global files now give the ticket prefix its own Backlog uses
   (`task_prefix` in `backlog/config.yml`) where that differs from the first two letters of its name. A
   project set up before the template with a prefix of its own gets its shared rules corrected at its

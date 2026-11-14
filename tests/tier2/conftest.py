@@ -4,7 +4,8 @@ Each stub records its arguments and working folder as one JSON line in calls.jso
 fails when its name is listed in the file `fail` in the stub folder, as `name`, `name:verb` (only that
 first argument) or `name:verb:code` (that exit code; 1 otherwise). The lobster-mail stub's
 `duty status --all --json` prints the JSON in `duty.json` (default: no mailboxes), and its `check` prints
-the text in `check.json` (default: `[]`, no new mail). The conduct stub's
+the text in `check.json` (default: `[]`, no new mail); its `list --new` and `list --open` print
+`list-new.json` and `list-open.json` (default: `[]`). The conduct stub's
 `status` prints the text in `status.json` (default: no mailboxes); its other verbs print "conduct stub: "
 and their first two arguments, and a `--brief FILE` is read into the call's record as `brief`.
 """
@@ -45,6 +46,9 @@ STUB = textwrap.dedent('''\
     if name == "lobster-mail" and args[:1] == ["check"]:
         waiting = os.path.join(here, "check.json")
         print(open(waiting).read() if os.path.exists(waiting) else "[]")
+    if name == "lobster-mail" and args[:1] == ["list"]:
+        box = os.path.join(here, "list-" + ("open" if "--open" in args else "new") + ".json")
+        print(open(box).read() if os.path.exists(box) else "[]")
     if name == "conduct" and args[:1] != ["status"]:
         print("conduct stub: " + " ".join(args[:2]))
     if name == "conduct" and args[:1] == ["status"]:
@@ -160,6 +164,14 @@ class World:
             [{"id": f"m{i}", "from": who, "date": date, "subject": subject, "box": "new"}
              for i, (who, date, subject) in enumerate(messages)])
         with open(os.path.join(self.bin, "check.json"), "w") as f:
+            f.write(text)
+
+    def boxed(self, box, messages):
+        """Set what `lobster-mail list --new` or `--open --json` prints: (id, sender, subject) each, or the raw text."""
+        text = messages if isinstance(messages, str) else json.dumps(
+            [{"id": ident, "from": who, "date": "2026-10-18T08:00:00Z", "subject": subject, "box": box}
+             for ident, who, subject in messages])
+        with open(os.path.join(self.bin, f"list-{box}.json"), "w") as f:
             f.write(text)
 
     def project(self, name, kind, public=False, under="", sister=None, claws=()):

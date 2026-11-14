@@ -22,6 +22,7 @@ from bernstein.settings import SettingsRefused, read_settings
 PACES = ("eager", "normal", "relaxed")
 WAIT_STEP = 10
 START_WAIT = datetime.timedelta(minutes=10)   # how long an unread Start holds off another (PLAN.md, Settled 140)
+CONDUCT_SUBJECTS = ("Start: ", "Stop: ", "Finish: ", "Dormant: ", "Wake: ", "Dream: ")   # what conduct itself sends
 CHANGING_TRIES = 3
 DELIVERED = 7  # lobster-mail: delivered, but the sender's sent copy could not be written
 
@@ -118,6 +119,36 @@ def stop_message(today):
             "the session \"self\", which he approves on the card the app shows; nothing may still be\n"
             "running in the background when you call it. If you have no tool that archives a session, say\n"
             "so in your last line to him instead.\n")
+
+
+def reset_note(today, closed, duty, note):
+    """The note `conduct reset` leaves in a project's mailbox as a handover: who reset it, the (id, subject)
+    of each message closed, the duty given up (its entry in the listing, or None), and the lost session's
+    own note when there is one."""
+    lines = [f"Reset by bernstein (conduct reset, {day(today)}), at Squirrel's word: the session that was working",
+             "here ended without handing over. This note stands in for its handover.", ""]
+    if closed:
+        count = "1 message" if len(closed) == 1 else f"{len(closed)} messages"
+        lines.append(f"- Closed, so that nobody acts on them now: {count} from bernstein to that session, moved "
+                     "to done/:")
+        lines += [f"  {ident} (\"{subject}\")" for ident, subject in closed]
+    else:
+        lines.append("- Closed: nothing. No message from bernstein to that session was waiting.")
+    if duty:
+        lines.append(f"- Given up with this note: the duty of {duty['holder']}, whose last beat was "
+                     f"{duty['last_beat']}.")
+    else:
+        lines.append("- Nobody was on duty: no duty was given up.")
+    if note is None:
+        lines.append("- That session left no note: go by DIARY.md and the project's own files.")
+    else:
+        lines.append("- What that session left for you follows the line below, as it was given to bernstein.")
+    lines += ["- Say in your diary that the mailbox was reset, and check DIARY.md against what you find: its last",
+              "  entries may be missing."]
+    text = "\n".join(lines) + "\n"
+    if note is not None:
+        text += "\n---\n\n" + note.rstrip("\n") + "\n"
+    return text
 
 
 def dormant_message(project, today):
@@ -386,6 +417,7 @@ def parser():
                epilog="conduct start <project> [--brief FILE] [--pace LEVEL] [--name TEXT] [--again] [--dry-run]\n"
                       "conduct stop <project> | --all [--wait SECONDS] [--dry-run]\n"
                       "conduct finish <feeler> [--dry-run]\n"
+                      "conduct reset <project> [--handover FILE] [--dry-run]\n"
                       "conduct dormant <project> | --all [--dry-run]\n"
                       "conduct wake <project> | --all [--dry-run]\n"
                       "conduct dream <project> | --all [--minutes N] [--then dormant|stop] [--dry-run]\n"
@@ -410,6 +442,11 @@ def parser():
                          "propose what to do with its scripts, and hand over")
     f.add_argument("project")
     f.add_argument("--dry-run", action="store_true", help="show the message; send nothing")
+    x = verbs.add_parser("reset", help="tidy the mailbox of a session that ended without handing over: close "
+                         "bernstein's messages to it, give up its duty and leave a note for the next session")
+    x.add_argument("project")
+    x.add_argument("--handover", metavar="FILE", help="the lost session's own note, to pass on to the next session")
+    x.add_argument("--dry-run", action="store_true", help="show what would be closed, given up and left; change nothing")
     d = verbs.add_parser("dormant", help="ask a running session to stop watching mail but keep running, "
                          "with no handover, until Squirrel is back")
     d.add_argument("project", nargs="?")
@@ -492,6 +529,20 @@ def waiting_start(s, env, project, now):
         raise Stop(4, f"lobster-mail check --json did not print the expected JSON for {project}")
     young = [when for when in sent if when is not None and now - when < START_WAIT]
     return max(young) if young else None
+
+
+def conduct_mail(s, env, project, box):
+    """[(id, subject)] of the messages bernstein's conduct sent a project that are still in one of its boxes."""
+    text = run([s["LOBSTER_MAIL"], "list", "--as", project, f"--{box}", "--json", "--root", s["MAIL_ROOT"]],
+               env, f"lobster-mail list --{box} for {project}")
+    try:
+        listed = json.loads(text)
+        if not isinstance(listed, list):
+            raise TypeError
+        return [(m["id"] + "", m["subject"]) for m in listed
+                if m["from"] == "bernstein" and m["subject"].startswith(CONDUCT_SUBJECTS)]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise Stop(4, f"lobster-mail list --{box} --json did not print the expected JSON for {project}")
 
 
 def fresh(entry):
@@ -764,6 +815,83 @@ def stop(a, s, env, today, out, err, sleep):
         waited += WAIT_STEP
 
 
+def reset(a, s, env, today, out, err, sleep):
+    note = None
+    if a.handover is not None:
+        try:
+            with open(a.handover, encoding="utf-8") as f:
+                note = f.read()
+        except UnicodeDecodeError:
+            raise Stop(2, f"the handover note {a.handover} is not plain UTF-8 text")
+        except OSError:
+            raise Stop(2, f"the handover note {a.handover} cannot be read")
+        if not note.strip():
+            raise Stop(2, f"the handover note {a.handover} is empty")
+    boxes = listing(s, env, sleep)
+    if a.project not in boxes:
+        raise Stop(3, f"there is no mailbox {a.project} in {s['MAIL_ROOT']}")
+    duty = boxes[a.project].get("duty")
+    if fresh(boxes[a.project]):
+        raise Stop(3, f"a session is on duty for {a.project} ({duty['holder']}, last beat {duty['last_beat']}): "
+                      "reset is for a session that is gone. Use conduct stop; or, if that session has just "
+                      "died, run reset again once its duty has gone stale")
+    closing = [m for box in ("new", "open") for m in conduct_mail(s, env, a.project, box)]
+    if duty is None:
+        out.write(f"{a.project}: nobody is on duty.\n")
+    else:
+        out.write(f"{a.project}: {duty['holder']} is on duty but stale (last beat {duty['last_beat']}).")
+        state = state_of(boxes[a.project])
+        if state == "dormant":
+            out.write(" It reported itself dormant: a dormant session is still open in the app, so reset it only "
+                      "if that session is gone.")
+        elif state == "quiet":
+            out.write(" Its mail pace is relaxed, at which a live session's duty is stale between turns, so reset "
+                      "it only if that session is gone.")
+        out.write("\n")
+    if duty is None and not closing and note is None:
+        out.write(f"Nothing to reset for {a.project}: no message from conduct waits in its mailbox, and no note "
+                  "was given to pass on.\n")
+        return
+    holder = duty["holder"] if duty else "conduct-reset"
+    if a.dry_run:
+        if closing:
+            out.write(f"Would close in {a.project}'s mailbox, as {a.project}:\n")
+            out.write("".join(f"  {ident} (\"{subject}\")\n" for ident, subject in closing))
+        else:
+            out.write(f"Would close nothing: no message from conduct waits in {a.project}'s mailbox.\n")
+        if duty:
+            out.write(f"Would give up the duty of {holder} and leave this note for {a.project}'s next session, as "
+                      "its handover:\n\n")
+        else:
+            out.write(f"Would leave this note for {a.project}'s next session, as its handover (nobody is on duty, "
+                      "so no duty is given up):\n\n")
+        out.write(f"{reset_note(today, closing, duty, note)}\n")
+        out.write("Dry run: nothing was closed, given up or sent.\n")
+        return
+    closed = []
+    try:
+        for ident, subject in closing:
+            run([s["LOBSTER_MAIL"], "done", "--as", a.project, ident, "--root", s["MAIL_ROOT"]], env,
+                f"lobster-mail done {ident} for {a.project}")
+            closed.append((ident, subject))
+            out.write(f"Closed in {a.project}'s mailbox: {ident} (\"{subject}\")\n")
+        run([s["LOBSTER_MAIL"], "handover", "--as", a.project, "--session", holder, "--root", s["MAIL_ROOT"], "-"],
+            env, f"lobster-mail handover for {a.project}", stdin=reset_note(today, closed, duty, note))
+    except Stop as stopped:
+        were = ("Nothing was closed and" if not closed else
+                f"{len(closed)} message{' was' if len(closed) == 1 else 's were'} closed, but")
+        stands = f"; the duty of {holder} stands" if duty else ""
+        raise Stop(stopped.code, f"{stopped.message}\n  {were} no note was left{stands}. Run conduct reset "
+                                 f"{a.project} again when the cause is mended")
+    left = f"Left a note for {a.project}'s next session"
+    if note is not None:
+        left += f", with the note from {a.handover}"
+    if duty:
+        left += f"{',' if note is not None else ''} and gave up the duty of {holder} (last beat {duty['last_beat']})"
+    out.write(left + ".\n")
+    out.write(f"{a.project} is reset: conduct start {a.project} will start it afresh.\n")
+
+
 def finish(a, s, env, today, out, err, sleep):
     boxes = listing(s, env, sleep)
     if a.project not in boxes:
@@ -914,9 +1042,9 @@ def main(argv, env, today, out, err, sleep):
         except SettingsRefused as why:
             raise Stop(2, f"{why} (conduct --help shows the form)")
         if a.verb is None:
-            raise Stop(2, "say start, stop, finish, dormant, wake, dream or status (conduct --help shows the form)")
-        verbs = {"start": start, "stop": stop, "finish": finish, "dormant": dormant, "wake": wake, "dream": dream,
-                 "status": status}
+            raise Stop(2, "say start, stop, finish, reset, dormant, wake, dream or status (conduct --help shows the form)")
+        verbs = {"start": start, "stop": stop, "finish": finish, "reset": reset, "dormant": dormant, "wake": wake,
+                 "dream": dream, "status": status}
         verbs[a.verb](a, s, env, today, out, err, sleep)
     except Stop as stopped:
         err.write(f"conduct: {stopped.message}\n")
