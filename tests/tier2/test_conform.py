@@ -537,3 +537,35 @@ def test_a_section_the_template_gives_only_to_projects_with_tickets_is_asked_onl
         f"recipes (non-code): {nc}\n  missing: the section \"## Tracking issues (Backlog)\" in CLAUDE.md\n"
         f"recipes-tools (code): {outer}\n  missing: the section \"## Tracking issues: none here\" in CLAUDE.md\n"
         "2 things to bring into line.\n")
+
+
+def test_a_further_folder_named_in_the_settings_must_be_there_and_only_a_non_code_project_names_any(world):
+    nc, outer, _checkout = pair_in_line(world)
+    there = os.path.join(world.home, "models", "kokoro")
+    os.makedirs(there)
+    with open(os.path.join(nc, "lobster.conf"), "a") as f:
+        f.write("FOLDERS=~/models/kokoro\n")
+    code, out, err = world.conform("recipes", "recipes-tools")
+    assert (code, err) == (0, ""), out
+    with open(os.path.join(nc, "lobster.conf"), "a") as f:
+        f.write("FOLDERS=~/models/kokoro:~/models/whisper:voices\n")
+    with open(os.path.join(outer, "lobster.conf"), "a") as f:
+        f.write(f"FOLDERS={there}\n")
+    code, out, _err = world.conform("recipes", "recipes-tools")
+    assert code == 1 and out == (
+        f"recipes (non-code): {nc}\n"
+        f"  missing: the folder {world.home}/models/whisper, named in FOLDERS in lobster.conf\n"
+        "  missing: a full path for voices in FOLDERS in lobster.conf (start it with / or ~/)\n"
+        f"recipes-tools (code): {outer}\n"
+        "  missing: an empty FOLDERS in lobster.conf (a Claude Code session opens in one folder)\n"
+        "3 things to bring into line.\n")
+
+
+def test_a_feelers_further_folder_must_be_there_too(world):
+    folder = feeler_in_line(world)
+    with open(os.path.join(folder, "lobster.conf"), "a") as f:
+        f.write("FOLDERS=~/models/kokoro\n")
+    code, out, _err = world.conform("agents")
+    assert code == 1 and out == (f"agents (feeler): {folder}\n"
+                                 f"  missing: the folder {world.home}/models/kokoro, named in FOLDERS in lobster.conf\n"
+                                 "1 thing to bring into line.\n")

@@ -320,8 +320,38 @@ def claw_folders(claw, code_dir, conf, key):
     return checkout, secrets if os.path.isdir(secrets) else None
 
 
-def find_project(name, non_code_dir, code_dir):
-    """Where a lobster project is, and what lobster.conf says about it."""
+def further_folders(settings, conf, kind, home, connected):
+    """The folders FOLDERS in a project's lobster.conf names besides the usual ones, as full paths: separated
+    by colons, ~/ for the home folder. Refused: a tools project naming any, a path that is not full or not
+    a folder, and one whose last name another connected folder has (a session sees each as ~/mnt/<name>)."""
+    raw = settings.get("FOLDERS", "")
+    named = [part.strip() for part in raw.split(":") if part.strip()]
+    if not named:
+        return []
+    if kind == "code":
+        raise ProjectRefused(f"{conf} says KIND=code and FOLDERS={raw}: a Claude Code session opens in one "
+                             "folder, so only a non-code project or a feeler can name further folders")
+    folders, seen = [], {os.path.basename(path.rstrip("/")): path for path in connected}
+    for part in named:
+        path = os.path.join(home, part[2:]) if part.startswith("~/") and home else part
+        if not os.path.isabs(path):
+            raise ProjectRefused(f"{conf} names the folder {part} in FOLDERS, which is not a full path: start it "
+                                 "with / or ~/")
+        path = os.path.normpath(path)
+        if not os.path.isdir(path):
+            raise ProjectRefused(f"{conf} names the folder {path} in FOLDERS, which is not a folder on this Mac: "
+                                 "make it, or correct the line")
+        last = os.path.basename(path)
+        if last in seen:
+            raise ProjectRefused(f"{conf} names the folder {path} in FOLDERS, but {seen[last]} is connected too: a "
+                                 f"session sees each as ~/mnt/{last}, so their last names must differ")
+        seen[last] = path
+        folders.append(path)
+    return folders
+
+
+def find_project(name, non_code_dir, code_dir, home=None):
+    """Where a lobster project is, and what lobster.conf says about it. `home` fills ~/ in FOLDERS."""
     found = find_folder(name, non_code_dir, code_dir)
     if found is None:
         if name.endswith("-tools"):
@@ -364,9 +394,11 @@ def find_project(name, non_code_dir, code_dir):
         for claw in settings.get("CLAWS", "").split():
             claws.append(claw_folders(claw, code_dir, conf, "CLAWS"))
         claw_names = [sister] + settings.get("CLAWS", "").split()
+    connected = [folder] + [path for pair in claws for path in pair if path]
+    folders = further_folders(settings, conf, kind, home, connected)
     return SimpleNamespace(name=name, kind=kind, folder=folder, checkout=checkout, sister=sister, claws=claws,
                            claw_names=claw_names, model=settings.get("MODEL", ""),
-                           effort=settings.get("EFFORT", ""))
+                           effort=settings.get("EFFORT", ""), folders=folders)
 
 
 def global_files_of(project, s, home, today):
@@ -396,6 +428,7 @@ def link_for(project, mail_root, lobster_tools, name):
         for checkout, secrets in project.claws:
             folders += [checkout] + ([secrets] if secrets else [])
         folders.append(lobster_tools)
+        folders += project.folders
         q = (f"Session title: {name}. Read START-HERE.txt in the {project.name} folder (mounted at ~/mnt/{project.name}) and do "
              f"what it says, starting with its step 0 before anything else. If ~/mnt/{project.name} is not "
              f"there, say \"the app opened me without the {project.name} folder\" and stop.")
@@ -713,7 +746,7 @@ def start(a, s, env, today, out, err, sleep):
         except OSError:
             raise Stop(2, f"the brief {a.brief} cannot be read")
     try:
-        project = find_project(a.project, s["NON_CODE_DIR"], s["CODE_DIR"])
+        project = find_project(a.project, s["NON_CODE_DIR"], s["CODE_DIR"], env["HOME"])
     except ProjectRefused as why:
         raise Stop(3, str(why))
     boxes = listing(s, env, sleep)
@@ -745,6 +778,8 @@ def start(a, s, env, today, out, err, sleep):
         if behind:
             out.write(f"Would bring up to date in {project.folder}: {', '.join(behind)}\n")
         out.write(f"Would open:\n  {link}\n")
+        if project.folders:
+            out.write(f"Would also connect, from FOLDERS in its lobster.conf: {', '.join(project.folders)}\n")
         out.write(f"Would name the session: {name}\n")
         out.write("Dry run: nothing was sent or opened.\n")
         return
@@ -765,6 +800,8 @@ def start(a, s, env, today, out, err, sleep):
     send(s, env, a.project, f"Start: {a.project}", body, err)
     out.write(f"Sent the Start message to {a.project}.\n")
     run(["open", link], env, "open")
+    if project.folders:
+        out.write(f"Also connected, from FOLDERS in its lobster.conf: {', '.join(project.folders)}\n")
     out.write(f"The session is to be named: {name}\n")
     if project.kind in ("non-code", "feeler"):
         out.write(f"Opened a Claude session for {a.project}: confirm its folders, then send its first line.\n")
@@ -897,7 +934,7 @@ def finish(a, s, env, today, out, err, sleep):
     if a.project not in boxes:
         raise Stop(3, f"there is no mailbox {a.project} in {s['MAIL_ROOT']}")
     try:
-        project = find_project(a.project, s["NON_CODE_DIR"], s["CODE_DIR"])
+        project = find_project(a.project, s["NON_CODE_DIR"], s["CODE_DIR"], env["HOME"])
     except ProjectRefused as why:
         raise Stop(3, str(why))
     if project.kind != "feeler":
@@ -1011,7 +1048,7 @@ def status(a, s, env, now, out, err, sleep):
             return None
         return found[0] if found else None
 
-    rows = status_rows(boxes, lambda name: find_project(name, s["NON_CODE_DIR"], s["CODE_DIR"]),
+    rows = status_rows(boxes, lambda name: find_project(name, s["NON_CODE_DIR"], s["CODE_DIR"], env["HOME"]),
                        sessions=app_sessions(s["APP_SESSIONS"]), folder_of=folder_of,
                        cowork=cowork_sessions(s["APP_COWORK_SESSIONS"]))
     if a.json:

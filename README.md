@@ -242,6 +242,14 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
   beside it, and `lobster-tools` connected; a Claude Code session for a tools project. You
   confirm the folders and send the prefilled first line. For a Claude Code session it reminds you
   to have a bernstein session set its model and effort, which a program cannot do.
+  **Further folders.** A non-code project or a feeler whose session needs a folder that is neither its
+  own nor a claw's (a folder of downloaded models, say) names it in its `lobster.conf`:
+  `FOLDERS=~/models/kokoro`, several separated by colons, each a full path or one starting `~/`. `start`
+  connects them after the usual folders and says so ("Also connected, from FOLDERS in its lobster.conf:
+  …"; a dry run: "Would also connect, …"). It refuses to start (exit 3, nothing sent or opened) if one is
+  not a full path, is not a folder on this Mac, or has the same last name as another connected folder,
+  since a session sees each as `~/mnt/<name>`; and for a tools project that names any, because a Claude
+  Code session opens in one folder. `conduct status` then says the project cannot start, and why.
   **Global files.** If the template names global files and the project has them all, `start`
   replaces each one that no longer equals the template's render, whole, before it sends anything:
   the old copy goes to the project's `_to_delete/before-global-update-<date>-<time>/`, the Start
@@ -497,7 +505,8 @@ and EFFORT), for a non-code project every claw in CLAWS present in the code fold
 `.claude/settings.json` with the `lobster-mail start` hook passing this mail root to `--root`,
 `inbox/README.md`, CLAUDE.md having each section the template's CLAUDE.md for that half takes from
 `common/sections/` and each heading naming the pair, the Inbox and Mail sections in the template's
-exact wording (blank lines aside), a git repository, the mailbox, and, for a public tools
+exact wording (blank lines aside), every folder named in FOLDERS present (and none named by a tools
+project), a git repository, the mailbox, and, for a public tools
 project, none of the outer files (CLAUDE.md, PLAN.md, DIARY.md, START-HERE.txt, `lobster.conf`,
 `inbox/`, `.claude/`, and the template's global files) inside the checkout. When the template names
 global files, each must be in the project's folder and equal the template's render for that project:
@@ -653,6 +662,9 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: a non-code project or a feeler can name further folders for its session in its
+  `lobster.conf`, `FOLDERS=~/models/kokoro` (colons between several); `conduct start` connects them and
+  `conform` checks they are there.
 - 14 November 2026: **Backlog is optional.** `new-lobster` no longer sets it up unless you add
   `--backlog`; `conform` no longer asks for a `backlog/` folder; a template can choose a section by
   `{{BACKLOG}}` (`yes` or `no`); and the new command `drop-backlog` moves an unused `backlog/` out of an

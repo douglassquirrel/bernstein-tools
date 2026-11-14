@@ -82,6 +82,24 @@ def claws_of(conf):
         return []
 
 
+def folder_gaps(conf, kind, home):
+    """What is wrong with the further folders a lobster.conf names in FOLDERS (colons between them)."""
+    try:
+        named = [part.strip() for part in read_conf_file(conf).get("FOLDERS", "").split(":") if part.strip()]
+    except (UnicodeDecodeError, OSError):
+        return []
+    if named and kind == "code":
+        return ["an empty FOLDERS in lobster.conf (a Claude Code session opens in one folder)"]
+    gaps = []
+    for part in named:
+        path = os.path.join(home, part[2:]) if part.startswith("~/") else part
+        if not os.path.isabs(path):
+            gaps.append(f"a full path for {part} in FOLDERS in lobster.conf (start it with / or ~/)")
+        elif not os.path.isdir(path):
+            gaps.append(f"the folder {os.path.normpath(path)}, named in FOLDERS in lobster.conf")
+    return gaps
+
+
 def required_sections(s, kind, non_code, tools, public, home, claws=(), backlog=False):
     """(headings, wording) for a half's CLAUDE.md. Headings: every heading of each section the template's
     CLAUDE.md for that half includes from common/sections/, and every heading of its own that names the
@@ -145,6 +163,7 @@ def gaps_of(name, kind, sister, found, s):
             gaps.append(f"--root {shlex.quote(s['MAIL_ROOT'])} in the lobster-mail start hook in .claude/settings.json")
     if not os.path.isfile(os.path.join(folder, "inbox", "README.md")):
         gaps.append("inbox/README.md")
+    gaps += folder_gaps(conf, kind, s["HOME"])
     non_code, tools = (name, sister) if kind == "non-code" else (sister or None, name)
     claws = claws_of(conf) if kind == "non-code" else []
     for claw in claws:
@@ -205,6 +224,7 @@ def feeler_gaps(name, folder, s):
     for rel in ("START-HERE.txt", "CLAUDE.md"):
         if not os.path.isfile(os.path.join(folder, rel)):
             gaps.append(rel)
+    gaps += folder_gaps(conf, "feeler", s["HOME"])
     claws = claws_of(conf)
     for claw in claws:
         if not os.path.isdir(tools_folders(claw, s["CODE_DIR"])[1]):
