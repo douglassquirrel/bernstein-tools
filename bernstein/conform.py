@@ -290,6 +290,8 @@ def report(a, s, out):
         out.write(f"{name} ({kind}): {found[0]}\n")
         try:
             gaps = gaps_of(name, kind, sister, found, s)
+        except globalfiles.ProjectUnreadable as why:
+            raise Stop(4, str(why))
         except (TemplateRefused, OSError) as why:
             raise Stop(4, f"the template cannot be read: {why}")
         out.write("".join(f"  missing: {g}\n" for g in gaps) or "  in line\n")

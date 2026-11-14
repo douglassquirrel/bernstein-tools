@@ -90,3 +90,44 @@ def test_nothing_behind_writes_nothing_and_a_second_update_the_same_minute_never
     assert first.endswith("before-global-update-s") and second.endswith("before-global-update-s-2")
     assert read(os.path.join(first, "RULES.md")) == "one\n"
     assert read(os.path.join(second, "RULES.md")) == "two\n"
+
+
+BACKLOG = 'project_name: "Recipes"\nstatuses: ["To Do", "Done"]\n{}\nzero_padded_ids: 3\n'
+
+
+@pytest.mark.parametrize("config, prefix", [
+    (BACKLOG.format('task_prefix: "ad"'), "AD"),                       # as backlog writes it, in small letters
+    (BACKLOG.format('task_prefix: "FC"'), "FC"),
+    (BACKLOG.format("task_prefix: 'op'"), "OP"),
+    (BACKLOG.format("task_prefix: ba   # was BE"), "BA"),
+    (BACKLOG.format('task_prefix: "r2"').replace("\n", "\r\n"), "R2"),
+    ('task_prefix: "x"', "X"),                                         # the only line, with no line end
+    (BACKLOG.format('task_prefix: "ab"\ntask_prefix: "cd"'), "AB"),    # the first one
+    (BACKLOG.format("labels: []"), None),                              # names none
+    (BACKLOG.format('task_prefix: ""'), None),
+    (BACKLOG.format("task_prefix:"), None),
+    (BACKLOG.format('  task_prefix: "zz"'), None),                     # some other setting's own
+    (BACKLOG.format('my_task_prefix: "zz"'), None),
+    (BACKLOG.format('task_prefix: "a b"'), None),                      # not letters and figures: not a prefix
+    (BACKLOG.format('task_prefix: "{{NAME}}"'), None),
+    (BACKLOG.format('task_prefix: "é"'), None),
+    (BACKLOG.format('task_prefix: "$(id)</script>"'), None),
+    ("", None),
+])
+def test_a_projects_ticket_prefix_is_read_from_its_backlog_settings_in_capitals(tmp_path, config, prefix):
+    folder = tmp_path / "p q"
+    (folder / "backlog").mkdir(parents=True)
+    (folder / "backlog" / "config.yml").write_bytes(config.encode("utf-8"))
+    assert globalfiles.ticket_prefix(str(folder)) == prefix
+    assert (folder / "backlog" / "config.yml").read_bytes() == config.encode("utf-8")
+
+
+def test_a_folder_with_no_backlog_settings_or_ones_that_are_not_text_has_no_ticket_prefix_of_its_own(tmp_path):
+    assert globalfiles.ticket_prefix(str(tmp_path)) is None
+    (tmp_path / "backlog").mkdir()
+    assert globalfiles.ticket_prefix(str(tmp_path)) is None
+    (tmp_path / "backlog" / "config.yml").write_bytes(b"\xff\xfe\x00task_prefix: \xe9\n")
+    assert globalfiles.ticket_prefix(str(tmp_path)) is None
+    (tmp_path / "backlog" / "config.yml").unlink()
+    (tmp_path / "backlog" / "config.yml").mkdir()
+    assert globalfiles.ticket_prefix(str(tmp_path)) is None

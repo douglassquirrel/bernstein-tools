@@ -260,3 +260,14 @@ def test_a_feeler_half_has_its_own_files_and_lobster_conf_but_no_inbox(tmp_path)
     assert sorted(rendered) == ["CLAUDE.md", "lobster.conf"]
     assert rendered["lobster.conf"] == "KIND=feeler\nSELF=agents\nSISTER=\nCLAWS=knives\n"
     assert rendered["CLAUDE.md"].startswith("# agents\n\nIt uses the claw `knives`:")
+
+
+def test_a_project_whose_tickets_carry_a_prefix_of_their_own_keeps_it_in_both_halves():
+    common = {"model": "opus", "effort": "high", "non_code_dir": "/h/nc", "code_dir": "/h/code", "mail_root": "/h/mail",
+              "lobster_mail": "/h/l/lobster-mail", "today": datetime.date(2026, 10, 8), "home": "/h", "public": False}
+    assert values_for("recipes", "non-code", backlog_prefix="FD", **common)["BACKLOG_PREFIX"] == "FD"
+    assert values_for("recipes", "code", backlog_prefix="FD", **common)["BACKLOG_PREFIX"] == "FD"
+    assert values_for(None, "code", tools="knives", backlog_prefix="KV", **common)["BACKLOG_PREFIX"] == "KV"
+    assert values_for("recipes", "non-code", backlog_prefix=None, **common)["BACKLOG_PREFIX"] == "RE"
+    assert values_for("recipes", "non-code", backlog_prefix="", **common)["BACKLOG_PREFIX"] == "RE"
+    assert "BACKLOG_PREFIX" not in values_for("recipes", "feeler", backlog_prefix="FD", **common)

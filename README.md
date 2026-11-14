@@ -159,7 +159,13 @@ inbox/README.md
 A global file must read the same every day, so it may not use `{{DATE}}`; `{{TEMPLATE_VERSION}}`
 is the line in `common/version` (empty when there is none). A project never edits a global file.
 `conform` lists one that is missing or no longer equals the template's render for that project's
-own names, folders and claws, and `conduct start` replaces any that are behind (below). In a
+own names, folders and claws, and `conduct start` replaces any that are behind (below).
+**Ticket ids.** In a global file `{{BACKLOG_PREFIX}}` is the prefix the project's own tickets carry:
+`task_prefix` in its `backlog/config.yml`, in capitals, when that names one of letters and figures.
+Only a project with no such setting gets the prefix worked out from its name (the first two letters),
+which is also what `new-lobster` gives a new project. The settings file is only read; if it is there
+but cannot be read, `conduct start` stops with exit 3 and `conform` with exit 4, naming the file, and
+nothing is changed. A feeler has no tickets, so nothing is read for one. In a
 public tools project a global file sits beside the checkout, like `CLAUDE.md`, and is never
 committed in it. A template without the list has no global files, and nothing below changes.
 
@@ -457,7 +463,8 @@ project, none of the outer files (CLAUDE.md, PLAN.md, DIARY.md, START-HERE.txt, 
 `inbox/`, `.claude/`, and the template's global files) inside the checkout. When the template names
 global files, each must be in the project's folder and equal the template's render for that project:
 one that is absent is `missing: <file>, one of the template's global files`, and one in other words
-is `missing: the template's current <file> (a global file: conduct start brings it up to date)`. A
+is `missing: the template's current <file> (a global file: conduct start brings it up to date)`. The
+render uses the ticket prefix in the project's own `backlog/config.yml` when it has one. A
 template whose global file would read differently on another day is exit 4. For example, for a
 pair brought into line:
 
@@ -471,7 +478,7 @@ Both halves are in line.
 ```
 
 A gap is a line `missing: …`; a half that cannot be found, or is in two places, says so. Exit codes:
-0 nothing missing, 1 something missing, 2 bad arguments or settings, 4 the template cannot be read.
+0 nothing missing, 1 something missing, 2 bad arguments or settings, 4 the template, or a project's `backlog/config.yml`, cannot be read.
 Use it with `new-lobster --render-into` to bring an older pair into line.
 
 ## local-history: a history for the folder around a public checkout
@@ -570,6 +577,10 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: a project's global files now give the ticket prefix its own Backlog uses
+  (`task_prefix` in `backlog/config.yml`) where that differs from the first two letters of its name. A
+  project set up before the template with a prefix of its own gets its shared rules corrected at its
+  next `conduct start`; until then `conform` lists the file as behind.
 - 14 November 2026: `conduct start` now refuses (exit 3) while a Start it sent to the same project less
   than ten minutes ago still waits unread, so pressing Start twice no longer sends two. To send another
   anyway, add `--again`.

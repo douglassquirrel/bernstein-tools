@@ -940,3 +940,57 @@ def test_start_when_the_look_at_the_mailbox_fails_is_exit_4_and_sends_and_opens_
     code, _out, err = world.conduct("start", "recipes")
     assert code == 4 and err == "conduct: lobster-mail check for recipes failed (exit 3)\n  lobster-mail: stub failure\n"
     assert sent(world) == [] and opened(world) == []
+
+
+def ticketed(world, kind, prefix_line):
+    """A split project whose rules give its ticket ids, with its own Backlog settings when a line is given."""
+    from conftest import write_tree
+    folder = world.project("recipes" if kind == "non-code" else "recipes-tools", kind)
+    if kind == "non-code":
+        world.project("recipes-tools", "code")
+    write_tree(world.template, {"common/global-files": "RULES.md\n",
+                                kind + "/RULES.md": "Tickets of {{SELF}}: ids `{{BACKLOG_PREFIX}}-nnn`.\n"})
+    write_tree(folder, {"RULES.md": "old\n"})
+    if prefix_line is not None:
+        write_tree(folder, {"backlog/config.yml": f'project_name: "Recipes"\n{prefix_line}\nzero_padded_ids: 3\n'})
+    world.duty({"recipes": None, "recipes-tools": None})
+    return folder
+
+
+@pytest.mark.parametrize("kind, prefix_line, ids", [
+    ("non-code", 'task_prefix: "fd"', "FD-nnn"),            # the project's own, older than the template's rule
+    ("code", 'task_prefix: "KV"', "KV-nnn"),
+    ("non-code", 'task_prefix: "re"', "RE-nnn"),            # the same as the one worked out from its name
+    ("non-code", "labels: []", "RE-nnn"),                   # its Backlog names none: worked out from its name
+    ("code", None, "RE-nnn"),                               # no Backlog settings at all
+])
+def test_start_gives_the_global_rules_the_ticket_prefix_the_projects_own_backlog_uses(world, kind, prefix_line, ids):
+    from conftest import tree
+    folder = ticketed(world, kind, prefix_line)
+    name = os.path.basename(folder)
+    settings = tree(folder).get("backlog/config.yml")
+    code, out, _err = world.conduct("start", "--dry-run", name)
+    assert code == 0 and f"Would bring up to date in {folder}: RULES.md\n" in out
+    code, _out, err = world.conduct("start", name)
+    assert code == 0, err
+    assert tree(folder)["RULES.md"] == f"Tickets of {name}: ids `{ids}`.\n".encode()
+    assert tree(folder).get("backlog/config.yml") == settings
+    code, out, _err = world.conduct("start", "--dry-run", name)          # and it stays put: nothing is behind now
+    assert code == 0 and "Would bring up to date" not in out
+
+
+def test_start_with_backlog_settings_that_cannot_be_read_is_exit_3_and_changes_sends_and_opens_nothing(world):
+    from conftest import tree
+    folder = ticketed(world, "code", 'task_prefix: "kv"')
+    settings = os.path.join(folder, "backlog", "config.yml")
+    os.chmod(settings, 0)
+    try:
+        for argv in (("start", "recipes-tools"), ("start", "--dry-run", "recipes-tools")):
+            code, out, err = world.conduct(*argv)
+            assert (code, out) == (3, "")
+            assert err == (f"conduct: {settings} cannot be read (Permission denied), so the prefix of "
+                           "recipes-tools's tickets is not known: check its permissions\n")
+    finally:
+        os.chmod(settings, 0o644)
+    assert tree(folder)["RULES.md"] == b"old\n" and "_to_delete" not in os.listdir(folder)
+    assert sent(world) == [] and opened(world) == []

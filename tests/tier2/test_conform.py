@@ -471,3 +471,45 @@ def test_a_feeler_is_not_checked_as_a_pair_and_a_claw_is_still_checked_as_a_claw
     feeler_in_line(world)
     code, _out, err = world.conform("agents", "agents-tools")
     assert code == 2 and err == "conform: agents is a feeler, which has no tools project: give its name alone\n"
+
+
+def test_a_projects_global_rules_are_in_line_with_the_ticket_prefix_its_own_backlog_uses(world):
+    nc, outer, _checkout = split_pair(world)
+    write(world.template, {"non-code/RULES.md": GLOBAL["non-code/RULES.md"] + "Ids `{{BACKLOG_PREFIX}}-nnn`.\n",
+                           "code/RULES.md": GLOBAL["code/RULES.md"] + "Ids `{{BACKLOG_PREFIX}}-nnn`.\n"})
+    write(nc, {"RULES.md": NC_RULES + "Ids `FD-nnn`.\n", "backlog/config.yml": 'task_prefix: "fd"\n'})
+    write(outer, {"RULES.md": CODE_RULES + "Ids `RE-nnn`.\n"})          # its Backlog folder has no settings
+    code, out, err = world.conform("recipes", "recipes-tools")
+    assert (code, err) == (0, ""), out
+    write(nc, {"RULES.md": NC_RULES + "Ids `RE-nnn`.\n"})               # the prefix worked out from the name
+    code, out, _err = world.conform("recipes", "recipes-tools")
+    assert code == 1 and out == (
+        f"recipes (non-code): {nc}\n"
+        "  missing: the template's current RULES.md (a global file: conduct start brings it up to date)\n"
+        f"recipes-tools (code): {outer}\n  in line\n1 thing to bring into line.\n")
+
+
+def test_backlog_settings_that_cannot_be_read_are_exit_4_naming_the_file(world):
+    nc, _outer, _checkout = split_pair(world)
+    write(nc, {"backlog/config.yml": 'task_prefix: "fd"\n'})
+    settings = os.path.join(nc, "backlog", "config.yml")
+    os.chmod(settings, 0)
+    try:
+        code, _out, err = world.conform("recipes", "recipes-tools")
+    finally:
+        os.chmod(settings, 0o644)
+    assert code == 4 and err == (f"conform: {settings} cannot be read (Permission denied), so the prefix of "
+                                 "recipes's tickets is not known: check its permissions\n")
+
+
+def test_a_feeler_has_no_tickets_so_backlog_settings_in_its_folder_are_never_read(world):
+    folder = feeler_in_line(world)
+    write(folder, {"backlog/config.yml": 'task_prefix: "zz"\n'})
+    settings = os.path.join(folder, "backlog", "config.yml")
+    os.chmod(settings, 0)
+    try:
+        code, out, err = world.conform("agents")
+    finally:
+        os.chmod(settings, 0o644)
+    assert (code, err) == (0, ""), out
+    assert out == f"agents (feeler): {folder}\n  in line\nThe feeler is in line.\n"

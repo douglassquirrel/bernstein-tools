@@ -7,10 +7,16 @@ project, keeping the old copy in the project's _to_delete/. A template without t
 
 import datetime
 import os
+import re
 
 from bernstein.render import TemplateRefused, render_half, values_for
 
 LIST = os.path.join("common", "global-files")
+TASK_PREFIX = re.compile(r"""^task_prefix:[ \t]*["']?([A-Za-z][A-Za-z0-9]*)["']?[ \t]*(?:#.*)?\r?$""", re.MULTILINE)
+
+
+class ProjectUnreadable(Exception):
+    """A file of the project's own that a global file's render depends on cannot be read."""
 
 
 def declared(template_dir):
@@ -33,6 +39,17 @@ def declared(template_dir):
 def _read(path):
     with open(path, encoding="utf-8", errors="replace", newline="") as f:
         return f.read()
+
+
+def ticket_prefix(folder):
+    """The prefix of a project's tickets as its own Backlog has it (task_prefix in backlog/config.yml), in
+    capitals; None when the folder has no Backlog settings or they name no prefix of letters and figures.
+    A project set up before the template may have chosen its own, which is the one its tickets carry."""
+    path = os.path.join(folder, "backlog", "config.yml")
+    if not os.path.isfile(path):
+        return None
+    found = TASK_PREFIX.search(_read(path))
+    return found.group(1).upper() if found else None
 
 
 def state(rendered, folder):
@@ -77,7 +94,7 @@ def bring_up_to_date(rendered, folder, stamp):
 
 def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, today):
     """{path: text} of the template's global files for one half of an existing project, rendered with
-    its own names, folders and claws. `sister_path` is the other half's folder (the home claw's checkout
+    its own names, folders, claws and ticket prefix. `sister_path` is the other half's folder (the home claw's checkout
     for a non-code project), or None when it has none or it cannot be found. Refuses a template whose
     global file would read differently on another day."""
     names = declared(s["TEMPLATE"])
@@ -85,6 +102,11 @@ def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, t
         return {}
     non_code = kind in ("non-code", "feeler")      # the half whose own folder is the project's
     public = (not non_code) and folder != checkout
+    try:
+        prefix = None if kind == "feeler" else ticket_prefix(folder)     # a feeler has no tickets
+    except OSError as why:
+        raise ProjectUnreadable(f"{why.filename} cannot be read ({why.strerror}), so the prefix of {name}'s "
+                                "tickets is not known: check its permissions")
 
     def on(day):
         values = values_for(name if non_code else (sister or None), kind, model=s["MODEL"], effort=s["EFFORT"],
@@ -92,7 +114,8 @@ def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, t
                             lobster_mail=s["LOBSTER_MAIL"], public=public, today=day, home=home,
                             tools=sister if non_code else name,
                             non_code_path=folder if non_code else sister_path,
-                            tools_path=sister_path if non_code else checkout, claws=claws)
+                            tools_path=sister_path if non_code else checkout, claws=claws,
+                            backlog_prefix=prefix)
         rendered = render_half(s["TEMPLATE"], kind, values, public)
         return {rel: rendered[rel] for rel in names if rel in rendered}
 

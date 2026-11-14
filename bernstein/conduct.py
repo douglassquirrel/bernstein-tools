@@ -681,6 +681,8 @@ def start(a, s, env, today, out, err, sleep):
     name = session_name(a.project, today, a.name)
     try:
         rendered = global_files_of(project, s, env["HOME"], today)
+    except globalfiles.ProjectUnreadable as why:
+        raise Stop(3, str(why))
     except (TemplateRefused, OSError) as why:
         raise Stop(4, f"the template cannot be read: {why}")
     split = globalfiles.is_split(rendered, project.folder)
