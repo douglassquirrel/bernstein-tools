@@ -241,14 +241,19 @@ def dream_message(project, now, minutes, then):
     return f"Dream (from bernstein, {day(now)}).\n\n" + (DREAM_BODY + DREAM_ENDS[then]).format(**fields)
 
 
-def read_conf_file(path):
+def conf_settings(lines):
+    """The settings in the lines of a lobster.conf: the last line for a key is the one that counts."""
     found = {}
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if "=" in line and not line.lstrip().startswith("#"):
-                key, value = line.split("=", 1)
-                found[key.strip()] = value.strip()
+    for line in lines:
+        if "=" in line and not line.lstrip().startswith("#"):
+            key, value = line.split("=", 1)
+            found[key.strip()] = value.strip()
     return found
+
+
+def read_conf_file(path):
+    with open(path, encoding="utf-8") as f:
+        return conf_settings(f)
 
 
 def subfolders(base):
@@ -357,7 +362,7 @@ def find_project(name, non_code_dir, code_dir, home=None):
         if name.endswith("-tools"):
             raise ProjectRefused(f"no project {name} in {code_dir} or a folder directly inside it")
         raise ProjectRefused(f"no project {name} in {non_code_dir} or {code_dir}, or a folder directly inside either")
-    folder, checkout, placed = found
+    folder = found[0]
     conf = os.path.join(folder, "lobster.conf")
     if not os.path.isfile(conf):
         raise ProjectRefused(f"{folder} has no lobster.conf: is it a lobster project?")
@@ -367,6 +372,14 @@ def find_project(name, non_code_dir, code_dir, home=None):
         raise ProjectRefused(f"{conf} is not plain UTF-8 text: save it again as UTF-8")
     except OSError as why:
         raise ProjectRefused(f"{conf} cannot be read ({why.strerror}): check its permissions")
+    return checked_project(name, found, settings, code_dir, home)
+
+
+def checked_project(name, found, settings, code_dir, home=None):
+    """The project that these settings of its lobster.conf describe, in the place find_folder found; refused
+    if conduct start could not start it. set-conf checks a file as it would be with this, before writing it."""
+    folder, checkout, placed = found
+    conf = os.path.join(folder, "lobster.conf")
     kind = settings.get("KIND", placed)
     if kind not in ("code", "non-code", "feeler"):
         raise ProjectRefused(f"{conf} says KIND={kind}: it must be code, non-code or feeler")

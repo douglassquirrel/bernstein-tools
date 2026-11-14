@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""set-conf: set one setting in one lobster project's lobster.conf, guarded. Run set-conf --help."""
+import datetime
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from bernstein.setconf import main  # noqa: E402
+
+sys.exit(main(sys.argv[1:], dict(os.environ), datetime.datetime.now(datetime.timezone.utc), sys.stdout, sys.stderr,
+              time.sleep))

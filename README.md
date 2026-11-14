@@ -5,7 +5,8 @@ non-code project does the work and asks a companion tools project, by mail, for 
 as a tested command. `new-lobster` makes such a pair in one step: both folders from a template,
 git, a mailbox each, the first commits, and a Backlog issue tracker if you ask for one. `conduct` starts a project's
 session and asks a running one to hand over, and `podium` shows every session on a page in your
-browser, with buttons for what `conduct` does. `local-history` gives the private folder around a public
+browser, with buttons for what `conduct` does. `set-conf` changes one setting in a project's
+`lobster.conf`, keeping the file as it was. `local-history` gives the private folder around a public
 checkout a git history of its own, with no remote. They are for one person's Mac and their own
 projects; the projects talk by `lobster-mail`, from the
 [lobster-tools](https://github.com/douglassquirrel/lobster-tools) repository.
@@ -562,6 +563,74 @@ Dry run: nothing was moved.
 Exit codes: 0 moved, would move, or nothing to remove; 2 bad arguments or settings; 3 refused, nothing
 moved; 4 the duty listing could not be had, or a move failed (the message says which were moved).
 
+## set-conf: set one line in a project's lobster.conf
+
+```
+set-conf [--dry-run] PROJECT KEY=VALUE
+```
+
+A project's `lobster.conf` says which tools projects and further folders its session is connected to
+and which model and effort it must run on. `set-conf` changes one of those settings in one project:
+`SISTER`, `CLAWS`, `FOLDERS`, `MODEL` or `EFFORT`. It never changes `KIND` or `SELF`, which say what the
+project is, and it knows no other key. Run it with `--dry-run` first.
+
+```
+$ ./set-conf --dry-run demo FOLDERS=/Users/me/models/voices
+demo: /Users/me/projects/non-code/demo/lobster.conf
+  is:       (no FOLDERS line)
+  would be: FOLDERS=/Users/me/models/voices (added as the last line)
+  the file as it is would be kept in /Users/me/projects/non-code/demo/_to_delete/before-conf-change-2026-11-14-1354/lobster.conf
+Dry run: nothing was changed. After the real run demo is owed a notice by mail of the change.
+$ ./set-conf demo FOLDERS=/Users/me/models/voices
+demo: /Users/me/projects/non-code/demo/lobster.conf
+  was: (no FOLDERS line)
+  now: FOLDERS=/Users/me/models/voices (added as the last line)
+  the file as it was is kept in /Users/me/projects/non-code/demo/_to_delete/before-conf-change-2026-11-14-1354/lobster.conf
+Nothing was committed and nothing was sent: demo is owed a notice by mail of this change.
+$ ./set-conf demo MODEL=fable
+demo: /Users/me/projects/non-code/demo/lobster.conf
+  was: MODEL=opus
+  now: MODEL=fable
+  the file as it was is kept in /Users/me/projects/non-code/demo/_to_delete/before-conf-change-2026-11-14-1354-2/lobster.conf
+Nothing was committed and nothing was sent: demo is owed a notice by mail of this change.
+```
+
+What it changes, and what it leaves:
+
+- **One line.** If the file has a line for the setting, the value on that line is replaced: everything
+  up to and including the `=` stays, and so does the line's ending. If the setting is written on several
+  lines, the last is changed, since that is the one `conduct` reads, and the output says so. If the file
+  has no such line, `KEY=VALUE` is added as its last line. Every other byte stays as it was: comments, the
+  order, CRLF line endings. (When a line is added to a file whose last line has no ending, that line
+  gains one.)
+- **The whole rest of the line is the value**, as `conduct` reads it: there are no comments after a
+  value. Spaces at either end of VALUE are dropped. An empty value is allowed (`CLAWS=`).
+- **Nothing to change** is said in a line, with exit 0, when the setting already reads as that value.
+- **The file as it was** is copied first to `_to_delete/before-conf-change-<date>-<time>/lobster.conf` in
+  the project's own folder (`-2`, `-3` for more in the same minute; never over an earlier copy). The new
+  file is written beside the old one as `lobster.conf.set-conf-new` and renamed into place, so
+  `lobster.conf` is never half-written. To undo a change, copy the kept file back.
+- **Nothing else.** It commits nothing, sends no mail and writes nowhere else. Its last line reminds you
+  that the project should be told by mail.
+
+It refuses, changing nothing and leaving nothing behind (exit 3), each in a line of its own words:
+
+- `KIND` or `SELF`, a setting it does not know, or a value with a line break in it;
+- a project that cannot be found or is in two places; a folder with no `lobster.conf`; a `lobster.conf`
+  that is a link, cannot be read or is not UTF-8;
+- a value that would stop the project from starting: the file as it would be must pass everything
+  `conduct start` checks (a `FOLDERS` entry that is not a folder or not a full path, `FOLDERS` for a
+  tools project, a claw or sister that cannot be found, an empty `MODEL` or `EFFORT`), and `MODEL` must be
+  one word and `EFFORT` one of `low`, `medium`, `high`, `xhigh`, `max`. Only the file as it would be is
+  judged, so a setting that is wrong now can be put right;
+- a project with anyone on duty, fresh or stale: stop it with `conduct stop`, or `conduct reset` if it
+  is gone;
+- a file already at `lobster.conf.set-conf-new`: look at it and move it away.
+
+Exit codes: 0 changed, would change, or nothing to change; 2 bad arguments or settings; 3 refused,
+nothing changed; 4 the duty listing could not be had, or the write failed (`lobster.conf` is as it was,
+and what the run had made is taken away again, or named if it could not be).
+
 ## local-history: a history for the folder around a public checkout
 
 ```
@@ -610,7 +679,7 @@ commit -m "..."`, run in the outer folder, not the checkout).
 ## Errors and exit codes
 
 Every failure is one line on standard error starting `new-lobster:`, saying what happened. (`conduct`,
-`conform`, `drop-backlog` and `local-history` give their own codes in their sections above.)
+`conform`, `drop-backlog`, `set-conf` and `local-history` give their own codes in their sections above.)
 
 | Code | Meaning | What to do |
 |---|---|---|
@@ -630,7 +699,7 @@ Every failure is one line on standard error starting `new-lobster:`, saying what
 
 `tests/tier1/` tests the pure parts (names, settings, rendering) against small invented templates;
 `tests/tier2/` runs `new-lobster` end to end against stubs of `git`, `backlog`, `lobster-mail` and
-Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `drop-backlog` against invented projects and the stub of `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
+Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `drop-backlog` and `set-conf` against invented projects and the stub of `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
 handling as a plain function; three tests fetch the page from a real socket on `127.0.0.1`, which is this
 machine and not the network), and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
 that appears while `new-lobster` is running, a race the tests cannot stage.
@@ -639,6 +708,14 @@ Manual check of `local-history` against the real git (Tier 3): make a scratch fo
 and a small git repository inside it, run `./local-history --dry-run` on it and then without the flag, and
 look: `git ls-files` lists the folder's own files and not the checkout's, `git status --short` and `git
 remote` print nothing, and a file emptied on purpose comes back with `git checkout -- <file>`.
+
+Manual check of `set-conf` against the real `lobster-mail` (Tier 3), only ever on scratch folders: with
+`BERNSTEIN_CONF` naming a settings file whose `NON_CODE_DIR`, `CODE_DIR` and `MAIL_ROOT` are scratch
+folders, make a project there by hand (a `lobster.conf` and a `START-HERE.txt`) and its mailbox with
+`lobster-mail init`; run `./set-conf --dry-run <name> FOLDERS=<a real folder>` and compare the file
+with a copy (`cmp`); run it for real and compare the kept copy with that same copy; run it again to see
+"nothing to change"; take the duty with `lobster-mail duty take` and see the refusal; then `./conduct
+start --dry-run <name>` names the folder under "Would also connect".
 
 Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a settings file whose
 `NON_CODE_DIR`, `CODE_DIR` and `MAIL_ROOT` are scratch folders, then run `./new-lobster --dry-run
@@ -662,6 +739,11 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 14 November 2026: new command `set-conf [--dry-run] PROJECT KEY=VALUE` sets one of `SISTER`, `CLAWS`,
+  `FOLDERS`, `MODEL` or `EFFORT` in a project's `lobster.conf`, keeping the file as it was in the
+  project's `_to_delete/`. It refuses while anyone is on duty for the project, and any value with which
+  `conduct start` would refuse the project. Run it with `--dry-run` first. Exit codes 0, 2, 3, 4 as
+  `drop-backlog`'s.
 - 14 November 2026: this repository is now named `bernstein-tools` (it was `bernstein`). An existing
   clone needs its address changed once: `git remote set-url origin
   https://github.com/douglassquirrel/bernstein-tools.git`.
