@@ -6,7 +6,9 @@ fails when its name is listed in the file `fail` in the stub folder, as `name`, 
 first argument) or `name:verb:code` (that exit code; 1 otherwise). The lobster-mail stub's
 `duty status --all --json` prints the JSON in `duty.json` (default: no mailboxes), and its `check` prints
 the text in `check.json` (default: `[]`, no new mail); its `list --new` and `list --open` print
-`list-new.json` and `list-open.json` (default: `[]`). The conduct stub's
+`list-new.json` and `list-open.json` (default: `[]`), or `list-new-<mailbox>.json` where there is one for the
+mailbox named by `--as`; its `send --json` prints an id made from the recipient; its `read ... ID` prints the
+file `read-ID.txt` if there is one. The conduct stub's
 `status` prints the text in `status.json` (default: no mailboxes); its other verbs print "conduct stub: "
 and their first two arguments, and a `--brief FILE` is read into the call's record as `brief`.
 """
@@ -30,9 +32,12 @@ STUB = textwrap.dedent(r"""        #!/bin/sh
         set -f
         here={bin}
         name=${{0##*/}}
-        last=; prev=; brief=
+        last=; prev=; brief=; as=; to=; json=
         for a in "$@"; do
             [ "$prev" = --brief ] && brief=$a
+            [ "$prev" = --as ] && as=$a
+            [ "$prev" = --to ] && to=$a
+            [ "$a" = --json ] && json=1
             last=$a; prev=$a
         done
         {{
@@ -63,8 +68,14 @@ STUB = textwrap.dedent(r"""        #!/bin/sh
             if [ "${{1-}}" = list ]; then
                 box=new
                 for a in "$@"; do [ "$a" = --open ] && box=open; done
-                show "list-$box.json" "[]"
-            fi ;;
+                if [ -f "$here/list-$box-$as.json" ]; then /bin/cat "$here/list-$box-$as.json"; echo
+                else show "list-$box.json" "[]"
+                fi
+            fi
+            if [ "${{1-}}" = send ] && [ -n "$json" ]; then
+                printf '{{"id": "2026-10-18-0940-bernstein-to-%s", "to": "%s"}}\n' "$to" "$to"
+            fi
+            if [ "${{1-}}" = read ] && [ -f "$here/read-$last.txt" ]; then /bin/cat "$here/read-$last.txt"; fi ;;
         conduct)
             if [ "${{1-}}" = status ]; then
                 if [ -f "$here/status.json" ]; then /bin/cat "$here/status.json"; else printf '%s' "$none"; fi
