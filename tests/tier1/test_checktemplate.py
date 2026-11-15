@@ -3,10 +3,13 @@
 from bernstein import checktemplate
 
 
-def test_there_are_23_ways_each_named_by_its_kind_and_what_applies():
+def test_there_are_31_ways_each_named_by_its_kind_and_what_applies():
     assert [w.name for w in checktemplate.ways()] == [
         "non-code", "non-code,public", "non-code,tickets", "non-code,public,tickets",
         "non-code,claws", "non-code,public,claws", "non-code,tickets,claws", "non-code,public,tickets,claws",
+        "non-code,mac", "non-code,mac,public", "non-code,mac,tickets", "non-code,mac,public,tickets",
+        "non-code,mac,claws", "non-code,mac,public,claws", "non-code,mac,tickets,claws",
+        "non-code,mac,public,tickets,claws",
         "code", "code,public", "code,tickets", "code,public,tickets",
         "claw", "claw,public", "claw,tickets", "claw,public,tickets",
         "conductor-claw", "conductor-claw,public", "conductor-claw,tickets", "conductor-claw,public,tickets",
@@ -23,6 +26,16 @@ def test_a_way_says_which_half_it_renders_and_with_what():
     assert by_name["code"].claws == () and not by_name["code"].lone
     assert [by_name[n].claws for n in ("feeler", "feeler,claw", "feeler,claws")] == [
         (), ("first-tools",), ("first-tools", "second-tools")]
+
+
+def test_a_non_code_way_is_rendered_for_a_session_in_the_virtual_machine_and_again_for_one_on_the_mac():
+    by_name = {w.name: w for w in checktemplate.ways()}
+    on_the_mac = [name for name in by_name if "mac" in name.split(",")]
+    assert len(on_the_mac) == 8 and all(by_name[name].session == "code" for name in on_the_mac)
+    for name in on_the_mac:
+        other = by_name[name.replace(",mac", "")]
+        assert other.session == "cowork" and other._replace(name=name, session="code") == by_name[name]
+    assert {w.session for w in checktemplate.ways() if w.half != "non-code"} == {None}
 
 
 def test_a_to_fill_gap_is_counted_and_is_not_a_leftover():

@@ -9,11 +9,14 @@ import datetime
 import os
 from collections import namedtuple
 
+from bernstein.conduct import conf_settings
 from bernstein.globalfiles import declared
 from bernstein.render import TemplateRefused, render_half, values_for, version
 from bernstein.settings import SettingsRefused, read_settings
 
-Way = namedtuple("Way", "name half public backlog claws lone conductor")
+# session: for a non-code way, the kind of session it is rendered for ("code" is a Claude Code session on the
+# Mac, and the way's name has the word mac); None for every other way.
+Way = namedtuple("Way", "name half public backlog claws lone conductor session")
 
 NAME, TOOLS, FURTHER = "example", "example-tools", ("first-tools", "second-tools")
 GAP = "{{to fill:"
@@ -23,16 +26,18 @@ def ways():
     """Every way the commands can render the template, each with the name the report gives it."""
     found = []
 
-    def add(kind, half, public=False, backlog=False, claws=(), lone=False, conductor=False):
-        words = [kind] + [word for word, on in (("public", public), ("tickets", backlog)) if on]
+    def add(kind, half, public=False, backlog=False, claws=(), lone=False, conductor=False, session=None):
+        words = [kind] + [word for word, on in (("mac", session == "code"), ("public", public),
+                                                ("tickets", backlog)) if on]
         if claws:
             words.append("claws" if len(claws) > 1 else "claw")
-        found.append(Way(",".join(words), half, public, backlog, tuple(claws), lone, conductor))
+        found.append(Way(",".join(words), half, public, backlog, tuple(claws), lone, conductor, session))
 
-    for claws in ((), FURTHER):
-        for backlog in (False, True):
-            for public in (False, True):
-                add("non-code", "non-code", public, backlog, claws)
+    for session in ("cowork", "code"):
+        for claws in ((), FURTHER):
+            for backlog in (False, True):
+                for public in (False, True):
+                    add("non-code", "non-code", public, backlog, claws, session=session)
     for kind, lone, conductor in (("code", False, False), ("claw", True, False), ("conductor-claw", False, True)):
         for backlog in (False, True):
             for public in (False, True):
@@ -110,7 +115,8 @@ def render(way, template, s, home, day):
         values = values_for(NAME, "code", public=way.public, tools=TOOLS, backlog=way.backlog, conductor=True,
                             non_code_path=os.path.join(s["CODE_DIR"], NAME + "-code"), **usual)
     else:
-        values = values_for(NAME, way.half, public=way.public, claws=way.claws, backlog=way.backlog, **usual)
+        values = values_for(NAME, way.half, public=way.public, claws=way.claws, backlog=way.backlog,
+                            session=way.session, **usual)
     try:
         return render_half(template, way.half, values, way.public)
     except UnicodeDecodeError:
@@ -142,6 +148,10 @@ def check(template, s, home, today):
         entry["faults"] += [f"{rel} is a global file and reads differently on another day: use "
                             "{{TEMPLATE_VERSION}} in it, not {{DATE}}"
                             for rel in names if rel in rendered and rendered[rel] != later[rel]]
+        if way.session == "code" and conf_settings(rendered["lobster.conf"].splitlines()).get("SESSION") != "code":
+            entry["faults"].append("lobster.conf does not say SESSION=code, so new-lobster --session code cannot "
+                                   "make a project from this template: add the line SESSION={{SESSION}} to "
+                                   "common/lobster.conf")
         lacking = [rel for rel in names if rel not in rendered]
         if lacking:
             entry["notes"].append("does not get " + ", ".join(lacking))

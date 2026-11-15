@@ -14,7 +14,10 @@ SOUND = dict(TEMPLATE, **{
     "common/sections/served-conductor.md": "Serves its conductor, {{REQUESTER}}.\n",
     "common/sections/backlog-yes.md": "Tickets from {{BACKLOG_PREFIX}}-001.\n",
     "common/sections/backlog-no.md": "No tickets here.\n",
-    "non-code/START-HERE.txt": "Start {{NAME}}.\n",
+    "common/lobster.conf": TEMPLATE["common/lobster.conf"] + "SESSION={{SESSION}}\n",
+    "common/sections/where-cowork.md": "Your claws are under ~/mnt.\n",
+    "common/sections/where-code.md": "Your home claw is at {{TOOLS_PATH}}.\n",
+    "non-code/START-HERE.txt": "Start {{NAME}}.\n{{> sections/where-{{SESSION}}.md}}\n",
     "non-code/RULES.md": ("Rules for {{NAME}}, template {{TEMPLATE_VERSION}}.\n{{> sections/backlog-{{BACKLOG}}.md}}\n"
                           "{{OTHER_CLAWS}}\n"),
     "code/RULES.md": ("Rules for {{TOOLS}}, template {{TEMPLATE_VERSION}}.\n{{> sections/served-{{SERVED}}.md}}\n"
@@ -26,7 +29,7 @@ SOUND = dict(TEMPLATE, **{
     "feeler/DIARY.md": "# Diary of {{NAME}}, begun {{DATE}}\n",
 })
 
-CLEAN = (["non-code" + rest + ": 6 files, 1 to fill" for rest in (
+CLEAN = (["non-code" + mac + rest + ": 6 files, 1 to fill" for mac in ("", ",mac") for rest in (
               "", ",public", ",tickets", ",public,tickets", ",claws", ",public,claws", ",tickets,claws",
               ",public,tickets,claws")]
          + [kind + rest + f": {n} files, 0 to fill" for kind in ("code", "claw", "conductor-claw")
@@ -53,7 +56,7 @@ def test_a_sound_template_lists_every_way_exits_0_and_writes_nothing(world):
     before = (tree(world.home), tree(world.template))
     code, out, err = world.run("--check-template")
     assert (code, err) == (0, "")
-    assert out == head(world) + "\n" + "".join(line + "\n" for line in CLEAN) + "\n23 ways: all render clean.\n"
+    assert out == head(world) + "\n" + "".join(line + "\n" for line in CLEAN) + "\n31 ways: all render clean.\n"
     assert (tree(world.home), tree(world.template)) == before
     assert world.calls() == []
 
@@ -70,11 +73,22 @@ def lines_of(out):
      [k + r for k in ("code", "claw", "conductor-claw") for r in (",public", ",public,tickets")],
      "code/CLAUDE.md: unknown placeholder {{NOPE}}", "6 faults in 6 ways"),
     ({"common/sections/backlog-yes.md": None},
-     ["non-code" + r for r in (",tickets", ",public,tickets", ",tickets,claws", ",public,tickets,claws")],
-     "non-code/RULES.md: the include sections/backlog-yes.md is not in common/", "10 faults in 10 ways"),
+     ["non-code" + m + r for m in ("", ",mac")
+      for r in (",tickets", ",public,tickets", ",tickets,claws", ",public,tickets,claws")],
+     "non-code/RULES.md: the include sections/backlog-yes.md is not in common/", "14 faults in 14 ways"),
     ({"common/sections/backlog-no.md": None},
-     ["non-code", "non-code,public", "non-code,claws", "non-code,public,claws"],
-     "non-code/RULES.md: the include sections/backlog-no.md is not in common/", "10 faults in 10 ways"),
+     ["non-code" + m + r for m in ("", ",mac") for r in ("", ",public", ",claws", ",public,claws")],
+     "non-code/RULES.md: the include sections/backlog-no.md is not in common/", "14 faults in 14 ways"),
+    ({"common/sections/where-code.md": None},                 # a fault in what only a session on the Mac is told
+     ["non-code,mac" + r for r in ("", ",public", ",tickets", ",public,tickets", ",claws", ",public,claws",
+                                   ",tickets,claws", ",public,tickets,claws")],
+     "non-code/START-HERE.txt: the include sections/where-code.md is not in common/", "8 faults in 8 ways"),
+    ({"common/sections/where-code.md": "Your home claw is at {{TOOLS_PATHS}}.\n"},
+     ["non-code,mac", "non-code,mac,public,tickets,claws"],
+     "non-code/START-HERE.txt: unknown placeholder {{TOOLS_PATHS}}", "8 faults in 8 ways"),
+    ({"common/sections/where-cowork.md": None},
+     ["non-code", "non-code,public,tickets,claws"],
+     "non-code/START-HERE.txt: the include sections/where-cowork.md is not in common/", "8 faults in 8 ways"),
     ({"common/sections/served-conductor.md": None},
      ["conductor-claw" + r for r in ("", ",public", ",tickets", ",public,tickets")],
      "code/RULES.md: the include sections/served-conductor.md is not in common/", "4 faults in 4 ways"),
@@ -97,10 +111,10 @@ def test_a_way_that_cannot_be_rendered_is_named_with_the_file_and_the_reason_and
     for way in bad:
         at = said.index(f"{way}: cannot be rendered")
         assert said[at + 1] == f"  fault: {fault}"
-    assert out.endswith(f"\n23 ways: {last}.\n")
+    assert out.endswith(f"\n31 ways: {last}.\n")
     faulty = int(last.split()[0])
     assert sum(1 for line in said if line.startswith("  fault: ")) == faulty
-    assert sum(1 for line in said if line in CLEAN) == 23 - faulty        # every other way is as it was
+    assert sum(1 for line in said if line in CLEAN) == 31 - faulty        # every other way is as it was
     assert tree(world.template) == before
 
 
@@ -111,7 +125,7 @@ def test_double_braces_left_in_a_rendered_file_are_a_fault_with_the_file_and_the
     said = lines_of(out)
     assert said[:2] == ["non-code: 6 files, 1 to fill",
                         "  fault: CLAUDE.md: {{ left in line 4: See {{Name}} and {{> sections/rule.md}}"]
-    assert out.endswith("\n23 ways: 8 faults in 8 ways.\n")
+    assert out.endswith("\n31 ways: 16 faults in 16 ways.\n")
 
 
 def test_a_global_file_that_reads_differently_on_another_day_is_a_fault(world):
@@ -122,7 +136,7 @@ def test_a_global_file_that_reads_differently_on_another_day_is_a_fault(world):
     assert said[said.index("code: 10 files, 0 to fill") + 1] == (
         "  fault: RULES.md is a global file and reads differently on another day: use {{TEMPLATE_VERSION}} "
         "in it, not {{DATE}}")
-    assert out.endswith("\n23 ways: 12 faults in 12 ways.\n")
+    assert out.endswith("\n31 ways: 12 faults in 12 ways.\n")
     assert "feeler: 5 files, 1 to fill; does not get inbox/README.md" in said      # its DIARY.md may use the date
 
 
@@ -134,7 +148,7 @@ def test_a_global_file_that_one_kind_does_not_get_is_a_note_and_the_exit_code_st
     assert "code: 9 files, 0 to fill; does not get RULES.md" in said
     assert "claw,public,tickets: 10 files, 0 to fill; does not get RULES.md" in said
     assert "non-code: 6 files, 1 to fill" in said
-    assert out.endswith("\n23 ways: all render clean.\n")
+    assert out.endswith("\n31 ways: all render clean.\n")
 
 
 def test_a_template_with_no_version_and_no_global_files_says_so_and_a_bad_list_is_a_fault_of_the_template(world):
@@ -149,13 +163,18 @@ def test_a_template_with_no_version_and_no_global_files_says_so_and_a_bad_list_i
     assert (code, err) == (4, "")
     assert out.startswith(f"Template: {world.template}\nVersion: 18 October 2026 (2)\nGlobal files: none\n"
                           "  fault: common/global-files: ../CLAUDE.md is not a path inside a project\n\n")
-    assert out.endswith("\n23 ways: 1 fault in the template itself.\n")
+    assert out.endswith("\n31 ways: 1 fault in the template itself.\n")
 
 
 @pytest.mark.parametrize("way, rel, flags, name, half", [
     ("non-code,public,tickets,claws", "CLAUDE.md",
      ("--public", "--backlog", "--claws", "first-tools second-tools"), "example", "non-code"),
     ("non-code", "RULES.md", (), "example", "non-code"),
+    ("non-code", "START-HERE.txt", ("--session", "cowork"), "example", "non-code"),
+    ("non-code,mac", "START-HERE.txt", ("--session", "code"), "example", "non-code"),
+    ("non-code,mac", "lobster.conf", ("--session", "code"), "example", "non-code"),
+    ("non-code,mac,public,tickets,claws", "CLAUDE.md",
+     ("--session", "code", "--public", "--backlog", "--claws", "first-tools second-tools"), "example", "non-code"),
     ("code,public", "CLAUDE.md", ("--public",), "example", "code"),
     ("code,tickets", "RULES.md", ("--backlog",), "example", "code"),
     ("claw,public,tickets", "RULES.md", ("--claw", "--public", "--backlog"), "example-tools", "code"),
@@ -187,7 +206,10 @@ def test_show_refuses_a_way_or_a_file_that_is_not_there_and_a_way_that_cannot_be
     assert (code, out) == (2, "")
     assert err == ("new-lobster: there is no way called tools; the ways are: non-code, non-code,public, "
                    "non-code,tickets, non-code,public,tickets, non-code,claws, non-code,public,claws, "
-                   "non-code,tickets,claws, non-code,public,tickets,claws, code, code,public, code,tickets, "
+                   "non-code,tickets,claws, non-code,public,tickets,claws, non-code,mac, non-code,mac,public, "
+                   "non-code,mac,tickets, non-code,mac,public,tickets, non-code,mac,claws, "
+                   "non-code,mac,public,claws, non-code,mac,tickets,claws, non-code,mac,public,tickets,claws, "
+                   "code, code,public, code,tickets, "
                    "code,public,tickets, claw, claw,public, claw,tickets, claw,public,tickets, conductor-claw, "
                    "conductor-claw,public, conductor-claw,tickets, conductor-claw,public,tickets, feeler, "
                    "feeler,claw, feeler,claws\n")
@@ -206,7 +228,7 @@ def test_a_template_that_is_not_there_is_exit_4_and_template_names_another(world
     write_tree(other, SOUND)
     code, out, err = world.run("--check-template", "--template", other)
     assert (code, err) == (0, "")
-    assert out.startswith(f"Template: {other}\n") and out.endswith("\n23 ways: all render clean.\n")
+    assert out.startswith(f"Template: {other}\n") and out.endswith("\n31 ways: all render clean.\n")
 
 
 def test_with_no_settings_file_the_usual_template_folder_is_looked_for(world):
@@ -243,4 +265,35 @@ def test_a_template_file_that_is_not_utf8_is_a_fault_not_a_traceback(world):
     code, out, err = world.run("--check-template")
     assert (code, err) == (4, "")
     assert "feeler: cannot be rendered\n  fault: a file in feeler/ or common/ is not plain UTF-8 text\n" in out
-    assert out.endswith("\n23 ways: 3 faults in 3 ways.\n")
+    assert out.endswith("\n31 ways: 3 faults in 3 ways.\n")
+
+
+def test_a_session_on_the_mac_is_shown_what_the_template_says_to_it(world):
+    sound(world)
+    assert world.run("--check-template", "--show", "non-code,mac", "START-HERE.txt") == (
+        0, "Start example.\nYour home claw is at ~/projects/code/example-tools.\n", "")
+    assert world.run("--check-template", "--show", "non-code,mac,public", "START-HERE.txt") == (
+        0, "Start example.\nYour home claw is at ~/projects/code/example-tools-code/example-tools.\n", "")
+    assert world.run("--check-template", "--show", "non-code", "START-HERE.txt") == (
+        0, "Start example.\nYour claws are under ~/mnt.\n", "")
+    assert world.run("--check-template", "--show", "non-code,mac", "lobster.conf")[1].endswith("SESSION=code\n")
+    assert world.run("--check-template", "--show", "non-code", "lobster.conf")[1].endswith("SESSION=cowork\n")
+    assert world.run("--check-template", "--show", "code", "lobster.conf")[1].endswith("SESSION=\n")
+
+
+@pytest.mark.parametrize("conf", [TEMPLATE["common/lobster.conf"],
+                                  TEMPLATE["common/lobster.conf"] + "SESSION=cowork\n",
+                                  TEMPLATE["common/lobster.conf"] + "# SESSION={{SESSION}}\n"])
+def test_a_template_whose_settings_cannot_say_code_is_a_fault_in_each_way_on_the_mac_and_in_no_other(world, conf):
+    sound(world, **{"common/lobster.conf": conf})
+    code, out, err = world.run("--check-template")
+    assert (code, err) == (4, "")
+    said = lines_of(out)
+    on_the_mac = [line for line in CLEAN if line.startswith("non-code,mac")]
+    for line in on_the_mac:
+        assert said[said.index(line) + 1] == (
+            "  fault: lobster.conf does not say SESSION=code, so new-lobster --session code cannot make a project "
+            "from this template: add the line SESSION={{SESSION}} to common/lobster.conf")
+    assert sum(1 for line in said if line.startswith("  fault: ")) == 8
+    assert [line for line in said if not line.startswith("  fault: ")] == CLEAN
+    assert out.endswith("\n31 ways: 8 faults in 8 ways.\n")

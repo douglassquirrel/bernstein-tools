@@ -100,8 +100,8 @@ def parser_for_new_lobster():
         "with a mailbox each, from bernstein's lobster-project template.",
         epilog="new-lobster --check-template [--template DIR] [--show WAY FILE] checks, writing nothing, that "
         "the template renders every way these commands can render it (each kind of project, public or "
-        "private, with tickets or none, with further claws or none) and lists each fault; --show prints "
-        "one file as one way renders it.",
+        "private, with tickets or none, with further claws or none, a non-code project for Claude Cowork "
+        "or for Claude Code on the Mac) and lists each fault; --show prints one file as one way renders it.",
     )
     p.add_argument("--session", metavar="KIND", help="cowork (the default) or code: with code, the non-code "
                    "project runs as a Claude Code session on the Mac, for work that needs programs there; its "
