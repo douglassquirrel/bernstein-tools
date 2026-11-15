@@ -23,10 +23,10 @@ def test_a_ganglion_is_checked_against_the_global_files_rendered_for_its_own_kin
     nc, outer, _checkout = split_pair(world)
     write(world.template, {"non-code/RULES.md": GLOBAL["non-code/RULES.md"] + "{{CLAW_MOUNTS}}\n"})
     write(nc, {"RULES.md": IN_THE_MACHINE})
-    in_line = (0, f"recipes (non-code): {nc}\n  in line\nrecipes-tools (code): {outer}\n  in line\n"
-                  "Both halves are in line.\n", "")
-    behind = (1, f"recipes (non-code): {nc}\n{BEHIND}recipes-tools (code): {outer}\n  in line\n"
-                 "1 thing to bring into line.\n", "")
+    in_line = (0, (f"recipes (non-code): {nc}\n  in line\nrecipes-tools (code): {outer}\n  in line\n"
+                  "Both halves are in line.\n"), "")
+    behind = (1, (f"recipes (non-code): {nc}\n{BEHIND}recipes-tools (code): {outer}\n  in line\n"
+                 "1 thing to bring into line.\n"), "")
     assert world.conform("recipes", "recipes-tools") == in_line
     says(nc, "SESSION=code")                          # its files are those of a session in the virtual machine
     assert world.conform("recipes", "recipes-tools") == behind
@@ -57,9 +57,9 @@ def test_a_session_that_is_neither_cowork_nor_code_is_listed(world, value):
     nc, outer, _checkout = pair_in_line(world)
     says(nc, f"SESSION={value}")
     assert world.conform("recipes", "recipes-tools") == (
-        1, f"recipes (non-code): {nc}\n"
+        1, (f"recipes (non-code): {nc}\n"
            f"  missing: SESSION=cowork or SESSION=code in lobster.conf, or no SESSION line (it says SESSION={value})\n"
-           f"recipes-tools (code): {outer}\n  in line\n1 thing to bring into line.\n", "")
+           f"recipes-tools (code): {outer}\n  in line\n1 thing to bring into line.\n"), "")
 
 
 ONLY = "  missing: an empty SESSION in lobster.conf (it says SESSION={}; only a non-code project names its kind of session)\n"
@@ -93,8 +93,8 @@ def test_a_ganglion_on_the_mac_may_name_further_folders_and_is_still_asked_for_i
     assert (code, err) == (0, "") and out.endswith("Both halves are in line.\n")
     os.remove(os.path.join(nc, ".claude", "settings.json"))
     assert world.conform("recipes", "recipes-tools") == (
-        1, f"recipes (non-code): {nc}\n  missing: .claude/settings.json (the lobster-mail start hook)\n"
-           f"recipes-tools (code): {outer}\n  in line\n1 thing to bring into line.\n", "")
+        1, (f"recipes (non-code): {nc}\n  missing: .claude/settings.json (the lobster-mail start hook)\n"
+           f"recipes-tools (code): {outer}\n  in line\n1 thing to bring into line.\n"), "")
 
 
 def test_all_counts_a_ganglion_on_the_mac_like_any_other(world):

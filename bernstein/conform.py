@@ -89,8 +89,8 @@ def session_gaps(conf, kind):
     """What is wrong with the SESSION a lobster.conf names: only a non-code project names one, cowork or code."""
     said = session_of(conf)
     if said and kind != "non-code":
-        return [f"an empty SESSION in lobster.conf (it says SESSION={said}; only a non-code project names its "
-                "kind of session)"]
+        return [(f"an empty SESSION in lobster.conf (it says SESSION={said}; only a non-code project names its "
+                "kind of session)")]
     if said not in ("", "cowork", "code"):
         return [f"SESSION=cowork or SESSION=code in lobster.conf, or no SESSION line (it says SESSION={said})"]
     return []
