@@ -77,6 +77,25 @@ def conf_gaps(conf, wanted, empty="a lone claw"):
     return gaps
 
 
+def session_of(conf):
+    """What a lobster.conf says of SESSION, the kind of session a non-code project runs in: "" for no line."""
+    try:
+        return read_conf_file(conf).get("SESSION", "")
+    except (UnicodeDecodeError, OSError):
+        return ""
+
+
+def session_gaps(conf, kind):
+    """What is wrong with the SESSION a lobster.conf names: only a non-code project names one, cowork or code."""
+    said = session_of(conf)
+    if said and kind != "non-code":
+        return [f"an empty SESSION in lobster.conf (it says SESSION={said}; only a non-code project names its "
+                "kind of session)"]
+    if said not in ("", "cowork", "code"):
+        return [f"SESSION=cowork or SESSION=code in lobster.conf, or no SESSION line (it says SESSION={said})"]
+    return []
+
+
 def claws_of(conf):
     """The further claws a non-code project's lobster.conf names, or none."""
     try:
@@ -103,7 +122,8 @@ def folder_gaps(conf, kind, home):
     return gaps
 
 
-def required_sections(s, kind, non_code, tools, public, home, claws=(), backlog=False, conductor=None):
+def required_sections(s, kind, non_code, tools, public, home, claws=(), backlog=False, conductor=None,
+                      session=None):
     """(headings, wording) for a half's CLAUDE.md. Headings: every heading of each section the template's
     CLAUDE.md for that half includes from common/sections/, and every heading of its own that names the
     pair. Wording: {heading: lines} of the included sections in FIXED_WORDING, filled. A lone claw has
@@ -111,7 +131,7 @@ def required_sections(s, kind, non_code, tools, public, home, claws=(), backlog=
     values = values_for(non_code, kind, model=s["MODEL"], effort=s["EFFORT"], non_code_dir=s["NON_CODE_DIR"],
                         code_dir=s["CODE_DIR"], mail_root=s["MAIL_ROOT"], lobster_mail=s["LOBSTER_MAIL"],
                         public=public, today=datetime.date.today(), home=home, tools=tools, claws=claws,
-                        backlog=backlog, non_code_path=conductor, conductor=bool(conductor))
+                        backlog=backlog, non_code_path=conductor, conductor=bool(conductor), session=session)
     where = f"{kind}/CLAUDE.md"
     with open(os.path.join(s["TEMPLATE"], kind, "CLAUDE.md"), encoding="utf-8") as f:
         raw = f.read()
@@ -185,18 +205,21 @@ def gaps_of(name, kind, sister, found, s, conductor=None):
             gaps.append(f"--root {shlex.quote(s['MAIL_ROOT'])} in the lobster-mail start hook in .claude/settings.json")
     if not os.path.isfile(os.path.join(folder, "inbox", "README.md")):
         gaps.append("inbox/README.md")
-    gaps += folder_gaps(conf, kind, s["HOME"])
+    gaps += folder_gaps(conf, kind, s["HOME"]) + session_gaps(conf, kind)
     non_code, tools = (name, sister) if kind == "non-code" else (sister or None, name)
     claws = claws_of(conf) if kind == "non-code" else []
+    # a non-code project is checked against the files rendered for the session its lobster.conf names
+    session = "code" if kind == "non-code" and session_of(conf) == "code" else None
     for claw in claws:
         if not os.path.isdir(tools_folders(claw, s["CODE_DIR"])[1]):
             gaps.append(f"the claw {claw} in {s['CODE_DIR']} or a folder directly inside it")
     gaps += claude_gaps(folder, *required_sections(s, kind, non_code, tools, found[0] != found[1], s["HOME"], claws,
-                                                       globalfiles.keeps_tickets(folder), conductor))
+                                                       globalfiles.keeps_tickets(folder), conductor, session))
     checkout = found[1]
     other = conductor or sister_path(kind, sister, s)
     rendered = globalfiles.renders(s, kind, name, sister, folder, checkout, other, claws, s["HOME"],
-                                   datetime.date.today(), conductor=bool(conductor))
+                                   datetime.date.today(), conductor=bool(conductor), session=session,
+                                   claw_paths={claw: tools_folders(claw, s["CODE_DIR"])[1] for claw in claws})
     gaps += global_gaps(rendered, folder)
     if checkout != folder:
         beside = OUTER_FILES + OUTER_FOLDERS + tuple(r for r in rendered if not r.startswith(OUTER_FOLDERS))
@@ -229,7 +252,7 @@ def conductor_gaps(name, claw, folder, s):
     gaps = conf_gaps(conf, {"KIND": "conductor", "SELF": name, "SISTER": claw})
     if claws_of(conf):
         gaps.append("an empty CLAWS in lobster.conf (a conductor has one claw, the one SISTER names)")
-    gaps += folder_gaps(conf, "code", s["HOME"])
+    gaps += folder_gaps(conf, "code", s["HOME"]) + session_gaps(conf, "conductor")
     if not os.path.isfile(os.path.join(folder, "CLAUDE.md")):
         gaps.append("CLAUDE.md")
     if not os.path.isdir(os.path.join(folder, ".git")):
@@ -271,7 +294,7 @@ def feeler_gaps(name, folder, s):
     for rel in ("START-HERE.txt", "CLAUDE.md"):
         if not os.path.isfile(os.path.join(folder, rel)):
             gaps.append(rel)
-    gaps += folder_gaps(conf, "feeler", s["HOME"])
+    gaps += folder_gaps(conf, "feeler", s["HOME"]) + session_gaps(conf, "feeler")
     claws = claws_of(conf)
     for claw in claws:
         if not os.path.isdir(tools_folders(claw, s["CODE_DIR"])[1]):
