@@ -103,6 +103,9 @@ def parser_for_new_lobster():
         "private, with tickets or none, with further claws or none) and lists each fault; --show prints "
         "one file as one way renders it.",
     )
+    p.add_argument("--session", metavar="KIND", help="cowork (the default) or code: with code, the non-code "
+                   "project runs as a Claude Code session on the Mac, for work that needs programs there; its "
+                   "lobster.conf says SESSION=code and its files name real paths, not ~/mnt")
     p.add_argument("name", help="the non-code project's name; the tools project is <name>-tools")
     p.add_argument("--dry-run", action="store_true", help="check and show everything, write nothing")
     p.add_argument("--public", action="store_true", help="make the tools project public (default private)")
@@ -136,6 +139,13 @@ def options_for_new_lobster(argv, settings):
         raise SettingsRefused("--feeler cannot be used with --claw: a feeler is not a tools project")
     if a.feeler and a.backlog:
         raise SettingsRefused("--backlog cannot be used with --feeler: a feeler keeps no tickets")
+    if a.session is not None:
+        if a.session not in ("cowork", "code"):
+            raise SettingsRefused(f"--session must be cowork or code, not {a.session or 'an empty value'}")
+        if a.claw:
+            raise SettingsRefused("--session cannot be used with --claw: a tools project always runs in Claude Code")
+        if a.feeler:
+            raise SettingsRefused("--session cannot be used with --feeler: a feeler runs in Claude Cowork")
     if a.feeler and a.public:
         raise SettingsRefused("--feeler cannot be used with --public: a feeler has no tools project to publish")
     for flag, value in (("--tools", a.tools), ("--tools-path", a.tools_path)):
@@ -190,4 +200,5 @@ def options_for_new_lobster(argv, settings):
         claw=a.claw,
         claws=claws,
         feeler=a.feeler,
+        session=a.session or "cowork",
     )

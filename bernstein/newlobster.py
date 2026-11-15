@@ -10,7 +10,7 @@ import os
 import shlex
 import subprocess
 
-from bernstein import checktemplate
+from bernstein import checktemplate, conduct
 from bernstein.globalfiles import declared
 from bernstein.render import TemplateRefused, render_half, values_for
 from bernstein.settings import (
@@ -107,9 +107,22 @@ def quote(path):
     return shlex.quote(path)
 
 
+ON_THE_MAC = "a Claude Code one on the Mac (SESSION=code in its lobster.conf)."
+
+
+def says_its_session(o, files):
+    """Stop unless the non-code half's rendered lobster.conf names the session asked for: a template that
+    does not carry the setting would make a project that opens in Claude Cowork whatever was asked."""
+    if o.session == "code" and conduct.conf_settings(files["lobster.conf"].splitlines()).get("SESSION") != "code":
+        raise Stop(4, "the template cannot be used: the lobster.conf it renders for a non-code project does not "
+                      "say SESSION=code, so a project made from it would open in Claude Cowork: add the line "
+                      "SESSION={{SESSION}} to its common/lobster.conf; nothing was made")
+
+
 def plan(o, nc, tools_outer, tools_repo):
     lines = [
         f"Make {o.name}: {nc}",
+    ] + ([f"  Its session would be {ON_THE_MAC}"] if o.session == "code" else []) + [
         "Make {}-tools: {}{}".format(o.name, tools_repo,
                                  f" (inside {tools_outer}, which holds its guidance files)"
                                  if tools_outer != tools_repo else ""),
@@ -159,6 +172,8 @@ def claw_report(o, outer, repo, out):
 def report(o, nc, tools_outer, tools_repo, out):
     visibility = "public" if o.public else "private"
     out.write(f"Made {o.name}: {nc}\n")
+    if o.session == "code":
+        out.write(f"  Its session is {ON_THE_MAC}\n")
     out.write(f"Made {o.name}-tools: {tools_outer}\n")
     out.write(f"Mailboxes {o.name} and {o.name}-tools in {o.mail_root}\n\n")
     out.write("GitHub is left to you. Create two repositories on github.com, empty:\n")
@@ -186,11 +201,14 @@ def render_into(o, env, today, out):
                             code_dir=o.code_dir, mail_root=o.mail_root, lobster_mail=o.lobster_mail,
                             public=o.public, today=today, home=env["HOME"], tools=tools,
                             non_code_path=o.non_code_path, tools_path=o.tools_path, claws=o.claws,
-                            backlog=o.backlog)
+                            backlog=o.backlog, session=o.session,
+                            claw_paths={claw: conduct.tools_folders(claw, o.code_dir)[1] for claw in o.claws})
         try:
             rendered = render_half(o.template, half, values, o.public)
         except TemplateRefused as why:
             raise Stop(4, f"the template cannot be used: {why}")
+        if half == "non-code":
+            says_its_session(o, rendered)
         files.update({f"{half}/{rel}": text for rel, text in rendered.items()})
     if o.dry_run:
         out.write(f"Would render the template for {what} into {o.render_into}: {len(files)} files\n")
@@ -341,11 +359,12 @@ def make(o, env, today, out):
     for half in ("non-code", "code"):
         values = values_for(o.name, half, model=o.model, effort=o.effort, non_code_dir=o.non_code_dir,
                             code_dir=o.code_dir, mail_root=o.mail_root, lobster_mail=o.lobster_mail,
-                            public=o.public, today=today, home=home, backlog=o.backlog)
+                            public=o.public, today=today, home=home, backlog=o.backlog, session=o.session)
         try:
             rendered[half] = render_half(o.template, half, values, o.public)
         except TemplateRefused as why:
             raise Stop(4, f"the template cannot be used: {why}")
+    says_its_session(o, rendered["non-code"])
     package = tools.replace("-", "")
     rendered["code"][package + "/__init__.py"] = ""
     beside = global_names(o)
