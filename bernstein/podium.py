@@ -200,9 +200,11 @@ def activity(entries):
         when = stamp(entry["time"])
         time = f"{when:%H:%M:%S} UTC" if when else e(entry["time"])
         trouble = f'<p class="refused">{e(entry["log_error"])}</p>' if entry.get("log_error") else ""
+        # a Start that worked closes its box, so what only he can do in the app is said here
+        remind = f'<p class="remind">{e(entry["reminder"])}</p>' if entry.get("reminder") else ""
         runs.append(f'<div class="run"><p class="what"><span class="time">{time}</span> '
                     f'<code>{e(entry["command"])}</code> <span class="badge {tone}">{mark}</span></p>'
-                    f'<pre>{e(entry["output"])}{e(entry["error"])}</pre>{trouble}</div>')
+                    f'<pre>{e(entry["output"])}{e(entry["error"])}</pre>{remind}{trouble}</div>')
     return '<h2>Activity</h2><section class="card log">' + "".join(runs) + "</section>"
 
 
@@ -304,6 +306,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .acts { grid-column: 4; justify-content: flex-end; }
 .all { margin: 0 0 10px; }
 .log .run { padding: 6px 12px; }
+.remind { margin: 4px 0 0; font-size: 15px; color: var(--muted); }
 .log .run + .run { border-top: 1px solid var(--line); }
 .what { margin: 0 0 3px; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; }
 .time { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
@@ -357,7 +360,7 @@ input[type="number"] { width: 6rem; }
 <p id="act-progress" class="progress" role="status" hidden><span class="spin"></span><span id="act-progress-text"></span></p>
 <p id="act-note" class="note" hidden></p>
 <p id="act-problem" class="error" hidden></p>
-<div class="buttons"><button type="button" id="act-cancel">Cancel</button><button type="button" id="act-go">Preview</button></div>
+<div class="buttons"><button type="button" id="act-cancel">Cancel</button><button type="button" id="act-go">Send</button></div>
 </dialog>
 <script>
 (function () {
@@ -378,8 +381,7 @@ input[type="number"] { width: 6rem; }
   var go = document.getElementById("act-go");
   var names = {start: "Start", stop: "Stop", dormant: "Dormant", wake: "Wake", dream: "Dream"};
   var asked = null;      // {verb, project} or {verb, all: true}: what the open dialog is about
-  var ticket = null;     // what the last preview gave, to send it
-  var step = "options";  // options, then preview, then done
+  var step = "options";  // options, then done
 
   function refresh() {
     return fetch("/view?t=" + encodeURIComponent(token), {cache: "no-store"}).then(function (answer) {
@@ -518,52 +520,22 @@ input[type="number"] { width: 6rem; }
     }
   }
 
-  function preview() {
+  function send() {
     var action = actionNow();
-    working("Asking conduct what it would do");
+    working("Sending: " + title.textContent +
+            (action.wait ? " (it waits up to " + action.wait + " s for the handover)" : ""));
     trouble("");
-    post("/preview", {action: action}).then(function (got) {
+    post("/run", {action: action}).then(function (got) {
       working("");
-      if (!got.ok) {
-        go.textContent = "Preview";
+      if (!got.ok) {                     // podium refused it, or is busy: nothing was run, so it can be put right
         trouble(got.said.error || "podium refused that");
         return;
       }
-      show(got.said);
-      options.hidden = true;
-      ticket = got.said.ticket;
-      if (ticket) {
-        step = "preview";
-        go.textContent = "Send";
-        note.textContent = "Nothing has been sent. This is what conduct would do: read it, then Send or Cancel.";
-        note.hidden = false;
-      } else {
-        step = "done";
-        go.hidden = true;
-        cancel.textContent = "Close";
-        trouble("conduct would not do this" + (got.said.exit === null ? "" : " (exit " + got.said.exit + ")") +
-                ", so there is nothing to send.");
-      }
-    });
-  }
-
-  function send() {
-    var sending = command.textContent.replace(/ --dry-run$/, "");
-    var waits = /--wait ([0-9]+)/.exec(sending);
-    command.textContent = sending;       // what is running now, in place of the dry run just read
-    output.textContent = "";
-    note.hidden = true;
-    working("Sending: " + sending + (waits ? " (it waits up to " + waits[1] + " s for the handover)" : ""));
-    post("/run", {ticket: ticket}).then(function (got) {
-      working("");
+      if (action.verb === "start" && got.said.exit === 0) { dialog.close(); return; }
       step = "done";
+      options.hidden = true;
       go.hidden = true;
       cancel.textContent = "Close";
-      note.hidden = true;
-      if (!got.ok) {
-        trouble(got.said.error || "podium refused that");
-        return;
-      }
       show(got.said);
       if (got.said.exit === 0) {
         note.textContent = "Done." + (got.said.reminder ? " " + got.said.reminder : "");
@@ -577,7 +549,6 @@ input[type="number"] { width: 6rem; }
 
   function open(verb, project, all) {
     asked = all ? {verb: verb, all: true} : {verb: verb, project: project};
-    ticket = null;
     step = "options";
     title.textContent = names[verb] + " " + (all ? "every session but bernstein's" : project);
     build(verb);
@@ -589,17 +560,15 @@ input[type="number"] { width: 6rem; }
     trouble("");
     working("");
     go.hidden = false;
-    go.textContent = "Preview";
     cancel.textContent = "Cancel";
     dialog.showModal();
-    if (verb === "dormant" || verb === "wake") { preview(); }
   }
 
   document.getElementById("view").addEventListener("click", function (event) {
     var pressed = event.target.closest("button.act");
     if (pressed) { open(pressed.dataset.verb, pressed.dataset.project, pressed.dataset.all === "1"); }
   });
-  go.addEventListener("click", function () { if (step === "options") { preview(); } else if (step === "preview") { send(); } });
+  go.addEventListener("click", function () { if (step === "options") { send(); } });
   cancel.addEventListener("click", function () { dialog.close(); });
   dialog.addEventListener("close", function () { refresh(); });
   document.getElementById("refresh").addEventListener("click", refresh);
@@ -668,8 +637,8 @@ def respond(method, target, token, fetch, now, entries=()):
 
 
 def act(target, body, token, panel):
-    """(status, content type, body) for a request to act: POST /preview with an action, then POST /run
-    with the ticket the preview gave. The token is in the body, and nothing is done without it."""
+    """(status, content type, body) for a request to act: POST /run with an action, which is run at once.
+    The token is in the body, and nothing is done without it."""
     if len(body) > BODY_LIMIT:
         return 413, "text/plain", "podium: that is more than podium takes in one request\n"
     try:
@@ -680,12 +649,9 @@ def act(target, body, token, panel):
     if not isinstance(given, str) or not hmac.compare_digest(given.encode("utf-8"), token.encode("utf-8")):
         return NO_TOKEN
     path = urllib.parse.urlsplit(target).path
-    if path == "/preview":
-        code, said = panel.preview(sent.get("action"))
-    elif path == "/run":
-        code, said = panel.send(sent.get("ticket"))
-    else:
+    if path != "/run":
         return 404, "text/plain", "podium: there is nothing to send to at this address\n"
+    code, said = panel.send(sent.get("action"))
     return code, "application/json", json.dumps(said) + "\n"
 
 
@@ -921,16 +887,15 @@ def command_for(action, names):
     return argv, brief
 
 
-def shown(argv, brief, dry_run=False):
-    """The command as it could be typed, for the preview and the log. A brief is shown by its length."""
+def shown(argv, brief):
+    """The command as it could be typed, for the page and the log. A brief is shown by its length."""
     text = "conduct " + " ".join(shlex.quote(a) for a in argv)
     if brief:
         text += f" --brief <the brief typed in podium, {len(brief)} characters>"
-    return text + (" --dry-run" if dry_run else "")
+    return text
 
 
 BUSY = (409, {"error": "podium is busy with another action: try again when it has finished"})
-GONE = (409, {"error": "that preview is no longer the latest one: preview again, then send"})
 REMINDER = ("Now in the desktop app: confirm the folder or folders it shows, then send the first line. If it is a "
             "Claude Code session, check its folder is the project's before anything else (the app has dropped it "
             "before), and ask a bernstein session to set its model and effort.")
@@ -944,14 +909,14 @@ def log_text(entry):
 
 
 class Panel:
-    """What podium knows and does between requests: the names in the last listing, the one preview
-    that may be sent, what it has run, and the one action that may run at a time. It runs conduct and
-    nothing else, and writes only the brief's temporary file and the log."""
+    """What podium knows and does between requests: the names in the last listing, what it has run, and
+    the one action that may run at a time. It runs conduct and nothing else, never with --dry-run (there
+    is no preview since 15 November 2026: an action sent is run), and writes only the brief's temporary
+    file and the log."""
 
-    def __init__(self, conduct, env, clock, log_path, run=subprocess.run, ticket=None):
+    def __init__(self, conduct, env, clock, log_path, run=subprocess.run):
         self.conduct, self.env, self.clock, self.log_path, self.run = conduct, env, clock, log_path, run
-        self.ticket = ticket or (lambda: secrets.token_urlsafe(16))
-        self.names, self.pending, self.entries = None, None, []
+        self.names, self.entries = None, []
         self.lock = threading.Lock()
 
     def listing(self):
@@ -961,7 +926,7 @@ class Panel:
             self.names = {r["mailbox"] for r in rows}
         return rows, raw, error
 
-    def call(self, argv, brief, dry_run):
+    def call(self, argv, brief):
         """Run conduct with these arguments: (exit code or None if it did not run to the end, what it
         printed, what it said on standard error or why it did not run). The brief is a file while it runs."""
         seconds = 60 + (int(argv[argv.index("--wait") + 1]) if "--wait" in argv else 0)
@@ -972,13 +937,9 @@ class Panel:
                 with os.fdopen(handle, "w", encoding="utf-8") as f:
                     f.write(brief)
                 full += ["--brief", path]
-            if dry_run:
-                full.append("--dry-run")
             try:
                 done = self.run(full, env=self.env, capture_output=True, text=True, check=False, timeout=seconds)
             except subprocess.TimeoutExpired:
-                if dry_run:
-                    return None, "", f"conduct did not answer within {seconds} seconds"
                 return None, "", (f"conduct was stopped after {seconds} seconds without finishing; some of it may "
                                   "have been done: look at the page before trying again")
             except OSError as why:
@@ -988,9 +949,8 @@ class Panel:
             if path:
                 os.remove(path)
 
-    def preview(self, action):
-        """(status, answer) for a preview: the verb run with --dry-run, and a ticket to send it if
-        conduct was content."""
+    def send(self, action):
+        """(status, the run as recorded) for an action the page sent: it is run for real, at once."""
         if not self.lock.acquire(blocking=False):
             return BUSY
         try:
@@ -1000,28 +960,7 @@ class Panel:
                 argv, brief = command_for(action, self.names or set())
             except Refused as why:
                 return 400, {"error": str(why)}
-            self.pending = None
-            code, output, error = self.call(argv, brief, True)
-            ticket = None
-            if code == 0:
-                ticket = self.ticket()
-                self.pending = (ticket, argv, brief)
-            return 200, {"command": shown(argv, brief, dry_run=True), "exit": code, "output": output,
-                         "error": error, "ticket": ticket}
-        finally:
-            self.lock.release()
-
-    def send(self, ticket):
-        """(status, the run as recorded) for sending the latest preview, once."""
-        if not self.lock.acquire(blocking=False):
-            return BUSY
-        try:
-            if (self.pending is None or not isinstance(ticket, str)
-                    or not hmac.compare_digest(ticket.encode("utf-8"), self.pending[0].encode("utf-8"))):
-                return GONE
-            _ticket, argv, brief = self.pending
-            self.pending = None
-            code, output, error = self.call(argv, brief, False)
+            code, output, error = self.call(argv, brief)
             entry = {"time": f"{self.clock():%Y-%m-%dT%H:%M:%SZ}", "command": shown(argv, brief), "exit": code,
                      "output": output, "error": error,
                      "reminder": REMINDER if argv[0] == "start" and code == 0 else None, "log_error": None}

@@ -295,29 +295,26 @@ def acted(world):
     return [c["args"] for c in world.calls() if c["prog"] == "conduct" and c["args"][:1] != ["status"]]
 
 
-def test_an_action_is_previewed_with_dry_run_then_sent_and_logged(world):
+def test_an_action_is_sent_at_once_with_no_dry_run_and_logged(world):
     world.status(RAW)
     log = os.path.join(world.home, ".bernstein", "podium.log")      # the default place, under HOME
     got = {}
 
     def talk(base):
         got["preview"] = post(base + "/preview", t="tok-en", action={"verb": "stop", "project": "lone-tools"})
-        got["log after preview"] = os.path.exists(log)
-        got["run"] = post(base + "/run", t="tok-en", ticket=got["preview"][1]["ticket"])
-        got["again"] = post(base + "/run", t="tok-en", ticket=got["preview"][1]["ticket"])
+        got["log after that"] = os.path.exists(log)
+        got["old way"] = post(base + "/run", t="tok-en", ticket="a ticket from an older page")
+        got["run"] = post(base + "/run", t="tok-en", action={"verb": "stop", "project": "lone-tools"})
         got["view"] = get(base + "/view?t=tok-en")
 
     assert serving(world, talk) == (0, "")
-    code, said = got["preview"]
-    assert code == 200 and said["command"] == "conduct stop lone-tools --dry-run" and said["exit"] == 0
-    assert said["output"] == "conduct stub: stop lone-tools\n" and said["ticket"]
-    assert got["log after preview"] is False
+    assert got["preview"][0] == 404 and got["log after that"] is False       # there is no preview to ask for
+    assert got["old way"] == (400, {"error": "an action must be a JSON object"})
     code, entry = got["run"]
     assert code == 200 and entry == {"time": "2026-10-18T09:40:00Z", "command": "conduct stop lone-tools", "exit": 0,
                                      "output": "conduct stub: stop lone-tools\n", "error": "", "reminder": None,
                                      "log_error": None}
-    assert got["again"][0] == 409
-    assert acted(world) == [["stop", "lone-tools", "--dry-run"], ["stop", "lone-tools"]]
+    assert acted(world) == [["stop", "lone-tools"]]
     with open(log, encoding="utf-8") as f:
         assert f.read() == ("2026-10-18T09:40:00Z  conduct stop lone-tools  (exit 0)\n"
                             "  conduct stub: stop lone-tools\n")
@@ -330,8 +327,7 @@ def test_the_log_goes_where_the_setting_says(world, tmp_path):
     world.write_conf(f"PODIUM_LOG={log}\n")
 
     def talk(base):
-        ticket = post(base + "/preview", t="tok-en", action={"verb": "wake", "all": True})[1]["ticket"]
-        post(base + "/run", t="tok-en", ticket=ticket)
+        post(base + "/run", t="tok-en", action={"verb": "wake", "all": True})
 
     assert serving(world, talk) == (0, "")
     with open(log, encoding="utf-8") as f:
@@ -345,16 +341,14 @@ def test_a_brief_typed_in_the_page_reaches_conduct_as_a_file_word_for_word_and_i
     got = {}
 
     def talk(base):
-        got["preview"] = post(base + "/preview", t="tok-en",
-                              action={"verb": "start", "project": "lone-tools", "pace": "relaxed", "brief": brief})
-        got["run"] = post(base + "/run", t="tok-en", ticket=got["preview"][1]["ticket"])
+        got["run"] = post(base + "/run", t="tok-en",
+                          action={"verb": "start", "project": "lone-tools", "pace": "relaxed", "brief": brief})
 
     assert serving(world, talk) == (0, "")
     calls = [c for c in world.calls() if c["prog"] == "conduct" and c["args"][:1] == ["start"]]
-    assert [c["brief"] for c in calls] == [brief, brief]
+    assert [c["brief"] for c in calls] == [brief]
     assert calls[0]["args"][:5] == ["start", "lone-tools", "--pace", "relaxed", "--brief"]
-    assert calls[0]["args"][6:] == ["--dry-run"] and len(calls[1]["args"]) == 6
-    assert not os.path.exists(calls[0]["args"][5]) and not os.path.exists(calls[1]["args"][5])
+    assert len(calls[0]["args"]) == 6 and not os.path.exists(calls[0]["args"][5])
     assert got["run"][1]["reminder"].startswith("Now in the desktop app: confirm the folder")
     assert got["run"][1]["command"] == ("conduct start lone-tools --pace relaxed --brief <the brief typed in podium, "
                                         f"{len(brief)} characters>")
@@ -365,12 +359,12 @@ def test_nothing_is_run_without_the_token_or_for_a_project_not_in_the_listing(wo
     got = {}
 
     def talk(base):
-        got["no token"] = post(base + "/preview", action={"verb": "stop", "project": "lone-tools"})
-        got["wrong token"] = post(base + "/run", t="tok", ticket="x")
-        got["token in the address only"] = post(base + "/preview?t=tok-en",
+        got["no token"] = post(base + "/run", action={"verb": "stop", "project": "lone-tools"})
+        got["wrong token"] = post(base + "/run", t="tok", action={"verb": "stop", "project": "lone-tools"})
+        got["token in the address only"] = post(base + "/run?t=tok-en",
                                                 action={"verb": "stop", "project": "lone-tools"})
-        got["stranger"] = post(base + "/preview", t="tok-en", action={"verb": "stop", "project": "elsewhere"})
-        got["all for start"] = post(base + "/preview", t="tok-en", action={"verb": "start", "all": True})
+        got["stranger"] = post(base + "/run", t="tok-en", action={"verb": "stop", "project": "elsewhere"})
+        got["all for start"] = post(base + "/run", t="tok-en", action={"verb": "start", "all": True})
 
     assert serving(world, talk) == (0, "")
     assert [got[k][0] for k in ("no token", "wrong token", "token in the address only")] == [403, 403, 403]
@@ -388,7 +382,7 @@ def test_a_post_whose_length_is_not_a_number_is_read_as_empty_and_refused_403(wo
         thread.start()
         try:
             got["reply"] = raw(server.server_address[1],
-                               "POST /preview HTTP/1.0\r\nContent-Length: lots\r\n\r\n")
+                               "POST /run HTTP/1.0\r\nContent-Length: lots\r\n\r\n")
         finally:
             server.shutdown()
             thread.join()

@@ -691,24 +691,28 @@ Each line has buttons for what can be done to that session now: **Start** when n
 it is dormant, quiet or stale. A bar at the top has **Stop all**, **Dormant all**, **Dream all** and
 **Wake all** when any session but bernstein's or a conductor's is in that state; bernstein's own line
 and a conductor's have no buttons.
-Nothing happens at one press:
+Nothing happens at one press, and there are two:
 
-1. The button opens a dialog. Start asks for an optional brief (sent word for word) and mail pace; Dream
-   for the minutes (5 to 240) and what comes after; Stop asks "Dream first?" (yes makes it a dream that
-   ends in a handover) and for an optional wait for the handover (1 to 600 seconds).
-2. **Preview** runs the `conduct` command with `--dry-run` and shows the command and everything it
-   printed: the message that would be sent, word for word. If `conduct` would refuse, its reason is
-   shown and there is nothing to send.
-3. **Send** runs exactly what was previewed, once, and shows what `conduct` printed and its exit code.
-   After a Start it reminds you what only you can do in the desktop app. Cancel sends nothing.
+1. The button opens a dialog. Start asks for an optional brief (sent word for word), a name and the mail
+   pace; Dream for the minutes (5 to 240) and what comes after; Stop asks "Dream first?" (yes makes it a
+   dream that ends in a handover) and for an optional wait for the handover (1 to 600 seconds); Dormant
+   and Wake have nothing to choose.
+2. **Send** runs the `conduct` command for real, at once, and then shows the command, what `conduct`
+   printed and its exit code. Cancel sends nothing. If podium itself refuses what was asked (minutes out
+   of range, say) or is busy, nothing is run and the dialog stays on its options with the reason.
+   **After a Start that worked the dialog closes by itself**, since the Claude app has come to the front
+   by then: the run, and the reminder of what only you can do in the app, are under "Activity". A Start
+   that failed keeps its dialog, with `conduct`'s reason.
 
-While `conduct` is running, for a preview or a send, the dialog says what it is waiting for and counts
-the seconds ("Sending: conduct stop recipes… 4 s"); `conduct`'s own output appears when it has finished.
+There is no preview since 15 November 2026: podium never runs `conduct` with `--dry-run`. For a dry run,
+run `conduct <verb> ... --dry-run` in Terminal.
+
+While `conduct` is running the dialog says what it is waiting for and counts the seconds ("Sending: Stop
+recipes… 4 s"); `conduct`'s own output appears when it has finished.
 
 What podium has run since it started is listed under "Activity" at the foot of the page, and each run
 is added to a log file (the setting `PODIUM_LOG`, `~/.bernstein/podium.log` unless set; its folder is
-made if missing): the time, the command, the exit code and the output. A preview is not a run and is
-not logged.
+made if missing): the time, the command, the exit code and the output.
 
 ```
 $ ./podium
@@ -722,13 +726,12 @@ It runs only while this command runs: stop it with Ctrl-C.
 - Every address needs the token in the link, which is new each run, so no other page in your browser
   and no other program can read it without the link. Without the token the answer is 403.
 - It only ever runs `conduct` (the one beside it): `conduct status --json` each time the page is made,
-  and the verb you previewed and sent, as a list of arguments, never through a shell. It never runs
+  and the verb you sent, as a list of arguments, never through a shell. It never runs
   `lobster-mail` itself, so every refusal and every message is `conduct`'s own.
 - It writes only two things: the log, added to and never written over, and a brief you typed, as a
   temporary file while `conduct` reads it, removed straight afterwards.
 - It acts only on a mailbox in the listing it last showed, only with the verbs and options above, only
-  one action at a time (a second while one runs is told "busy"), and only the latest preview can be
-  sent, once.
+  one action at a time (a second while one runs is told "busy").
 - `--port N` (or the setting `PODIUM_PORT`, 8417 unless set; 0 for any free port) says where to serve.
   If that port is in use, a free one is used and podium says so.
 - `--no-open` prints the link without opening the browser. If the browser cannot be opened, podium
@@ -737,7 +740,7 @@ It runs only while this command runs: stop it with Ctrl-C.
   next refresh; if podium itself has stopped, the page says so.
 - Addresses: `/` the page, `/view` the part that is made again, `/status` what `conduct status --json`
   printed (502 with the reason when it failed), each answering GET with `?t=<token>`. The buttons POST
-  JSON to `/preview` (`{"t": token, "action": {…}}`) and `/run` (`{"t": token, "ticket": …}`).
+  JSON to `/run` (`{"t": token, "action": {…}}`), which runs the action; there is no `/preview`.
 
 | Code | Meaning |
 |---|---|
@@ -1229,8 +1232,8 @@ pair there from `./new-lobster --render-into`, switch it with `./set-conf <name>
 `.claude/settings.json` other contents, run `./conform`, `./conduct start --dry-run` and `./conduct start`,
 and look at the link the stand-in was given, the files brought, the copies in `_to_delete/` and the Start
 message in the scratch mailbox.
-Its buttons are tried as far as Preview, which is `conduct`'s own dry run and sends nothing; Send is
-tried only against a stand-in for `conduct`, never the real one, unless the message is really wanted.
+Its buttons send at once (there is no preview since 15 November 2026), so whoever builds podium tries
+them only against a stand-in for `conduct` or a scratch mail root, never the real one.
 
 ## Known limitations and non-goals
 
@@ -1241,6 +1244,12 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 15 November 2026: `podium` has no preview any more. A button opens its dialog as before, and the
+  dialog's one button, **Send**, runs the `conduct` command for real at once; Dormant and Wake show the
+  dialog with nothing to choose. After a Start that worked the dialog closes by itself; every other run,
+  and a Start that failed, still shows what `conduct` printed. For a dry run use `conduct ... --dry-run`
+  in Terminal. For a program that talked to podium: `POST /preview` is gone (404) and `POST /run` takes
+  `{"t": token, "action": {…}}` in place of a ticket.
 - 15 November 2026: a non-code project may run as a Claude Code session on the Mac: `SESSION=code` in its
   `lobster.conf` ("A ganglion on the Mac: SESSION=code" above). New: `set-conf <project> SESSION=code`
   (and `SESSION=cowork` to switch back), `new-lobster <name> --session code`, and for such a project

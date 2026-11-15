@@ -96,14 +96,12 @@ class FakePanel:
         self.asked.append("listing")
         return self.answer
 
-    def preview(self, action):
-        self.asked.append(("preview", action))
-        return 200, {"command": "conduct stop recipes --dry-run", "exit": 0, "output": "Would…\n", "error": "",
-                     "ticket": "tick"}
-
-    def send(self, ticket):
-        self.asked.append(("send", ticket))
-        return 409, {"error": "that preview is no longer the latest one: preview again, then send"}
+    def send(self, action):
+        self.asked.append(("send", action))
+        if action == {"verb": "wake", "all": True}:
+            return 409, {"error": "podium is busy with another action: try again when it has finished"}
+        return 200, {"time": "2026-10-18T09:40:05Z", "command": "conduct stop recipes", "exit": 0,
+                     "output": "Sent…\n", "error": "", "reminder": None, "log_error": None}
 
 
 def body(**fields):
@@ -129,22 +127,32 @@ def test_a_get_goes_to_the_page_with_the_panel_s_listing_and_what_it_has_run():
     assert podium.answer("PUT", "/view?t=secret", b"", "secret", panel, NOW)[0] == 405
 
 
-def test_post_preview_gives_the_action_to_the_panel_and_its_answer_as_json():
+def test_post_run_gives_the_action_to_the_panel_and_its_answer_as_json():
     panel = FakePanel()
     action = {"verb": "stop", "project": "recipes"}
-    code, kind, text = podium.answer("POST", "/preview", body(t="secret", action=action), "secret", panel, NOW)
+    code, kind, text = podium.answer("POST", "/run", body(t="secret", action=action), "secret", panel, NOW)
     assert (code, kind) == (200, "application/json")
-    assert json.loads(text) == {"command": "conduct stop recipes --dry-run", "exit": 0, "output": "Would…\n",
-                                "error": "", "ticket": "tick"}
-    assert panel.asked == [("preview", action)]
+    assert json.loads(text) == {"time": "2026-10-18T09:40:05Z", "command": "conduct stop recipes", "exit": 0,
+                                "output": "Sent…\n", "error": "", "reminder": None, "log_error": None}
+    assert panel.asked == [("send", action)]
 
 
-def test_post_run_gives_the_ticket_to_the_panel_and_passes_its_status_on():
+def test_post_run_passes_the_panel_s_status_on():
     panel = FakePanel()
-    code, kind, text = podium.answer("POST", "/run", body(t="secret", ticket="tick"), "secret", panel, NOW)
+    code, kind, text = podium.answer("POST", "/run", body(t="secret", action={"verb": "wake", "all": True}),
+                                     "secret", panel, NOW)
     assert (code, kind) == (409, "application/json")
-    assert json.loads(text) == {"error": "that preview is no longer the latest one: preview again, then send"}
-    assert panel.asked == [("send", "tick")]
+    assert json.loads(text) == {"error": "podium is busy with another action: try again when it has finished"}
+
+
+def test_there_is_no_preview_to_post_to_and_a_ticket_is_no_action():
+    panel = FakePanel()
+    action = {"verb": "stop", "project": "recipes"}
+    assert podium.answer("POST", "/preview", body(t="secret", action=action), "secret", panel, NOW) == (
+        404, "text/plain", "podium: there is nothing to send to at this address\n")
+    assert panel.asked == []
+    podium.answer("POST", "/run", body(t="secret", ticket="tick"), "secret", panel, NOW)
+    assert panel.asked == [("send", None)]                  # no action: the panel is asked, and refuses
 
 
 @pytest.mark.parametrize("sent", [
@@ -161,20 +169,19 @@ def test_a_post_whose_body_does_not_carry_the_token_is_403_and_the_panel_is_not_
 
 def test_a_post_with_the_token_to_any_other_address_is_404_and_a_body_too_big_is_413():
     panel = FakePanel()
-    for path in ("/", "/view", "/status", "/preview/", "/run/x"):
+    for path in ("/", "/view", "/status", "/preview", "/preview/", "/run/x"):
         assert podium.answer("POST", path, body(t="secret"), "secret", panel, NOW) == (
             404, "text/plain", "podium: there is nothing to send to at this address\n")
     big = b" " * (podium.BODY_LIMIT + 1)
-    assert podium.answer("POST", "/preview", big, "secret", panel, NOW) == (
+    assert podium.answer("POST", "/run", big, "secret", panel, NOW) == (
         413, "text/plain", "podium: that is more than podium takes in one request\n")
     assert panel.asked == []
 
 
 def test_a_post_with_the_token_but_without_what_it_needs_goes_to_the_panel_to_refuse():
     panel = FakePanel()
-    podium.answer("POST", "/preview", body(t="secret"), "secret", panel, NOW)
     podium.answer("POST", "/run", body(t="secret"), "secret", panel, NOW)
-    assert panel.asked == [("preview", None), ("send", None)]
+    assert panel.asked == [("send", None)]
 
 
 def ran(returncode=0, stdout="", stderr=""):

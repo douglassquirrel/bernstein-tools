@@ -86,7 +86,7 @@ def test_the_command_is_shown_as_it_could_be_typed_and_a_brief_by_its_length():
     assert podium.shown(["dormant", "video tools"], None) == "conduct dormant 'video tools'"
     assert podium.shown(["start", "recipes", "--pace", "eager"], "Draft the menu.\n") == \
         "conduct start recipes --pace eager --brief <the brief typed in podium, 16 characters>"
-    assert podium.shown(["stop", "--all"], None, dry_run=True) == "conduct stop --all --dry-run"
+    assert podium.shown(["stop", "--all"], None) == "conduct stop --all"
 
 
 def test_the_start_dialog_has_a_field_for_the_session_s_name_and_sends_it():

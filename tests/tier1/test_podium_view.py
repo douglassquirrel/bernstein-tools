@@ -258,11 +258,15 @@ def test_activity_is_shown_even_when_conduct_status_fails_and_its_text_is_escape
     assert '<span class="badge alert">not run</span>' in html and "&lt;b&gt;x&lt;/b&gt;was not run" in html
 
 
-def test_the_page_has_one_dialog_that_previews_then_sends_with_the_token_in_the_body():
+def test_the_page_has_one_dialog_that_sends_at_once_with_the_token_in_the_body_and_no_preview():
     html = podium.page("<p>THE VIEW</p>")
-    assert '<dialog id="act"' in html and '<button type="button" id="act-go">Preview</button>' in html
+    assert '<dialog id="act"' in html and '<button type="button" id="act-go">Send</button>' in html
     assert '<button type="button" id="act-cancel">Cancel</button>' in html
-    assert 'post("/preview", {action: action})' in html and 'post("/run", {ticket: ticket})' in html
+    assert 'post("/run", {action: action})' in html
+    assert "preview" not in html.lower() and "ticket" not in html and "dry-run" not in html and "dry run" not in html
+    assert "Nothing has been sent" not in html
+    # after a Start that worked the box closes by itself: the app has come to the front by then
+    assert 'if (action.verb === "start" && got.said.exit === 0) { dialog.close(); return; }' in html
     assert 'method: "POST"' in html and "body.t = token" in html
     assert "Dream first?" in html                           # asked before any Stop
     assert "if (!dialog.open) { refresh(); }" in html       # the page does not change under an open dialog
@@ -274,7 +278,8 @@ def test_the_dialog_says_what_it_is_waiting_for_and_for_how_long_while_conduct_r
     html = podium.page("<p>THE VIEW</p>")
     assert ('<p id="act-progress" class="progress" role="status" hidden><span class="spin"></span>'
             '<span id="act-progress-text"></span></p>') in html
-    assert '"Asking conduct what it would do"' in html and '"Sending: "' in html
+    assert '"Sending: " + title.textContent' in html and "Asking conduct what it would do" not in html
+    assert '" (it waits up to " + action.wait + " s for the handover)"' in html
     assert "setInterval(tick, 1000)" in html and "clearInterval(ticking)" in html
     assert "@keyframes spin" in html and "prefers-reduced-motion: reduce" in html
     assert '"Working' not in html                     # the button no longer carries the only sign of life
@@ -413,3 +418,11 @@ def test_a_conductor_has_no_button_in_any_state_and_is_not_counted_for_the_butto
     html = podium.view(an_orchestra(), NOW)
     assert 'data-project="maestro"' not in html and 'data-project="maestro-tools"' in html
 
+
+
+def test_a_start_that_worked_carries_its_reminder_in_the_activity_since_its_box_has_closed():
+    remind = "Now in the desktop app: confirm the <folder>, then send the first line."
+    html = podium.view([], NOW, entries=[dict(RUNS[0], reminder=remind), dict(RUNS[0], reminder=None)])
+    assert html.count('<p class="remind">') == 1
+    assert '<p class="remind">Now in the desktop app: confirm the &lt;folder&gt;, then send the first line.</p>' in html
+    assert ".remind {" in podium.PAGE
