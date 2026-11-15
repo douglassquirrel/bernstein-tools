@@ -67,8 +67,8 @@ Each project's first session asks you for its purpose and brief.
 ## Usage
 
 ```
-new-lobster [--dry-run] [--public] [--backlog] [--template DIR] [--non-code-dir DIR] [--code-dir DIR]
-            [--model MODEL] [--effort EFFORT] <name>
+new-lobster [--dry-run] [--public] [--backlog] [--session cowork|code] [--template DIR]
+            [--non-code-dir DIR] [--code-dir DIR] [--model MODEL] [--effort EFFORT] <name>
 new-lobster --claw [--dry-run] [--public] [--backlog] <name>
 new-lobster --feeler [--dry-run] [--claws "a b"] <name>
 new-lobster --check-template [--template DIR] [--show WAY FILE]
@@ -88,6 +88,9 @@ new-lobster --check-template [--template DIR] [--show WAY FILE]
   `<name>-tools-code/`, beside a checkout `<name>-tools/` that holds the code and an MIT licence. The outer folder also gets a git repository of its own, with no remote, started last of all with
   everything beside the checkout in it (what `local-history` does, below); a dry run says so in a line
   beginning "And:".
+- `--session code`: the non-code project runs as a Claude Code session on the Mac, not in Claude
+  Cowork: see "A ganglion on the Mac" below. `--session cowork` is the default and changes nothing. Not
+  with `--claw` or `--feeler`.
 - `--template`, `--non-code-dir`, `--code-dir`, `--model`, `--effort`: override the settings below.
 
 What it makes, for `recipes`: `<non-code dir>/recipes/` and `<code dir>/recipes-tools/`, each a git
@@ -208,12 +211,14 @@ feeler: 5 files, 1 to fill; does not get inbox/README.md
 feeler,claw: 5 files, 1 to fill; does not get inbox/README.md
 feeler,claws: 5 files, 1 to fill; does not get inbox/README.md
 
-23 ways: 6 faults in 6 ways.
+31 ways: 6 faults in 6 ways.
 ```
 
-- **The 23 ways**, each named by its kind and then `public`, `tickets` and `claws` where they apply,
-  joined by commas: `non-code` (the non-code half of a pair; with `public` when its tools half is
-  public, `tickets`, and `claws` when it uses two further claws: 8 ways); `code` (the tools half of a
+- **The 31 ways**, each named by its kind and then `mac`, `public`, `tickets` and `claws` where they
+  apply, joined by commas: `non-code` (the non-code half of a pair; with `public` when its tools half is
+  public, `tickets`, and `claws` when it uses two further claws: 8 ways); the same eight again with
+  `mac` after the kind (`non-code,mac,public`), rendered for a Claude Code session on the Mac
+  (`SESSION=code`, below), so that a fault in what only such a session is told is found; `code` (the tools half of a
   pair), `claw` (a lone claw) and `conductor-claw` (a claw whose sister is a conductor), each plain,
   `public`, `tickets` and `public,tickets` (12 ways); `feeler`, `feeler,claw` and `feeler,claws` (no
   claw, one, two). Each is rendered for the invented names `example` and `example-tools` (further claws
@@ -222,7 +227,9 @@ feeler,claws: 5 files, 1 to fill; does not get inbox/README.md
   that is not there, a missing include, an unknown placeholder, a file that is not valid JSON once
   filled in, a file that is not UTF-8); `{{` left in a rendered file anywhere but at a `{{to fill: ...}}`
   gap, with the file and the line's number; a global file that reads differently forty days later (it
-  uses `{{DATE}}`); a `common/global-files` that names a path outside a project.
+  uses `{{DATE}}`); a `common/global-files` that names a path outside a project; a `mac` way whose
+  `lobster.conf` does not say `SESSION=code`, because `common/lobster.conf` lacks the line
+  `SESSION={{SESSION}}` (`new-lobster --session code` could not make a project from such a template).
 - **A note, not a fault:** a global file that a way does not get ("does not get inbox/README.md").
 - Each way's line gives its number of files and how many "to fill" gaps it leaves for the project's
   first session.
@@ -317,6 +324,77 @@ $ ./conform maestro
 conform: maestro is a conductor: give its claw too, as in conform maestro maestro-tools
 ```
 
+## A ganglion on the Mac: SESSION=code
+
+A non-code project's session is a Claude Cowork one unless its `lobster.conf` says otherwise. Cowork runs
+its commands in a virtual machine, with the project's folders connected under `~/mnt/`; it cannot run a
+program on the Mac. A project whose work needs one (a transcriber, a model in a Mac folder) says
+
+```
+SESSION=code
+```
+
+and its session is then a Claude Code one, opened in the project's own folder. `SESSION=cowork`, an empty
+`SESSION=` and no line all mean Claude Cowork, and **a project with no such line is treated exactly as
+before**. Only a non-code project may have the line: on a tools project or a conductor (always Claude
+Code) or a feeler (always Claude Cowork) it is refused, and so is any other value. What each command does
+for such a project:
+
+- **`conduct start`** opens `claude://code/new` in the project's folder, with the first line, the Start
+  message and the reminder of the model and effort that a tools project gets. Nothing is connected: its
+  claws, `lobster-tools`, the mail root and any `FOLDERS` are simply there, so `FOLDERS` need only be full
+  paths to folders that exist (two with the same last name are no clash), and the line about them reads
+  "Named in FOLDERS in its lobster.conf, and there on the Mac with nothing to connect: …". The dry run adds
+  "A Claude Code session on the Mac would open, as SESSION=code in its lobster.conf says."
+- **The mail hook.** A Claude Code session reads its mail by the `lobster-mail start` hook in
+  `.claude/settings.json`, so `start` looks at that file first. One that has the hook for this mail root
+  is left alone, whatever else it holds. With no file, the template's is written. A file without the hook
+  is moved whole to the project's `_to_delete/before-hook-<stamp>/.claude/settings.json` and the template's
+  written, and the Start message tells the session where the old file is, so that it can carry its own
+  settings across. The dry run says which of the three it found and writes nothing. `start` stops (exit 3)
+  if the file is a folder, a link or unreadable, and (exit 4) if the template has no
+  `non-code/.claude/settings.json` or its hook does not name this mail root; nothing is then sent or
+  opened. `--facts-to` records the global files only, not the hook.
+- **`conduct status`** gives the project the link to its newest Claude Code session that is not archived
+  (it cannot tell that session from another opened in the same folder). `stop`, `dormant`, `wake`,
+  `dream`, `reset` and `waiting` do what they do for any non-code project.
+- **`set-conf <project> SESSION=code`** switches an existing project, and `SESSION=cowork` switches it
+  back. The next `conduct start` then brings the global files for the new kind of session, keeping the
+  old ones in `_to_delete/`, as it does when the template changes.
+- **`conform`** checks the project against the files rendered for the session it names, so files written
+  for the other kind read as behind ("conduct start brings it up to date"); it lists a `SESSION` that is
+  not `cowork` or `code`, and one on a project that is not non-code.
+- **`new-lobster <name> --session code`** makes a pair whose non-code project is one from its first day;
+  `--dry-run` and `--render-into` take the flag too. It stops (exit 4) before making anything if the
+  template's `lobster.conf` cannot say `SESSION=code`.
+
+```
+$ ./set-conf demo SESSION=code
+demo: /Users/me/projects/non-code/demo/lobster.conf
+  was: SESSION=cowork
+  now: SESSION=code
+  the file as it was is kept in /Users/me/projects/non-code/demo/_to_delete/before-conf-change-2026-11-15-1305/lobster.conf
+Nothing was committed and nothing was sent: demo is owed a notice by mail of this change.
+$ ./conduct start --dry-run demo
+...
+Would bring up to date in /Users/me/projects/non-code/demo: LOBSTER-RULES.md, START-HERE.txt
+Would replace /Users/me/projects/non-code/demo/.claude/settings.json, which has no lobster-mail start hook for /Users/me/projects/mail, with the template's, keeping the file as it is in /Users/me/projects/non-code/demo/_to_delete/before-hook-2026-11-15-1305/.claude/settings.json
+Would open:
+  claude://code/new?folder=%2FUsers%2Fme%2Fprojects%2Fnon-code%2Fdemo&q=Session%20title%3A%20demo...
+A Claude Code session on the Mac would open, as SESSION=code in its lobster.conf says.
+Would name the session: demo · 15 November
+Dry run: nothing was sent or opened.
+```
+
+**What the template needs for it.** One placeholder, `{{SESSION}}`: `cowork` or `code` in the non-code
+half, empty in every other. `common/lobster.conf` carries the line `SESSION={{SESSION}}`. A passage that
+differs between the two kinds of session goes in two files of `common/sections/`, say
+`machine-cowork.md` and `machine-code.md`, included with `{{> sections/machine-{{SESSION}}.md}}`, as
+`{{VISIBILITY}}` and `{{BACKLOG}}` choose a section. With `code`, `{{CLAW_MOUNTS}}` and `{{CLAW_ROWS}}`
+name each claw's real checkout (`~/projects/code/word-tools`) where they otherwise say `~/mnt/word-tools`;
+`{{TOOLS_PATH}}`, `{{NONCODE_PATH}}`, `{{MAIL_ROOT}}` and `{{LOBSTER_TOOLS}}` are real paths in both.
+`non-code/.claude/settings.json` holds the hook. Not built: a feeler or a conductor with the setting.
+
 ## conduct: starting and stopping a project's session
 
 ```
@@ -348,7 +426,8 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
   `--brief FILE`, or wait), and opens the session in the Claude desktop app with the
   documented link: a Claude session for a non-code project, with its folder, the mail root, its
   home claw, each further claw in `CLAWS`, each claw's `<claw>-secrets` folder when there is one
-  beside it, and `lobster-tools` connected; a Claude Code session for a tools project. You
+  beside it, and `lobster-tools` connected; a Claude Code session for a tools project, and for a
+  non-code project that says `SESSION=code` ("A ganglion on the Mac" above). You
   confirm the folders and send the prefilled first line. For a Claude Code session it reminds you
   to have a bernstein session set its model and effort, which a program cannot do.
   **Further folders.** A non-code project or a feeler whose session needs a folder that is neither its
@@ -687,7 +766,8 @@ and EFFORT), for a non-code project every claw in CLAWS present in the code fold
 `inbox/README.md`, CLAUDE.md having each section the template's CLAUDE.md for that half takes from
 `common/sections/` and each heading naming the pair, the Inbox and Mail sections in the template's
 exact wording (blank lines aside), every folder named in FOLDERS present (and none named by a tools
-project), a git repository, the mailbox, and, for a public tools
+project), a `SESSION` that is `cowork` or `code` and only on a non-code project (which is then checked
+against the files rendered for that kind of session), a git repository, the mailbox, and, for a public tools
 project, none of the outer files (CLAUDE.md, PLAN.md, DIARY.md, START-HERE.txt, `lobster.conf`,
 `inbox/`, `.claude/`, and the template's global files) inside the checkout. When the template names
 global files, each must be in the project's folder and equal the template's render for that project:
@@ -808,7 +888,8 @@ set-conf [--dry-run] PROJECT KEY=VALUE
 
 A project's `lobster.conf` says which tools projects and further folders its session is connected to
 and which model and effort it must run on. `set-conf` changes one of those settings in one project:
-`SISTER`, `CLAWS`, `FOLDERS`, `MODEL` or `EFFORT`. It never changes `KIND` or `SELF`, which say what the
+`SISTER`, `CLAWS`, `FOLDERS`, `MODEL`, `EFFORT` or `SESSION` (a non-code project's kind of session,
+`cowork` or `code`: "A ganglion on the Mac" above). It never changes `KIND` or `SELF`, which say what the
 project is, and it knows no other key. Run it with `--dry-run` first.
 
 ```
@@ -1142,6 +1223,12 @@ that every `.git/index` is byte for byte as it was.
 mailbox there with the real `lobster-mail`, send it a Stop as `bernstein`, take its duty, give the duty's
 `heartbeat` file an old time, then run `./conduct reset <name> --dry-run` and the real run, and read the
 mailbox with `lobster-mail start`.
+A ganglion on the Mac is tried only on scratch folders, with a settings file whose template, folders and
+mail root are all scratch ones and a stand-in for `open` first on `PATH`, so that no session opens: make a
+pair there from `./new-lobster --render-into`, switch it with `./set-conf <name> SESSION=code`, give its
+`.claude/settings.json` other contents, run `./conform`, `./conduct start --dry-run` and `./conduct start`,
+and look at the link the stand-in was given, the files brought, the copies in `_to_delete/` and the Start
+message in the scratch mailbox.
 Its buttons are tried as far as Preview, which is `conduct`'s own dry run and sends nothing; Send is
 tried only against a stand-in for `conduct`, never the real one, unless the message is really wanted.
 
@@ -1154,6 +1241,15 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 15 November 2026: a non-code project may run as a Claude Code session on the Mac: `SESSION=code` in its
+  `lobster.conf` ("A ganglion on the Mac: SESSION=code" above). New: `set-conf <project> SESSION=code`
+  (and `SESSION=cowork` to switch back), `new-lobster <name> --session code`, and for such a project
+  `conduct start` opens Claude Code in its folder and puts the mail hook in `.claude/settings.json` when
+  it is missing, keeping any file it replaces in `_to_delete/before-hook-<stamp>/`. A project with no
+  `SESSION` line is treated exactly as before. Changed for everyone: `new-lobster --check-template` now
+  renders 31 ways, not 23 (eight named with `mac`), and reports a fault in each of those eight until the
+  template's `common/lobster.conf` has the line `SESSION={{SESSION}}`; and `set-conf`'s message for a
+  setting it does not know now lists six settings.
 - 15 November 2026: new form `new-lobster --check-template [--template DIR] [--show WAY FILE]` renders
   the template all 23 ways the commands can (each kind of project, public or private, tickets or none,
   further claws or none), lists each fault with its file, and writes nothing. Exit 0 only if every way

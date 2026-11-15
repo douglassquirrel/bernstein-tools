@@ -251,3 +251,16 @@ def test_ticket_settings_that_cannot_be_read_stop_the_start_before_the_hook_is_t
     with open(os.path.join(folder, REL)) as f:
         assert f.read() == "{}\n"
     assert calls(world, "send") == [] and calls(world, "open") == []
+
+
+def test_a_settings_file_that_appears_while_the_start_runs_is_never_written_over(world, monkeypatch):
+    from bernstein import conduct
+    folder, _hook = on_the_mac(world, "appeared after the look\n")
+    monkeypatch.setattr(conduct.hook, "state", lambda folder, root: "missing")     # the look found no file
+    code, out, err = world.conduct("start", "recipes")
+    assert (code, out) == (4, "")
+    assert err == (f"conduct: the lobster-mail start hook could not be put in {folder}/{REL} (File exists): "
+                   "nothing was sent or opened\n")
+    with open(os.path.join(folder, REL)) as f:
+        assert f.read() == "appeared after the look\n"
+    assert calls(world, "send") == [] and calls(world, "open") == []

@@ -107,3 +107,19 @@ def test_all_counts_a_ganglion_on_the_mac_like_any_other(world):
     code, out, err = world.conform("--all")
     assert (code, err) == (0, "")
     assert "  a start mends: the template's current RULES.md (a global file: conduct start brings it up to date)\n" in out
+
+
+def test_a_ganglion_on_the_mac_is_checked_with_each_further_claw_where_it_really_is(world):
+    nc, outer, _checkout = split_pair(world)
+    os.rmdir(os.path.join(world.code, "knives"))                 # the further claw is a public one, a folder down
+    world.project("knives", "code", public=True, under="kitchen", sister="")
+    write(world.template, {"non-code/RULES.md": GLOBAL["non-code/RULES.md"] + "{{CLAW_MOUNTS}}\n"})
+    says(nc, "SESSION=code")
+    write(nc, {"RULES.md": ON_THE_MAC})                          # as if the claw were directly in the code folder
+    assert world.conform("recipes", "recipes-tools") == (
+        1, (f"recipes (non-code): {nc}\n{BEHIND}recipes-tools (code): {outer}\n  in line\n"
+            "1 thing to bring into line.\n"), "")
+    write(nc, {"RULES.md": ON_THE_MAC.replace("`~/projects/code/knives`",
+                                              "`~/projects/code/kitchen/knives-code/knives`")})
+    code, out, err = world.conform("recipes", "recipes-tools")
+    assert (code, err) == (0, "") and out.endswith("Both halves are in line.\n")
