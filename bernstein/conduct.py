@@ -374,10 +374,12 @@ def claw_folders(claw, code_dir, conf, key):
     return checkout, secrets if os.path.isdir(secrets) else None
 
 
-def further_folders(settings, conf, kind, home, connected):
+def further_folders(settings, conf, kind, home, connected, session="cowork"):
     """The folders FOLDERS in a project's lobster.conf names besides the usual ones, as full paths: separated
     by colons, ~/ for the home folder. Refused: a tools project naming any, a path that is not full or not
-    a folder, and one whose last name another connected folder has (a session sees each as ~/mnt/<name>)."""
+    a folder, and one whose last name another connected folder has (a session sees each as ~/mnt/<name>).
+    A non-code project whose session is a Claude Code one on the Mac has nothing connected: its folders are
+    simply there, so two with one last name are no clash."""
     raw = settings.get("FOLDERS", "")
     named = [part.strip() for part in raw.split(":") if part.strip()]
     if not named:
@@ -396,7 +398,7 @@ def further_folders(settings, conf, kind, home, connected):
             raise ProjectRefused(f"{conf} names the folder {path} in FOLDERS, which is not a folder on this Mac: "
                                  "make it, or correct the line")
         last = os.path.basename(path)
-        if last in seen:
+        if last in seen and session == "cowork":
             raise ProjectRefused(f"{conf} names the folder {path} in FOLDERS, but {seen[last]} is connected too: a "
                                  f"session sees each as ~/mnt/{last}, so their last names must differ")
         seen[last] = path
@@ -492,7 +494,7 @@ def checked_project(name, found, settings, code_dir, home=None):
             claws.append(claw_folders(claw, code_dir, conf, "CLAWS"))
         claw_names = [sister] + settings.get("CLAWS", "").split()
     connected = [folder] + [path for pair in claws for path in pair if path]
-    folders = further_folders(settings, conf, kind, home, connected)
+    folders = further_folders(settings, conf, kind, home, connected, session)
     return SimpleNamespace(name=name, kind=kind, folder=folder, checkout=checkout, sister=sister, claws=claws,
                            claw_names=claw_names, model=settings.get("MODEL", ""),
                            effort=settings.get("EFFORT", ""), folders=folders, session=session,
@@ -524,7 +526,7 @@ def encode(params):
 
 def link_for(project, mail_root, lobster_tools, name):
     """The documented desktop-app link that opens the project's session with its first line."""
-    if project.kind in ("non-code", "feeler"):
+    if project.session == "cowork":
         folders = [project.folder, mail_root]
         for checkout, secrets in project.claws:
             folders += [checkout] + ([secrets] if secrets else [])
@@ -776,8 +778,9 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None):
     """One row per mailbox in the duty listing, joined with what lookup(name) says of its project.
     lookup gives what find_project gives, or raises ProjectRefused as conduct start would; folder_of
     then gives the folder alone, if there is one. sessions is what app_sessions found, by folder, and
-    cowork what cowork_sessions found: a non-code project gets its cowork session if it has one, any
-    other row its Claude Code session, and each falls back to the other kind."""
+    cowork what cowork_sessions found: a non-code project gets its cowork session if it has one (its Claude
+    Code session, if its lobster.conf says SESSION=code), any other row its Claude Code session, and each
+    falls back to the other kind."""
     rows = []
     for name, entry in boxes.items():
         row = {"mailbox": name, "state": state_of(entry), "kind": None, "folder": None, "model": None,
@@ -786,17 +789,19 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None):
                "new": entry.get("new", 0), "open": entry.get("open", 0),
                "handover_waiting": bool(entry.get("handover_waiting")), "reported": entry.get("reported"),
                "session": None}
+        in_cowork = False
         try:
             p = lookup(name)
         except ProjectRefused as why:
             row["refused"] = str(why)
             row["folder"] = folder_of(name) if folder_of else None
         else:
+            in_cowork = p.kind in ("non-code", "feeler") and getattr(p, "session", "cowork") == "cowork"
             row.update(kind=p.kind, folder=p.folder, model=p.model, effort=p.effort, sister=p.sister,
                        claws=list(p.claw_names))
         if row["folder"]:
             real = os.path.realpath(row["folder"])
-            first, second = (cowork, sessions) if row["kind"] in ("non-code", "feeler") else (sessions, cowork)
+            first, second = (cowork, sessions) if in_cowork else (sessions, cowork)
             row["session"] = (first or {}).get(real) or (second or {}).get(real)
         rows.append(row)
     for row in rows:
@@ -848,6 +853,9 @@ def send(s, env, to, subject, body, err):
                   f"(lobster-mail exit {DELIVERED}); it was not sent again\n  {done[1]}\n")
 
 
+THERE = "Named in FOLDERS in its lobster.conf, and there on the Mac with nothing to connect"
+
+
 def start(a, s, env, today, out, err, sleep):
     if a.facts_to and facts.refusal(a.facts_to):
         raise Stop(2, facts.refusal(a.facts_to))
@@ -887,16 +895,20 @@ def start(a, s, env, today, out, err, sleep):
     split = globalfiles.is_split(rendered, project.folder)
     behind = [rel for rel, how in globalfiles.state(rendered, project.folder) if how == "behind"] if split else []
     link = link_for(project, s["MAIL_ROOT"], os.path.dirname(s["LOBSTER_MAIL"]), name)
+    on_the_mac = project.kind == "non-code" and project.session == "code"
     if a.dry_run:
-        body = start_message(brief, today, name, can_rename=project.kind == "code")
+        body = start_message(brief, today, name, can_rename=project.session == "code")
         out.write(f"Would send to {a.project}, as bernstein, subject \"Start: {a.project}\":\n\n{body}\n")
         if behind:
             out.write(f"Would bring up to date in {project.folder}: {', '.join(behind)}\n")
             if a.facts_to:
                 out.write(f"Would write the facts for a notice to {a.facts_to}.\n")
         out.write(f"Would open:\n  {link}\n")
+        if on_the_mac:
+            out.write("A Claude Code session on the Mac would open, as SESSION=code in its lobster.conf says.\n")
         if project.folders:
-            out.write(f"Would also connect, from FOLDERS in its lobster.conf: {', '.join(project.folders)}\n")
+            out.write(f"{THERE if on_the_mac else 'Would also connect, from FOLDERS in its lobster.conf'}: "
+                      f"{', '.join(project.folders)}\n")
         out.write(f"Would name the session: {name}\n")
         out.write("Dry run: nothing was sent or opened.\n")
         return
@@ -917,16 +929,17 @@ def start(a, s, env, today, out, err, sleep):
     elif rendered and not split:
         out.write(f"{a.project} does not keep the template's global files apart yet: its files are left as "
                   "they are.\n")
-    body = start_message(brief, today, name, updated, kept, can_rename=project.kind == "code")
+    body = start_message(brief, today, name, updated, kept, can_rename=project.session == "code")
     if a.pace:
         pace(s, env, a.project, a.pace)
     send(s, env, a.project, f"Start: {a.project}", body, err)
     out.write(f"Sent the Start message to {a.project}.\n")
     run(["open", link], env, "open")
     if project.folders:
-        out.write(f"Also connected, from FOLDERS in its lobster.conf: {', '.join(project.folders)}\n")
+        out.write(f"{THERE if on_the_mac else 'Also connected, from FOLDERS in its lobster.conf'}: "
+                  f"{', '.join(project.folders)}\n")
     out.write(f"The session is to be named: {name}\n")
-    if project.kind in ("non-code", "feeler"):
+    if project.session == "cowork":
         out.write(f"Opened a Claude session for {a.project}: confirm its folders, then send its first line.\n")
     else:
         out.write(f"Opened a Claude Code session for {a.project}: confirm its folder, then send its first line.\n")
