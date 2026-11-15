@@ -15,6 +15,7 @@ from bernstein import globalfiles
 from bernstein.conduct import (
     ProjectRefused,
     conductor_folder,
+    discovered,
     locate,
     non_code_folder_in,
     read_conf_file,
@@ -409,21 +410,6 @@ def report(a, s, out):
 
 
 KINDS = ("non-code", "code", "feeler", "conductor")
-
-
-def discovered(s):
-    """{name: [(folder, the kind its place suggests)]} for every folder holding a lobster.conf, directly in
-    the non-code or the code folder or one folder down. A folder that is a project is not looked into."""
-    found = {}
-    for base, placed in ((s["NON_CODE_DIR"], "non-code"), (s["CODE_DIR"], "code")):
-        for top in subfolders(base):
-            for folder in [top] if os.path.isfile(os.path.join(top, "lobster.conf")) else subfolders(top):
-                if os.path.isfile(os.path.join(folder, "lobster.conf")):
-                    name = os.path.basename(folder)
-                    if placed == "code" and name.endswith("-code"):
-                        name = name[: -len("-code")]
-                    found.setdefault(name, []).append((folder, placed))
-    return found
 
 
 def sorted_out(found):

@@ -273,6 +273,7 @@ conduct dormant <project> | --all  [--dry-run]
 conduct wake    <project> | --all  [--dry-run]
 conduct dream   <project> | --all  [--minutes N] [--then dormant|stop] [--dry-run]
 conduct status  [--json]
+conduct waiting [--json]
 ```
 
 `conduct` talks to a lobster project's session by mail, as `bernstein`; each project's guidance
@@ -415,6 +416,73 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
   would refuse, or `null`), `session` (below), and `duty`, `pace`, `new`, `open`, `handover_waiting` and
   `reported` as `lobster-mail duty status --all --json` gives them. `reported` needs a `lobster-tools` with the
   `status` verb (10 November 2026); with an older one it is always `null`.
+- **`waiting`** shows what is waiting across every project: commits not pushed, files not committed, and
+  bernstein's mail not dealt with. It reads only, so it has no `--dry-run`: it never fetches, pushes,
+  claims or closes anything and writes no file.
+
+  ```
+  $ ./conduct waiting
+  bernstein
+    /Users/you/projects/code/bernstein-code: 1 file uncommitted
+
+  recipes-tools
+    /Users/you/projects/code/recipes-tools-code: no remote; 2 files uncommitted
+    /Users/you/projects/code/recipes-tools-code/recipes-tools: 2 commits not pushed
+    From bernstein, unread: "Notice: your rules changed" (sent 2026-10-18T08:00:00Z)
+    From bernstein, claimed and not closed: "Stop: hand over" (sent 2026-10-17T16:00:00Z)
+    To bernstein, unread: "Re: Request 3: built" (sent 2026-10-18T08:00:00Z)
+    To bernstein, claimed and not closed: "Request 4: a flag" (sent 2026-10-18T08:00:00Z)
+
+  salads (a mailbox with no project folder)
+    From bernstein, unread: "Start: salads" (sent 2026-10-18T08:00:00Z)
+
+  squirrel (no project folder and no mailbox)
+    To bernstein, unread: "hello" (sent 2026-10-18T08:00:00Z)
+
+  video-tools
+    /Users/you/projects/code/video/video-tools: not a git repository
+
+  Other repositories (not lobster projects):
+    /Users/you/projects/code/video/halmos-code/halmos: 1 commit not pushed; 1 file uncommitted
+    /Users/you/projects/non-code/writing/nötes: no upstream branch: never pushed
+
+  Waiting: 3 commits not pushed, 4 files uncommitted, 3 messages from bernstein not dealt with, 3 messages to bernstein not closed, 1 repository never pushed, 1 folder not a git repository.
+  Nothing waiting in 1 project and 2 other repositories.
+  No remote and nothing uncommitted: 1 repository.
+  ```
+
+  - **What it looks at.** Every lobster project (a folder holding a `lobster.conf`, directly in
+    `NON_CODE_DIR` or `CODE_DIR` or one folder down, as `conform --all` finds them); every mailbox under
+    the mail root; and every other git repository directly in those two folders or one folder down that
+    is not a lobster project and not inside one, with the `<x>/` inside a folder named `<x>-code/`.
+    Those others are listed apart, git only.
+  - **Git**, in a project's folder and, for a public tools project (`<name>-code/`), in the checkout
+    `<name>/` inside it too. Commits not pushed are counted against the branch's upstream *as last
+    fetched* (`git rev-list --count @{u}..HEAD`): nothing is fetched. A repository with a remote whose
+    branch has no upstream is "never pushed". One with no remote has nothing to push and is listed only
+    if something in it is uncommitted, as "no remote". Files uncommitted are the lines of `git
+    --no-optional-locks status --porcelain`, untracked files included; with that flag git writes
+    nothing, not even its index. A project's folder with no `.git` is "not a git repository".
+  - **Mail.** For each mailbox but bernstein's own: the messages from `bernstein` in its `new/`
+    ("unread") and `open/` ("claimed and not closed"), and the messages from it in bernstein's `new/`
+    and `open/`, each with its subject (quoted as JSON quotes a string) and when it was sent. It asks
+    `lobster-mail` only for the duty listing and for `list --new` and `list --open`.
+  - **What is shown.** A block for each project with something waiting, by name; a mailbox with no
+    project says "(a mailbox with no project folder)" and a project with no mailbox "(no mailbox)", but
+    neither alone makes a block. Then the other repositories that wait, one line of totals, how many
+    projects and other repositories have nothing waiting, and how many repositories have no remote and
+    nothing uncommitted. In a block only the repositories with something to say are listed.
+  - **`--json`** prints everything, the projects with nothing waiting too: `root`; `projects`, each with
+    `name`, `folders`, `mailbox` (true or false), `repositories`, `from_bernstein`, `to_bernstein` and
+    `waiting`; `other_repositories`; and `totals` (`projects`, `projects_waiting`, `other_repositories`,
+    `other_repositories_waiting`, `commits_not_pushed`, `never_pushed`, `files_uncommitted`, `not_git`,
+    `from_bernstein`, `to_bernstein`, `no_remote_nothing_uncommitted`). A repository is `folder`, `git`,
+    `remote`, `upstream`, `unpushed`, `uncommitted` and `waiting`, with `null` where a thing does not
+    apply (`unpushed` where there is no remote or no upstream). A message is `id`, `subject`, `sent` and
+    `state` (`unread` or `claimed`).
+  - **Exit codes.** 0 whenever the report is made, whatever is waiting: read `totals` in `--json` to
+    know. 4 if `git` or `lobster-mail` cannot be run, fails, or prints what is not expected: the message
+    names the repository or the mailbox, and nothing of the report is printed.
 
 `start` checks the project before it sends or opens anything, and refuses (exit 3) with a message
 saying what to fix when any part a lobster project has is missing: the folder (`<CODE_DIR>/<name>`
@@ -437,10 +505,10 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 
 | Code | Meaning |
 |---|---|
-| 0 | Sent (and, with `--wait`, handed over); or, for `stop`, `dormant`, `wake` and `dream`, nobody on duty; or, for `status`, shown; or, for `reset`, reset or nothing to reset |
+| 0 | Sent (and, with `--wait`, handed over); or, for `stop`, `dormant`, `wake` and `dream`, nobody on duty; or, for `status` and `waiting`, shown, whatever is waiting; or, for `reset`, reset or nothing to reset |
 | 2 | Bad arguments or settings, or `--minutes` outside 5 to 240, or a brief or handover note that cannot be read |
 | 3 | No such project or mailbox, or the project lacks a part `start` needs; or, for `start`, a session is already on duty, or a Start sent in the last ten minutes still waits unread; or, for `reset`, a session is fresh on duty |
-| 4 | A program failed, or the duty listing or a list of the project's mail could not be read |
+| 4 | A program failed, or the duty listing or a list of the project's mail could not be read; for `waiting`, `git` failed in a repository too |
 | 5 | `--wait` ran out before the handover arrived |
 
   `session` is the project's newest session in the Claude desktop app: `{"id", "link", "app",
@@ -892,7 +960,7 @@ Every failure is one line on standard error starting `new-lobster:`, saying what
 
 `tests/tier1/` tests the pure parts (names, settings, rendering) against small invented templates;
 `tests/tier2/` runs `new-lobster` end to end against stubs of `git`, `backlog`, `lobster-mail` and
-Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `drop-backlog`, `set-conf` and `notice` against invented projects and the stub of `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open`, `podium` against a stub of `conduct` (its request
+Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `drop-backlog`, `set-conf` and `notice` against invented projects and the stub of `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open` (and, for `conduct waiting`, of `git`, which prints what each invented repository is given to say), `podium` against a stub of `conduct` (its request
 handling as a plain function; three tests fetch the page from a real socket on `127.0.0.1`, which is this
 machine and not the network), and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
 that appears while `new-lobster` is running, a race the tests cannot stage.
@@ -921,6 +989,11 @@ Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a set
 `./conduct status` and `./conduct status --json` read only, so they are run against the real mail root
 and projects as they are. So is `./podium`: open its link, look at the page at full and at phone width,
 in light and dark, press Refresh, then stop it with Ctrl-C and press Refresh again to see the page say so.
+`./conduct waiting` reads only too, but whoever builds it tries it only on scratch folders: make a few
+small repositories there with the real git (level with a bare origin, ahead of it with a file changed and
+one untracked, with no remote, with a remote and no upstream, and a `<x>-code/<x>`), run `./conduct waiting`
+and `./conduct waiting --json`, and check that no file under the scratch folders is newer than the run and
+that every `.git/index` is byte for byte as it was.
 `conduct reset` is tried only on a scratch mail root (`MAIL_ROOT` in a scratch settings file): make a
 mailbox there with the real `lobster-mail`, send it a Stop as `bernstein`, take its duty, give the duty's
 `heartbeat` file an old time, then run `./conduct reset <name> --dry-run` and the real run, and read the
@@ -937,6 +1010,13 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 15 November 2026: new verb `conduct waiting [--json]` shows what is waiting across every project:
+  commits not pushed, files not committed (in a public tools project, in the checkout and in the folder
+  around it), bernstein's messages to each project not yet dealt with, and each project's messages to
+  bernstein not yet closed; then the other git repositories in the project folders, a line of totals,
+  and how many have nothing waiting. It reads only: it never fetches, so "not pushed" is as last
+  fetched. It exits 0 whenever it could make its report, whatever is waiting, and 4 if `git` or
+  `lobster-mail` failed. Nothing else changes: `conduct status` is as it was.
 - 14 November 2026: new command `notice [--dry-run] --subject TEXT --body FILE [--facts FILE] [--keep DIR]
   PROJECT ...` sends one notice to several projects as `bernstein`, each with its own facts filled in,
   checks everything before sending anything, and passes over a project that already has the notice

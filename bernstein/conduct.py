@@ -2,7 +2,8 @@
 
 PLAN.md ("The start and stop tool", "As built") is the specification. Exit codes: 0 done, 2 bad
 arguments or settings, 3 no such project or mailbox (or, for start, a session already running),
-4 a program failed or the duty listing could not be read, 5 --wait ran out.
+4 a program failed or the duty listing could not be read, 5 --wait ran out. `conduct waiting` is
+PLAN.md's "`conduct waiting`": it reads only, and is 0 whenever its report is made.
 """
 
 import argparse
@@ -15,7 +16,7 @@ import subprocess
 import urllib.parse
 from types import SimpleNamespace
 
-from bernstein import facts, globalfiles
+from bernstein import facts, globalfiles, waiting
 from bernstein.render import MONTHS, TemplateRefused
 from bernstein.settings import SettingsRefused, read_settings
 
@@ -293,6 +294,54 @@ def locate(name, base, found_in):
     return found[0] if found else None
 
 
+def discovered(s):
+    """{name: [(folder, the kind its place suggests)]} for every folder holding a lobster.conf, directly in
+    the non-code or the code folder or one folder down. A folder that is a project is not looked into."""
+    found = {}
+    for base, placed in ((s["NON_CODE_DIR"], "non-code"), (s["CODE_DIR"], "code")):
+        for top in subfolders(base):
+            for folder in [top] if os.path.isfile(os.path.join(top, "lobster.conf")) else subfolders(top):
+                if os.path.isfile(os.path.join(folder, "lobster.conf")):
+                    name = os.path.basename(folder)
+                    if placed == "code" and name.endswith("-code"):
+                        name = name[: -len("-code")]
+                    found.setdefault(name, []).append((folder, placed))
+    return found
+
+
+def checkout_inside(folder):
+    """The folder <x> inside a folder named <x>-code, where a public checkout is; None for any other name."""
+    name = os.path.basename(folder)
+    return os.path.join(folder, name[: -len("-code")]) if name.endswith("-code") else None
+
+
+def is_repository(folder):
+    return os.path.lexists(os.path.join(folder, ".git"))
+
+
+def other_repositories(s):
+    """The git repositories that are not lobster projects: each folder with a .git directly in the non-code
+    or the code folder or one folder down, and the <x> inside one named <x>-code. A lobster project is not
+    looked into, nor is a repository."""
+    found = []
+
+    def look(folder):
+        """Note what is a repository here; whether to leave the folders inside alone."""
+        if os.path.isfile(os.path.join(folder, "lobster.conf")):
+            return True
+        inner = checkout_inside(folder)
+        here = [f for f in (folder, inner) if f and is_repository(f)]
+        found.extend(here)
+        return bool(here)
+
+    for base in (s["NON_CODE_DIR"], s["CODE_DIR"]):
+        for top in subfolders(base):
+            if not look(top):
+                for sub in subfolders(top):
+                    look(sub)
+    return sorted(found)
+
+
 def tools_folders(name, code_dir):
     """(folder, checkout) for a tools project in code_dir or one of its subfolders; where it would be if neither."""
     plain = os.path.join(code_dir, name)
@@ -498,7 +547,8 @@ def parser():
                       "conduct dormant <project> | --all [--dry-run]\n"
                       "conduct wake <project> | --all [--dry-run]\n"
                       "conduct dream <project> | --all [--minutes N] [--then dormant|stop] [--dry-run]\n"
-                      "conduct status [--json]",
+                      "conduct status [--json]\n"
+                      "conduct waiting [--json]",
                formatter_class=argparse.RawDescriptionHelpFormatter)
     verbs = p.add_subparsers(dest="verb", parser_class=Parser)
     s = verbs.add_parser("start", help="send a Start message and open the project's session")
@@ -545,13 +595,17 @@ def parser():
     r.add_argument("--dry-run", action="store_true", help="show the message; send nothing")
     u = verbs.add_parser("status", help="show every mailbox's session: what it is doing, its project and its mail")
     u.add_argument("--json", action="store_true", help="print the rows as JSON")
+    g = verbs.add_parser("waiting", help="show what is waiting in every project: commits not pushed, files "
+                         "uncommitted, and bernstein's mail not dealt with; it reads only")
+    g.add_argument("--json", action="store_true", help="print everything as JSON, the projects with nothing "
+                   "waiting too")
     return p
 
 
-def run(argv, env, what, stdin=None, also_fine=()):
+def run(argv, env, what, stdin=None, also_fine=(), cwd=None):
     """Run a program; its standard output, or (exit code, detail) for an exit code in also_fine."""
     try:
-        done = subprocess.run(argv, input=stdin, env=env, capture_output=True, text=True, check=False)
+        done = subprocess.run(argv, input=stdin, env=env, capture_output=True, text=True, check=False, cwd=cwd)
     except OSError as why:
         raise Stop(4, f"{what} could not be run ({why.strerror})")
     detail = (done.stderr or done.stdout).strip()
@@ -562,18 +616,22 @@ def run(argv, env, what, stdin=None, also_fine=()):
     return done.stdout
 
 
+def read_listing(s, env):
+    """({mailbox: its entry}, the folders lobster-mail skipped) from one duty listing."""
+    text = run([s["LOBSTER_MAIL"], "duty", "status", "--all", "--json", "--root", s["MAIL_ROOT"]],
+               env, "lobster-mail duty status --all")
+    try:
+        listed = json.loads(text)
+        return {m["mailbox"]: m for m in listed["mailboxes"]}, list(listed.get("skipped") or [])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise Stop(4, "lobster-mail duty status --all --json did not print the expected JSON")
+
+
 def listing(s, env, sleep, skipped=None):
     """The duty listing by mailbox, looking again while a duty is caught changing. The folders lobster-mail
     says it skipped are added to the list skipped, when one is given."""
     for tries in range(CHANGING_TRIES + 1):
-        text = run([s["LOBSTER_MAIL"], "duty", "status", "--all", "--json", "--root", s["MAIL_ROOT"]],
-                   env, "lobster-mail duty status --all")
-        try:
-            listed = json.loads(text)
-            boxes = {m["mailbox"]: m for m in listed["mailboxes"]}
-            passed_over = list(listed.get("skipped") or [])
-        except (ValueError, KeyError, TypeError, AttributeError):
-            raise Stop(4, "lobster-mail duty status --all --json did not print the expected JSON")
+        boxes, passed_over = read_listing(s, env)
         changing = [n for n, m in boxes.items() if m.get("duty_changing")]
         if not changing:
             if skipped is not None:
@@ -1122,6 +1180,64 @@ def status(a, s, env, now, out, err, sleep):
         out.write(status_text(rows, now))
 
 
+def git_facts(folder, env):
+    """What git says of one folder, as waiting.repository gives it. Three commands that only read; with
+    --no-optional-locks, git status does not write even its index."""
+    if not is_repository(folder):
+        return waiting.repository(folder, False)
+    remote = run(["git", "remote"], env, f"git remote in {folder}", cwd=folder)
+    ahead = None
+    if remote.strip():
+        ahead = run(["git", "rev-list", "--count", "@{u}..HEAD"], env, f"git rev-list in {folder}", cwd=folder,
+                    also_fine=(128,))       # 128: no upstream branch, a detached HEAD, or no commit yet
+        if isinstance(ahead, tuple):
+            ahead = None
+    status = run(["git", "--no-optional-locks", "status", "--porcelain"], env, f"git status in {folder}", cwd=folder)
+    try:
+        return waiting.repository(folder, True, remote, ahead, status)
+    except ValueError:
+        raise Stop(4, f"git rev-list --count in {folder} did not print a number")
+
+
+def listed_mail(s, env, mailbox):
+    """[(sender, message)] for what is in a mailbox's new/ and then its open/."""
+    found = []
+    for box, state in (("new", "unread"), ("open", "claimed")):
+        text = run([s["LOBSTER_MAIL"], "list", "--as", mailbox, f"--{box}", "--json", "--root", s["MAIL_ROOT"]],
+                   env, f"lobster-mail list --{box} for {mailbox}")
+        try:
+            found += waiting.messages(json.loads(text), state)
+        except ValueError:
+            raise Stop(4, f"lobster-mail list --{box} --json did not print the expected JSON for {mailbox}")
+    return found
+
+
+def waiting_report(a, s, env, now, out, err, sleep):
+    """Print what is waiting across the projects: commits not pushed, files uncommitted, bernstein's mail not
+    dealt with. It reads only: git remote, rev-list and status, and lobster-mail's duty listing and lists.
+    Nothing is fetched, pushed, claimed, closed or written."""
+    boxes, _skipped = read_listing(s, env)
+    found = discovered(s)
+    going = {}
+    if "bernstein" in boxes:
+        for sender, message in listed_mail(s, env, "bernstein"):
+            if sender != "bernstein":
+                going.setdefault(sender, []).append(message)
+    projects = []
+    for name in sorted(set(found) | set(boxes) | set(going)):
+        folders = [folder for folder, _placed in found.get(name, [])]
+        inside = [checkout_inside(folder) for folder, placed in found.get(name, []) if placed == "code"]
+        coming = []
+        if name in boxes and name != "bernstein":
+            coming = [message for sender, message in listed_mail(s, env, name) if sender == "bernstein"]
+        projects.append(waiting.project(
+            name, folders, name in boxes,
+            [git_facts(f, env) for f in folders + [f for f in inside if f and os.path.isdir(f)]],
+            coming, going.get(name, [])))
+    data = waiting.report(s["MAIL_ROOT"], projects, [git_facts(f, env) for f in other_repositories(s)])
+    out.write(json.dumps(data, indent=1) + "\n" if a.json else waiting.text(data))
+
+
 NOT_FOR_A_CONDUCTOR = ("start", "finish", "dormant", "wake", "dream")
 
 
@@ -1145,9 +1261,10 @@ def main(argv, env, today, out, err, sleep):
         except SettingsRefused as why:
             raise Stop(2, f"{why} (conduct --help shows the form)")
         if a.verb is None:
-            raise Stop(2, "say start, stop, finish, reset, dormant, wake, dream or status (conduct --help shows the form)")
+            raise Stop(2, "say start, stop, finish, reset, dormant, wake, dream, status or waiting (conduct --help shows "
+                          "the form)")
         verbs = {"start": start, "stop": stop, "finish": finish, "reset": reset, "dormant": dormant, "wake": wake,
-                 "dream": dream, "status": status}
+                 "dream": dream, "status": status, "waiting": waiting_report}
         if a.verb in NOT_FOR_A_CONDUCTOR and a.project and conductor_folder(a.project, s["CODE_DIR"]):
             raise Stop(3, f"{a.project} is a conductor, the session that runs conduct: conduct {a.verb} has nothing "
                           "to do to it; Squirrel starts and stops it himself")

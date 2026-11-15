@@ -8,7 +8,9 @@ first argument) or `name:verb:code` (that exit code; 1 otherwise). The lobster-m
 the text in `check.json` (default: `[]`, no new mail); its `list --new` and `list --open` print
 `list-new.json` and `list-open.json` (default: `[]`), or `list-new-<mailbox>.json` where there is one for the
 mailbox named by `--as`; its `send --json` prints an id made from the recipient; its `read ... ID` prints the
-file `read-ID.txt` if there is one. The conduct stub's
+file `read-ID.txt` if there is one. The git stub prints
+the file `.git/stub-<verb>` of its working folder, if there is one, for its first argument that is not a flag,
+and exits with the number in `.git/stub-<verb>-exit` (World.repo() writes them). The conduct stub's
 `status` prints the text in `status.json` (default: no mailboxes); its other verbs print "conduct stub: "
 and their first two arguments, and a `--brief FILE` is read into the call's record as `brief`.
 """
@@ -82,6 +84,11 @@ STUB = textwrap.dedent(r"""        #!/bin/sh
             elif [ $# -ge 2 ]; then echo "conduct stub: $1 $2"
             else echo "conduct stub: ${{1-}}"
             fi ;;
+        git)
+            verb=
+            for a in "$@"; do case "$a" in -*) ;; *) verb=$a; break ;; esac; done
+            if [ -n "$verb" ] && [ -f ".git/stub-$verb" ]; then /bin/cat ".git/stub-$verb"; fi
+            if [ -n "$verb" ] && [ -f ".git/stub-$verb-exit" ]; then exit "$(/bin/cat ".git/stub-$verb-exit")"; fi ;;
         python3)
             if [ "${{1-}}" = -m ] && [ "${{2-}}" = venv ]; then
                 /bin/mkdir -p "$3/bin" && /bin/cp "$0" "$3/bin/pip" && /bin/chmod 755 "$3/bin/pip"
@@ -246,6 +253,19 @@ class World:
         write_tree(folder, {"lobster.conf": f"KIND=conductor\nSELF={name}\nSISTER={claw}\nMODEL=fable\nEFFORT=xhigh\n"
                                             + extra,
                             "CLAUDE.md": "The conductor's own rules.\n", ".git/HEAD": "ref: refs/heads/main\n"})
+        return folder
+
+    def repo(self, folder, remote="origin", ahead=0, changed=(), upstream=True):
+        """Make folder a git repository as the git stub sees it: what `git remote` prints (remote="" for
+        none), how many commits `git rev-list --count` says are ahead (upstream=False: exit 128, as git
+        does with no upstream branch), and the lines `git status --porcelain` prints."""
+        files = {".git/HEAD": "ref: refs/heads/main\n", ".git/stub-remote": remote + "\n" if remote else "",
+                 ".git/stub-status": "".join(line + "\n" for line in changed)}
+        if upstream:
+            files[".git/stub-rev-list"] = f"{ahead}\n"
+        else:
+            files[".git/stub-rev-list-exit"] = "128\n"
+        write_tree(folder, files)
         return folder
 
     def conduct(self, *argv, sleep=None):
