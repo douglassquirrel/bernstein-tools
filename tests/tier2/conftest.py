@@ -19,83 +19,28 @@ import datetime
 import io
 import json
 import os
-import shlex
-import textwrap
 
 import pytest
 
 from bernstein import newlobster
 
-# A shell script, not Python: a stub is started thousands of times in a run of the suite, and /bin/sh starts
-# in about a quarter of the time. Every program it runs is named by its full path, so that it still works
-# when a test's PATH holds the stubs alone. The log is NUL-separated pairs (key, value), one record a call:
-# prog, cwd, arg (once for each argument), then stdin and brief when there are any, then end.
-STUB = textwrap.dedent(r"""        #!/bin/sh
-        set -f
-        here={bin}
-        name=${{0##*/}}
-        last=; prev=; brief=; as=; to=; json=
-        for a in "$@"; do
-            [ "$prev" = --brief ] && brief=$a
-            [ "$prev" = --as ] && as=$a
-            [ "$prev" = --to ] && to=$a
-            [ "$a" = --json ] && json=1
-            last=$a; prev=$a
-        done
-        {{
-            printf 'prog\0%s\0cwd\0%s\0' "$name" "$(pwd -P)"
-            for a in "$@"; do printf 'arg\0%s\0' "$a"; done
-            if [ "$last" = - ]; then printf 'stdin\0'; /bin/cat; printf '\0'; fi
-            if [ "$name" = conduct ] && [ -n "$brief" ] && [ "$last" != --brief ]; then
-                printf 'brief\0'; /bin/cat "$brief"; printf '\0'
-            fi
-            printf 'end\0.\0'
-        }} >> "$here/calls.log"
-        if [ -f "$here/fail" ]; then
-            for rule in $(/bin/cat "$here/fail"); do
-                prog=${{rule%%:*}}; rest=${{rule#"$prog"}}; rest=${{rest#:}}
-                verb=${{rest%%:*}}; code=${{rest#"$verb"}}; code=${{code#:}}
-                if [ "$prog" = "$name" ] && {{ [ -z "$verb" ] || [ "$verb" = "${{1-}}" ]; }}; then
-                    echo "$name: stub failure" >&2
-                    exit "${{code:-1}}"
-                fi
-            done
-        fi
-        none='{{"root": "", "mailboxes": [], "skipped": []}}'
-        show() {{ if [ -f "$here/$1" ]; then /bin/cat "$here/$1"; echo; else echo "$2"; fi; }}
-        case "$name" in
-        lobster-mail)
-            if [ "${{1-}}" = duty ] && [ "${{2-}}" = status ] && [ "${{3-}}" = --all ]; then show duty.json "$none"; fi
-            if [ "${{1-}}" = check ]; then show check.json "[]"; fi
-            if [ "${{1-}}" = list ]; then
-                box=new
-                for a in "$@"; do [ "$a" = --open ] && box=open; done
-                if [ -f "$here/list-$box-$as.json" ]; then /bin/cat "$here/list-$box-$as.json"; echo
-                else show "list-$box.json" "[]"
-                fi
-            fi
-            if [ "${{1-}}" = send ] && [ -n "$json" ]; then
-                printf '{{"id": "2026-10-18-0940-bernstein-to-%s", "to": "%s"}}\n' "$to" "$to"
-            fi
-            if [ "${{1-}}" = read ] && [ -f "$here/read-$last.txt" ]; then /bin/cat "$here/read-$last.txt"; fi ;;
-        conduct)
-            if [ "${{1-}}" = status ]; then
-                if [ -f "$here/status.json" ]; then /bin/cat "$here/status.json"; else printf '%s' "$none"; fi
-            elif [ $# -ge 2 ]; then echo "conduct stub: $1 $2"
-            else echo "conduct stub: ${{1-}}"
-            fi ;;
-        git)
-            verb=
-            for a in "$@"; do case "$a" in -*) ;; *) verb=$a; break ;; esac; done
-            if [ -n "$verb" ] && [ -f ".git/stub-$verb" ]; then /bin/cat ".git/stub-$verb"; fi
-            if [ -n "$verb" ] && [ -f ".git/stub-$verb-exit" ]; then exit "$(/bin/cat ".git/stub-$verb-exit")"; fi ;;
-        python3)
-            if [ "${{1-}}" = -m ] && [ "${{2-}}" = venv ]; then
-                /bin/mkdir -p "$3/bin" && /bin/cp "$0" "$3/bin/pip" && /bin/chmod 755 "$3/bin/pip"
-            fi ;;
-        esac
-        exit 0
-        """)
+# The stub is stub.sh, beside this file. A shell script, not Python: a stub is started over a thousand times
+# in a run of the suite, and /bin/sh starts in about a quarter of the time. One file, linked into each
+# World's bin under each program's name, not written afresh for each test: macOS takes 40 to 160 ms over the
+# first run of a script file it has not seen and about 7 over a new link to one it has (15 November 2026).
+# Every program it runs is named by its full path, so that it still works when a test's PATH holds the
+# stubs alone, and it finds its World's bin as the first folder of PATH. The log is NUL-separated pairs
+# (key, value), one record a call: prog, cwd, arg (once for each argument), then stdin and brief when there
+# are any, then end. A test that needs a different stub removes the link and writes its own file.
+STUB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stub.sh")
+with open(STUB, "rb") as _f:
+    STUB_AS_COMMITTED = _f.read()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Every World links to the one stub, so a test that wrote to its link would have changed it for all."""
+    with open(STUB, "rb") as f:
+        assert f.read() == STUB_AS_COMMITTED, "a test wrote over tests/tier2/stub.sh: restore it with git"
 
 
 def read_calls(path):
@@ -170,10 +115,7 @@ class World:
             os.makedirs(d, exist_ok=True)
         write_tree(self.template, TEMPLATE)
         for prog in ("git", "backlog", "lobster-mail", "python3", "open", "conduct"):
-            p = os.path.join(self.bin, prog)
-            with open(p, "w") as f:
-                f.write(STUB.format(bin=shlex.quote(self.bin)))
-            os.chmod(p, 0o755)
+            os.symlink(STUB, os.path.join(self.bin, prog))
         self.conf = os.path.join(base, "bernstein.conf")
         self.write_conf("")
 

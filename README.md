@@ -965,6 +965,12 @@ handling as a plain function; three tests fetch the page from a real socket on `
 machine and not the network), and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
 that appears while `new-lobster` is running, a race the tests cannot stage.
 
+The stubs are one shell script, `tests/tier2/stub.sh`, which acts by the name it is called as; each test
+links to it under each program's name in a folder of its own and never writes to it (a test that needs a
+different stub removes its link and writes its own file). It is one shared file because macOS takes about
+a sixth of a second over the first run of a script it has not seen: with a new script for every test the
+suite took 72 seconds, with links to one it takes about 25.
+
 Manual check of `local-history` against the real git (Tier 3): make a scratch folder with a file or two
 and a small git repository inside it, run `./local-history --dry-run` on it and then without the flag, and
 look: `git ls-files` lists the folder's own files and not the checkout's, `git status --short` and `git

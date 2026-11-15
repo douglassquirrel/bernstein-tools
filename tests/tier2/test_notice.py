@@ -341,8 +341,10 @@ def test_a_bad_settings_line_a_project_in_two_places_and_an_answer_with_no_id_ar
     world.write_conf("")
     with open(os.path.join(world.bin, "lobster-mail")) as f:
         stub = f.read()
+    os.remove(os.path.join(world.bin, "lobster-mail"))      # the link to the one stub: this test has its own
     with open(os.path.join(world.bin, "lobster-mail"), "w") as f:
         f.write(stub.replace("printf '{\"id\": \"2026-10-18-0940-bernstein-to-%s\", \"to\": \"%s\"}\\n' \"$to\" \"$to\"",
                              "echo Sent"))
+    os.chmod(os.path.join(world.bin, "lobster-mail"), 0o755)
     code, out, err = notice(world, *args[:4], "recipes")
     assert (code, err) == (0, "") and out.startswith("Sent to recipes: its id is not known\n")
