@@ -98,6 +98,10 @@ def parser_for_new_lobster():
         prog="new-lobster",
         description="Make a new lobster project: a non-code project and its tools project, "
         "with a mailbox each, from bernstein's lobster-project template.",
+        epilog="new-lobster --check-template [--template DIR] [--show WAY FILE] checks, writing nothing, that "
+        "the template renders every way these commands can render it (each kind of project, public or "
+        "private, with tickets or none, with further claws or none) and lists each fault; --show prints "
+        "one file as one way renders it.",
     )
     p.add_argument("name", help="the non-code project's name; the tools project is <name>-tools")
     p.add_argument("--dry-run", action="store_true", help="check and show everything, write nothing")

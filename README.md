@@ -71,6 +71,7 @@ new-lobster [--dry-run] [--public] [--backlog] [--template DIR] [--non-code-dir 
             [--model MODEL] [--effort EFFORT] <name>
 new-lobster --claw [--dry-run] [--public] [--backlog] <name>
 new-lobster --feeler [--dry-run] [--claws "a b"] <name>
+new-lobster --check-template [--template DIR] [--show WAY FILE]
 ```
 
 - `<name>`: the non-code project's name: lower-case letters, digits and single hyphens, starting
@@ -180,6 +181,59 @@ but cannot be read, `conduct start` stops with exit 3 and `conform` with exit 4,
 nothing is changed. A feeler has no tickets, so nothing is read for one. In a
 public tools project a global file sits beside the checkout, like `CLAUDE.md`, and is never
 committed in it. A template without the list has no global files, and nothing below changes.
+
+### Checking the template: new-lobster --check-template
+
+```
+new-lobster --check-template [--template DIR] [--show WAY FILE]
+```
+
+After a change to the template, this renders it every way these commands can render it and lists each
+fault. It takes no project name and no other flag, reads the template named in the settings (or by
+`--template`), runs no program and writes nothing, so there is no dry run.
+
+```
+$ ./new-lobster --check-template
+Template: /Users/you/templates/lobster
+Version: 18 October 2026 (2)
+Global files: RULES.md, START-HERE.txt, inbox/README.md
+
+non-code: 6 files, 1 to fill
+non-code,public: 6 files, 1 to fill
+...
+code,public: cannot be rendered
+  fault: code/CLAUDE.md: unknown placeholder {{NOPE}}
+...
+feeler: 5 files, 1 to fill; does not get inbox/README.md
+feeler,claw: 5 files, 1 to fill; does not get inbox/README.md
+feeler,claws: 5 files, 1 to fill; does not get inbox/README.md
+
+23 ways: 6 faults in 6 ways.
+```
+
+- **The 23 ways**, each named by its kind and then `public`, `tickets` and `claws` where they apply,
+  joined by commas: `non-code` (the non-code half of a pair; with `public` when its tools half is
+  public, `tickets`, and `claws` when it uses two further claws: 8 ways); `code` (the tools half of a
+  pair), `claw` (a lone claw) and `conductor-claw` (a claw whose sister is a conductor), each plain,
+  `public`, `tickets` and `public,tickets` (12 ways); `feeler`, `feeler,claw` and `feeler,claws` (no
+  claw, one, two). Each is rendered for the invented names `example` and `example-tools` (further claws
+  `first-tools` and `second-tools`) with your settings' folders, model and effort.
+- **A fault:** a way that cannot be rendered, with the file and the reason (a folder of the template
+  that is not there, a missing include, an unknown placeholder, a file that is not valid JSON once
+  filled in, a file that is not UTF-8); `{{` left in a rendered file anywhere but at a `{{to fill: ...}}`
+  gap, with the file and the line's number; a global file that reads differently forty days later (it
+  uses `{{DATE}}`); a `common/global-files` that names a path outside a project.
+- **A note, not a fault:** a global file that a way does not get ("does not get inbox/README.md").
+- Each way's line gives its number of files and how many "to fill" gaps it leaves for the project's
+  first session.
+- **`--show WAY FILE`** prints that one file as that way renders it, and nothing else: byte for byte
+  what `new-lobster --render-into` writes for the same file with the name `example` and the matching
+  flags. `./new-lobster --check-template --show conductor-claw LOBSTER-RULES.md` shows a passage as a
+  conductor's claw will read it, which no other command can.
+- **Exit codes:** 0 every way renders clean (notes do not count); 4 any fault, or `--show` for a way
+  that cannot be rendered, or a template folder that is not there; 2 a project name or any other flag
+  with `--check-template`, a `--show` whose way or file is not there (the message lists those that
+  are), or a bad settings line.
 
 ## Feelers: light projects for one-off work
 
@@ -1064,6 +1118,9 @@ Manual check of `notice` against the real `lobster-mail` (Tier 3), only ever on 
 (`lobster-mail init`); write facts with `./set-conf --facts-to`; run `./notice --dry-run`, then for real
 with `--keep`, and read the mailboxes with `lobster-mail list`; run it again to see both passed over.
 
+`./new-lobster --check-template` only reads the template, so it is run on the real one as it is, with
+scratch settings for everything else; `--show` likewise.
+
 Manual check of `manifest` (Tier 3), only ever on scratch folders: make a scratch project with a few
 files, a link, a `.git/` and a file of twenty megabytes; `./manifest save` it and compare the record's
 checksum of the large file with `shasum -a 256`; `./manifest compare` (no difference); move a folder into
@@ -1097,6 +1154,11 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 15 November 2026: new form `new-lobster --check-template [--template DIR] [--show WAY FILE]` renders
+  the template all 23 ways the commands can (each kind of project, public or private, tickets or none,
+  further claws or none), lists each fault with its file, and writes nothing. Exit 0 only if every way
+  renders clean, 4 otherwise. `--show WAY FILE` prints one rendered file. It is the check to run after a
+  change to the template, in place of several dry runs. Every other form of `new-lobster` is as it was.
 - 15 November 2026: new command `manifest save FILE PROJECT...` and `manifest compare FILE [--expect-only
   PATTERN]...`: a record of every file of some projects (size and SHA-256), and afterwards exactly what
   was changed, moved, added or gone, with a plain yes or no when you say which paths may differ. It

@@ -10,6 +10,7 @@ import os
 import shlex
 import subprocess
 
+from bernstein import checktemplate
 from bernstein.globalfiles import declared
 from bernstein.render import TemplateRefused, render_half, values_for
 from bernstein.settings import (
@@ -397,6 +398,8 @@ def main(argv, env, today, out, err):
     if "-h" in argv or "--help" in argv:
         out.write(parser_for_new_lobster().format_help())
         return 0
+    if "--check-template" in argv:
+        return checktemplate.main(argv, env, today, out, err)
     try:
         path, text = read_conf(env)
         try:
