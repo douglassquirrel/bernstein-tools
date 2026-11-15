@@ -115,9 +115,9 @@ def test_an_argument_that_is_not_key_equals_value_is_a_bad_argument(argument):
 @pytest.mark.parametrize("argument, why", [
     ("KIND=code", "KIND and SELF say what a project is, and set-conf never changes them"),
     ("SELF=menus", "KIND and SELF say what a project is, and set-conf never changes them"),
-    ("PACE=eager", "set-conf does not know the setting PACE: it sets SISTER, CLAWS, FOLDERS, MODEL or EFFORT"),
-    ("folders=~/x", "set-conf does not know the setting folders: it sets SISTER, CLAWS, FOLDERS, MODEL or EFFORT"),
-    ("# MODEL=x", "set-conf does not know the setting # MODEL: it sets SISTER, CLAWS, FOLDERS, MODEL or EFFORT"),
+    ("PACE=eager", "set-conf does not know the setting PACE: it sets SISTER, CLAWS, FOLDERS, MODEL, EFFORT or SESSION"),
+    ("folders=~/x", "set-conf does not know the setting folders: it sets SISTER, CLAWS, FOLDERS, MODEL, EFFORT or SESSION"),
+    ("# MODEL=x", "set-conf does not know the setting # MODEL: it sets SISTER, CLAWS, FOLDERS, MODEL, EFFORT or SESSION"),
     ("FOLDERS=~/a\nKIND=code", "the value for FOLDERS has a line break in it: a setting is one line"),
     ("FOLDERS=~/a\rb", "the value for FOLDERS has a line break in it: a setting is one line"),
     ("MODEL=opus\r\n", "the value for MODEL has a line break in it: a setting is one line"),

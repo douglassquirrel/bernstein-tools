@@ -58,7 +58,7 @@ class Stop(Exception):
         self.message = message
 
 
-KEYS = ("SISTER", "CLAWS", "FOLDERS", "MODEL", "EFFORT")
+KEYS = ("SISTER", "CLAWS", "FOLDERS", "MODEL", "EFFORT", "SESSION")
 NOTHING = "nothing was changed"
 
 
@@ -86,7 +86,7 @@ class Parser(argparse.ArgumentParser):
 
 def parser():
     p = Parser(prog="set-conf", description="Set one setting in one lobster project's lobster.conf: SISTER, CLAWS, "
-               "FOLDERS, MODEL or EFFORT. One line changes or is added and every other byte stays. The file as it "
+               "FOLDERS, MODEL, EFFORT or SESSION. One line changes or is added and every other byte stays. The file as it "
                "was is kept in the project's _to_delete/. Refused while anyone is on duty for the project, and "
                "when conduct start would refuse the project with the new value. Nothing is committed or sent.")
     p.add_argument("project", metavar="PROJECT", help="a lobster project's name, as conduct takes it")

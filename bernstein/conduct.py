@@ -445,6 +445,14 @@ def checked_project(name, found, settings, code_dir, home=None):
     kind = settings.get("KIND", placed)
     if kind not in ("code", "non-code", "feeler", "conductor"):
         raise ProjectRefused(f"{conf} says KIND={kind}: it must be code, non-code, feeler or conductor")
+    said = settings.get("SESSION", "")
+    if said not in ("", "cowork", "code"):
+        raise ProjectRefused(f"{conf} says SESSION={said}: it must be cowork or code (no SESSION line means cowork)")
+    if said and kind != "non-code":
+        raise ProjectRefused(f"{conf} says KIND={kind} and SESSION={said}: only a non-code project says which kind "
+                             "of session it runs in (a tools project and a conductor run in Claude Code, a feeler "
+                             "in Claude Cowork): take the line out")
+    session = "cowork" if kind == "feeler" or (kind == "non-code" and said != "code") else "code"
     if kind == "conductor":         # outside the template: its folder is the whole of it, with no START-HERE.txt
         if placed != "code":
             raise ProjectRefused(f"{conf} says KIND=conductor, but {folder} is in the non-code folder: a "
@@ -487,7 +495,7 @@ def checked_project(name, found, settings, code_dir, home=None):
     folders = further_folders(settings, conf, kind, home, connected)
     return SimpleNamespace(name=name, kind=kind, folder=folder, checkout=checkout, sister=sister, claws=claws,
                            claw_names=claw_names, model=settings.get("MODEL", ""),
-                           effort=settings.get("EFFORT", ""), folders=folders,
+                           effort=settings.get("EFFORT", ""), folders=folders, session=session,
                            serves_conductor=conductor_folder(sister, code_dir) if kind == "code" else None)
 
 

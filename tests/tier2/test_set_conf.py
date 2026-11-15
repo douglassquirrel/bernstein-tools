@@ -164,7 +164,7 @@ def refused(world, folder, *argv, code=3):
 @pytest.mark.parametrize("argument, why", [
     ("KIND=code", "KIND and SELF say what a project is, and set-conf never changes them"),
     ("SELF=menus", "KIND and SELF say what a project is, and set-conf never changes them"),
-    ("PACE=eager", "set-conf does not know the setting PACE: it sets SISTER, CLAWS, FOLDERS, MODEL or EFFORT"),
+    ("PACE=eager", "set-conf does not know the setting PACE: it sets SISTER, CLAWS, FOLDERS, MODEL, EFFORT or SESSION"),
     ("MODEL=opus\nKIND=code", "the value for MODEL has a line break in it: a setting is one line"),
 ])
 def test_a_setting_it_does_not_change_and_a_value_with_a_line_break_are_exit_3_before_anything_is_looked_at(
