@@ -98,7 +98,7 @@ def bring_up_to_date(rendered, folder, stamp):
 
 
 def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, today, conductor=False,
-            session=None, claw_paths=None):
+            session=None, claw_paths=None, only=None):
     """{path: text} of the template's global files for one half of an existing project, rendered with
     its own names, folders, claws and ticket prefix. `sister_path` is the other half's folder (the home claw's checkout
     for a non-code project), or None when it has none or it cannot be found. `conductor` says that a tools
@@ -106,7 +106,7 @@ def renders(s, kind, name, sister, folder, checkout, sister_path, claws, home, t
     non-code project's lobster.conf names ("code": a Claude Code session on the Mac, shown each further claw
     at its checkout in `claw_paths`). Refuses a template whose global file would read differently on
     another day."""
-    names = declared(s["TEMPLATE"])
+    names = declared(s["TEMPLATE"]) if only is None else list(only)     # only: these files of the half instead
     if not names:
         return {}
     non_code = kind in ("non-code", "feeler")      # the half whose own folder is the project's

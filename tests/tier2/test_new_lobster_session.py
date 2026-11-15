@@ -5,6 +5,7 @@ import os
 
 import pytest
 from conftest import tree, write_tree
+from test_session_setting import HOOK
 
 ON_THE_MAC = "  Its session is a Claude Code one on the Mac (SESSION=code in its lobster.conf).\n"
 
@@ -15,6 +16,7 @@ def for_both(world):
         "common/lobster.conf": "KIND={{KIND}}\nSISTER={{SISTER}}\nMODEL={{MODEL_SETTING}}\nEFFORT={{EFFORT}}\nSESSION={{SESSION}}\n",
         "common/sections/where-cowork.md": "Your claws are under ~/mnt:\n{{CLAW_MOUNTS}}\n",
         "common/sections/where-code.md": "Your claws are on the Mac:\n{{CLAW_MOUNTS}}\n",
+        "non-code/.claude/settings.json": HOOK.replace("ROOT", "{{MAIL_ROOT_SHELL}}"),
         "non-code/START-HERE.txt": "Start {{NAME}}.\n{{> sections/where-{{SESSION}}.md}}\n"})
 
 

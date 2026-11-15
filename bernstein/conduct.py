@@ -16,7 +16,7 @@ import subprocess
 import urllib.parse
 from types import SimpleNamespace
 
-from bernstein import facts, globalfiles, waiting
+from bernstein import facts, globalfiles, hook, waiting
 from bernstein.render import MONTHS, TemplateRefused
 from bernstein.settings import SettingsRefused, read_settings
 
@@ -64,10 +64,11 @@ def name_refusal(text):
     return None
 
 
-def start_message(brief, today, name, updated=(), kept=None, can_rename=True):
+def start_message(brief, today, name, updated=(), kept=None, can_rename=True, hook_kept=False):
     """The body of the Start message: follow START-HERE.txt, name the session (a Claude Code session can
     give itself its name; a Claude Cowork session cannot), say which global files bernstein has just
-    replaced, then the brief or wait."""
+    replaced, and whether it has just put the mail hook in .claude/settings.json (hook_kept: None when
+    there was no such file, or where in the project the file it replaced is kept), then the brief or wait."""
     text = (f"Start (from bernstein, {day(today)}).\n\n"
             "Squirrel has started this session through bernstein. Follow START-HERE.txt in this\n"
             "project's folder from the top: step 0 (the model and effort question) first, then the\n"
@@ -86,6 +87,14 @@ def start_message(brief, today, name, updated=(), kept=None, can_rename=True):
                  f"{', '.join(updated)}. They are the template's and are never edited here; the copies they "
                  f"replaced are in\n_to_delete/{os.path.basename(kept)}/. Read them as they are now, say so in "
                  "the diary,\nand commit them with your next commit.\n\n")
+    if hook_kept is None:
+        text += ("bernstein put the lobster-mail start hook in .claude/settings.json just before this session "
+                 "started:\nthere was no such file. Say so in the diary, and commit it with your next commit.\n\n")
+    elif hook_kept:
+        text += ("bernstein replaced .claude/settings.json with the template's just before this session started: "
+                 f"it had\nno lobster-mail start hook for this mail root. The file as it was is\n{hook_kept}: "
+                 "carry across any settings of this\nproject's own that it held, say so in the diary, and "
+                 "commit.\n\n")
     if brief is None:
         return text + "Then wait for Squirrel.\n"
     return text + "Then this brief, from Squirrel:\n\n" + brief
@@ -501,11 +510,12 @@ def checked_project(name, found, settings, code_dir, home=None):
                            serves_conductor=conductor_folder(sister, code_dir) if kind == "code" else None)
 
 
-def global_files_of(project, s, home, today):
-    """The template's global files rendered for a project found by find_project; none if it names none."""
+def global_files_of(project, s, home, today, only=None):
+    """The template's global files rendered for a project found by find_project; none if it names none.
+    With only, those files of its half instead (the ones the template has)."""
     if project.kind == "feeler":
         return globalfiles.renders(s, "feeler", project.name, "", project.folder, project.checkout, None,
-                                   project.claw_names, home, today.date())
+                                   project.claw_names, home, today.date(), only=only)
     if project.kind == "non-code":
         other = project.claws[0][0]
     elif project.serves_conductor:
@@ -518,7 +528,8 @@ def global_files_of(project, s, home, today):
     return globalfiles.renders(s, project.kind, project.name, project.sister, project.folder, project.checkout,
                                other, project.claw_names[1:], home, today.date(),
                                conductor=bool(project.serves_conductor), session=project.session,
-                               claw_paths={name: pair[0] for name, pair in zip(project.claw_names, project.claws)})
+                               claw_paths={name: pair[0] for name, pair in zip(project.claw_names, project.claws)},
+                               only=only)
 
 
 def encode(params):
@@ -855,6 +866,40 @@ def send(s, env, to, subject, body, err):
 
 
 THERE = "Named in FOLDERS in its lobster.conf, and there on the Mac with nothing to connect"
+UNSENT = "nothing was sent or opened"
+
+
+def mail_hook(project, s, env, today):
+    """What conduct start is to do about the lobster-mail start hook of a non-code project whose session is
+    a Claude Code one: (what it found, the template's file to write or None, where the file there now would
+    be kept or None). Found: "right" (left alone), "missing" (the template's is written) or "wrong" (the
+    file is kept and replaced). Stops when the file is not a plain file, or the template cannot give the hook."""
+    path = os.path.join(project.folder, hook.REL)
+    unread = f"a Claude Code session there would not read its mail when it starts: {UNSENT}"
+    try:
+        found = hook.state(project.folder, s["MAIL_ROOT"])
+    except hook.NotAFile as what:
+        raise Stop(3, f"{path} is a {what}, not a file: it is left alone, and {unread}")
+    except OSError as why:
+        raise Stop(3, f"{path} cannot be read ({why.strerror}): check its permissions; {unread}")
+    if found == "right":
+        return found, None, None
+    try:
+        text = global_files_of(project, s, env["HOME"], today, only=[hook.REL]).get(hook.REL)
+    except globalfiles.ProjectUnreadable as why:
+        raise Stop(3, str(why))
+    except (TemplateRefused, OSError) as why:
+        raise Stop(4, f"the template cannot be read: {why}")
+    lacks = None
+    if text is None:
+        lacks = f"the template has no non-code/{hook.REL} to put in {project.folder}"
+    elif not hook.right(text, s["MAIL_ROOT"]):
+        lacks = f"the template's non-code/{hook.REL} has no lobster-mail start hook for {s['MAIL_ROOT']}"
+    if lacks:
+        raise Stop(4, f"{lacks}, so a Claude Code session in {project.folder} would not read its mail when it "
+                      f"starts: {UNSENT}")
+    kept = hook.kept_place(project.folder, f"{today:%Y-%m-%d-%H%M}") if found == "wrong" else None
+    return found, text, kept
 
 
 def start(a, s, env, today, out, err, sleep):
@@ -897,6 +942,8 @@ def start(a, s, env, today, out, err, sleep):
     behind = [rel for rel, how in globalfiles.state(rendered, project.folder) if how == "behind"] if split else []
     link = link_for(project, s["MAIL_ROOT"], os.path.dirname(s["LOBSTER_MAIL"]), name)
     on_the_mac = project.kind == "non-code" and project.session == "code"
+    hook_found, hook_text, hook_kept = mail_hook(project, s, env, today) if on_the_mac else ("right", None, None)
+    hook_path = os.path.join(project.folder, hook.REL)
     if a.dry_run:
         body = start_message(brief, today, name, can_rename=project.session == "code")
         out.write(f"Would send to {a.project}, as bernstein, subject \"Start: {a.project}\":\n\n{body}\n")
@@ -904,6 +951,13 @@ def start(a, s, env, today, out, err, sleep):
             out.write(f"Would bring up to date in {project.folder}: {', '.join(behind)}\n")
             if a.facts_to:
                 out.write(f"Would write the facts for a notice to {a.facts_to}.\n")
+        if hook_found == "missing":
+            out.write(f"Would put the lobster-mail start hook in {hook_path}, which is not there.\n")
+        elif hook_found == "wrong":
+            out.write(f"Would replace {hook_path}, which has no lobster-mail start hook for {s['MAIL_ROOT']}, with "
+                      f"the template's, keeping the file as it is in {hook_kept}\n")
+        elif on_the_mac:
+            out.write(f"{hook_path} has the lobster-mail start hook: it would be left as it is.\n")
         out.write(f"Would open:\n  {link}\n")
         if on_the_mac:
             out.write("A Claude Code session on the Mac would open, as SESSION=code in its lobster.conf says.\n")
@@ -930,7 +984,20 @@ def start(a, s, env, today, out, err, sleep):
     elif rendered and not split:
         out.write(f"{a.project} does not keep the template's global files apart yet: its files are left as "
                   "they are.\n")
-    body = start_message(brief, today, name, updated, kept, can_rename=project.session == "code")
+    if hook_found != "right":
+        try:
+            hook.put(project.folder, hook_text, hook_kept)
+        except OSError as why:
+            moved = f"; the file as it was is in {hook_kept}" if hook_kept and os.path.lexists(hook_kept) else ""
+            raise Stop(4, f"the lobster-mail start hook could not be put in {hook_path} ({why.strerror}){moved}: "
+                          f"{UNSENT}")
+        if hook_kept:
+            out.write(f"Replaced {hook_path}, which had no lobster-mail start hook for {s['MAIL_ROOT']}, with the "
+                      f"template's (the file as it was is in {hook_kept}).\n")
+        else:
+            out.write(f"Put the lobster-mail start hook in {hook_path} (there was no such file).\n")
+    said = False if hook_found == "right" else hook_kept and os.path.relpath(hook_kept, project.folder)
+    body = start_message(brief, today, name, updated, kept, can_rename=project.session == "code", hook_kept=said)
     if a.pace:
         pace(s, env, a.project, a.pace)
     send(s, env, a.project, f"Start: {a.project}", body, err)

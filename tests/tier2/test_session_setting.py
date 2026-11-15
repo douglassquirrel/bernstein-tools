@@ -2,6 +2,7 @@
 (PLAN.md, "A ganglion on the Mac: SESSION=code", Settled 168). Read and refused here; set by set-conf."""
 
 import os
+import shlex
 
 import pytest
 from conftest import tree, write_tree
@@ -11,10 +12,16 @@ ONLY = ("only a non-code project says which kind of session it runs in (a tools 
         "Claude Code, a feeler in Claude Cowork): take the line out")
 
 
+HOOK = ('{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "\\"$HOME/l/lobster-mail\\" start '
+        '--project \\"$CLAUDE_PROJECT_DIR\\" --root ROOT"}]}]}}\n')
+
+
 def ganglion(world, line=None):
-    """recipes and recipes-tools with nobody on duty; line is added to the non-code half's lobster.conf."""
+    """recipes and recipes-tools with nobody on duty; line is added to the non-code half's lobster.conf. The
+    non-code half has the lobster-mail start hook for this mail root, as one made by new-lobster has."""
     folder = world.project("recipes", "non-code")
     world.project("recipes-tools", "code")
+    write_tree(folder, {".claude/settings.json": HOOK.replace("ROOT", shlex.quote(world.mail))})
     if line is not None:
         with open(os.path.join(folder, "lobster.conf"), "a") as f:
             f.write(line + "\n")

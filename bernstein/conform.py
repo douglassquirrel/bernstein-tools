@@ -8,10 +8,9 @@ import argparse
 import datetime
 import json
 import os
-import re
 import shlex
 
-from bernstein import globalfiles
+from bernstein import globalfiles, hook
 from bernstein.conduct import (
     ProjectRefused,
     conductor_folder,
@@ -33,10 +32,7 @@ PAIR_NAMES = {"NAME", "TOOLS", "SELF", "SISTER"}
 FIXED_WORDING = {"sections/inbox.md", "sections/mail.md", "sections/dreaming.md"}
 
 
-def hook_has_root(text, root):
-    """Whether a hook's JSON text passes this mail root to --root, as one shell word."""
-    word = json.dumps(shlex.quote(root), ensure_ascii=False)[1:-1]
-    return re.search(rf' --root {re.escape(word)}(?=[\s"])', text) is not None
+hook_has_root = hook.has_root
 
 
 def sections_of(text):
@@ -193,13 +189,13 @@ def gaps_of(name, kind, sister, found, s, conductor=None):
         gaps += conf_gaps(conf, {"KIND": kind, "SELF": name, "SISTER": sister})
     if not os.path.isfile(os.path.join(folder, "START-HERE.txt")):
         gaps.append("START-HERE.txt")
-    hook = os.path.join(folder, ".claude", "settings.json")
-    if not os.path.isfile(hook):
+    settings_file = os.path.join(folder, hook.REL)
+    if not os.path.isfile(settings_file):
         gaps.append(".claude/settings.json (the lobster-mail start hook)")
     else:
-        with open(hook, encoding="utf-8", errors="replace") as f:
+        with open(settings_file, encoding="utf-8", errors="replace") as f:
             text = f.read()
-        if "lobster-mail" not in text or " start --project" not in text.replace('\\"', ""):
+        if not hook.has_start(text):
             gaps.append("the lobster-mail start hook in .claude/settings.json")
         elif not hook_has_root(text, s["MAIL_ROOT"]):
             gaps.append(f"--root {shlex.quote(s['MAIL_ROOT'])} in the lobster-mail start hook in .claude/settings.json")
