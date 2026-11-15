@@ -6,7 +6,8 @@ as a tested command. `new-lobster` makes such a pair in one step: both folders f
 git, a mailbox each, the first commits, and a Backlog issue tracker if you ask for one. `conduct` starts a project's
 session and asks a running one to hand over, and `podium` shows every session on a page in your
 browser, with buttons for what `conduct` does. `set-conf` changes one setting in a project's
-`lobster.conf`, keeping the file as it was. `local-history` gives the private folder around a public
+`lobster.conf`, keeping the file as it was. `manifest` records every file of some projects before a
+command runs and says afterwards exactly what changed. `local-history` gives the private folder around a public
 checkout a git history of its own, with no remote. They are for one person's Mac and their own
 projects; the projects talk by `lobster-mail`, from the
 [lobster-tools](https://github.com/douglassquirrel/lobster-tools) repository.
@@ -892,6 +893,80 @@ not attempted; nothing is retried. Run it again naming only those that did not g
 standard error. Exit codes: 0 sent, would send, or everyone already had it; 2 bad arguments or
 settings; 3 refused, nothing sent; 4 a listing could not be had, or a send or a kept copy failed.
 
+## manifest: prove what a run changed, and that it changed nothing else
+
+```
+manifest save FILE PROJECT [PROJECT ...]
+manifest compare FILE [--expect-only PATTERN]...
+```
+
+Before a command that writes in projects, `manifest save` records every file of each project; after it,
+`manifest compare` reads them again and prints exactly what differs. It reads the projects and writes only
+the one FILE. It runs no other program, so there is no dry run.
+
+```
+$ ./manifest save ~/before.json recipes recipes-tools
+recipes: 7 files in /Users/you/projects/non-code/recipes
+recipes-tools: 5 files in /Users/you/projects/code/recipes-tools-code
+Saved to /Users/you/before.json. Nothing else was written.
+$ ./manifest compare ~/before.json
+recipes: 2 differences
+  moved:   backlog/config.yml -> _to_delete/backlog-removed-2026-10-18/backlog/config.yml
+  moved:   backlog/tasks/re-001.md -> _to_delete/backlog-removed-2026-10-18/backlog/tasks/re-001.md
+recipes-tools: 4 differences
+  changed: DIARY.md
+  changed: START-HERE.txt
+  added:   recipes-tools/new.py
+  gone:    recipes-tools/code.py
+6 differences in 2 of 2 projects since 2026-10-18T09:40:00Z.
+```
+
+- **`save`** finds each PROJECT's folder as `conduct` does, so a public tools project's record is the
+  folder around its checkout, with the checkout inside it. Every file under the folder is recorded by its
+  path inside it: a regular file with its size and SHA-256 (read a mebibyte at a time, however large); a
+  symbolic link as a link, with where it points, and never followed; a pipe or socket as "special".
+  **Left out, at any depth:** folders named `.git`, `.venv`, `__pycache__`, `.pytest_cache` and
+  `.ruff_cache`, and files named `.DS_Store` or `.git`. Everything else is in, `_to_delete/` and `inbox/`
+  too. If anything is wrong, **no FILE is written**, so a record that is there is always a whole one: a
+  project named twice, a FILE that is there already (it never writes over a file) or whose folder is
+  not, or a FILE inside one of the projects (exit 2); a project that cannot be found or is in two places
+  (exit 3); a file or folder that cannot be read (exit 4).
+- **`compare`** reads the folders the record names (it needs no settings) and prints one line for a
+  project with no difference, or a line for each difference: `changed:` (other bytes, or a file that
+  became a link), `moved:` (gone from one path and at another with the same size and checksum, shown as
+  `from -> to`), `added:` and `gone:`. Files of the same bytes are paired by the same file name first,
+  then in order of path; an empty file is never a move. A file whose time changed and whose bytes did
+  not is no difference. It writes nothing.
+- **`--expect-only PATTERN`** makes the answer a plain yes or no. Every difference must be at a path
+  inside its project that matches a pattern, and a move must match at both ends. A pattern is a shell
+  pattern in which `*` also matches `/`, so `_to_delete/*` is everything under `_to_delete/`; give the
+  flag once for each pattern, in quotes. For `drop-backlog`:
+
+  ```
+  $ ./manifest compare ~/before.json --expect-only '_to_delete/*' --expect-only 'backlog/*'
+  recipes: 3 differences
+    changed: CLAUDE.md
+    moved:   backlog/config.yml -> _to_delete/backlog-removed/backlog/config.yml
+    moved:   backlog/tasks/re-001.md -> _to_delete/backlog-removed/backlog/tasks/re-001.md
+  3 differences in 1 of 1 project since 2026-10-18T09:40:00Z.
+  Not expected (outside _to_delete/*, backlog/*):
+    recipes: changed: CLAUDE.md
+  ```
+
+  When every difference is expected the last line is "Every difference is at an expected path (...)."
+  and the exit code is 0.
+- The FILE is JSON: `{"manifest": 1, "saved", "left_out", "projects": [{"name", "folder", "files":
+  {"<path>": {"size", "sha256"} | {"link"} | {"special": true}}}]}`. It holds the names, sizes and
+  checksums of a project's files, so keep it where the project's own files may be named.
+
+| Code | Meaning |
+|---|---|
+| 0 | `save`: saved. `compare`: no difference, or with `--expect-only` only expected ones |
+| 1 | `compare`: differences (with `--expect-only`, ones that were not expected) |
+| 2 | Bad arguments or settings; `save`: FILE is there already, is inside a project, or cannot be written; `compare`: FILE cannot be read or is not a record `manifest save` wrote |
+| 3 | A project cannot be found or is in two places; `compare`: its folder has gone |
+| 4 | A file or folder in a project cannot be read: the message names it |
+
 ## local-history: a history for the folder around a public checkout
 
 ```
@@ -940,7 +1015,7 @@ commit -m "..."`, run in the outer folder, not the checkout).
 ## Errors and exit codes
 
 Every failure is one line on standard error starting `new-lobster:`, saying what happened. (`conduct`,
-`conform`, `drop-backlog`, `set-conf`, `notice` and `local-history` give their own codes in their sections above.)
+`conform`, `drop-backlog`, `set-conf`, `notice`, `manifest` and `local-history` give their own codes in their sections above.)
 
 | Code | Meaning | What to do |
 |---|---|---|
@@ -989,6 +1064,12 @@ Manual check of `notice` against the real `lobster-mail` (Tier 3), only ever on 
 (`lobster-mail init`); write facts with `./set-conf --facts-to`; run `./notice --dry-run`, then for real
 with `--keep`, and read the mailboxes with `lobster-mail list`; run it again to see both passed over.
 
+Manual check of `manifest` (Tier 3), only ever on scratch folders: make a scratch project with a few
+files, a link, a `.git/` and a file of twenty megabytes; `./manifest save` it and compare the record's
+checksum of the large file with `shasum -a 256`; `./manifest compare` (no difference); move a folder into
+`_to_delete/`, change something in `.git/` and touch a file, and compare again with and without
+`--expect-only`; then empty a file and see it listed under "Not expected".
+
 Manual check against the real programs (Tier 3): point `BERNSTEIN_CONF` at a settings file whose
 `NON_CODE_DIR`, `CODE_DIR` and `MAIL_ROOT` are scratch folders, then run `./new-lobster --dry-run
 <name>` and `./new-lobster <name>`, and look at what was made.
@@ -1016,6 +1097,11 @@ tried only against a stand-in for `conduct`, never the real one, unless the mess
 
 ## Notes for users
 
+- 15 November 2026: new command `manifest save FILE PROJECT...` and `manifest compare FILE [--expect-only
+  PATTERN]...`: a record of every file of some projects (size and SHA-256), and afterwards exactly what
+  was changed, moved, added or gone, with a plain yes or no when you say which paths may differ. It
+  reads the projects and writes only FILE, never over an existing file. Exit codes: 0 no difference or
+  only expected ones, 1 other differences, 2 bad arguments, 3 a project not found, 4 a file not readable.
 - 15 November 2026: new verb `conduct waiting [--json]` shows what is waiting across every project:
   commits not pushed, files not committed (in a public tools project, in the checkout and in the folder
   around it), bernstein's messages to each project not yet dealt with, and each project's messages to

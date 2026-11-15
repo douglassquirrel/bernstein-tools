@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""manifest: record every file of some projects, then say exactly what changed. Run manifest --help."""
+import datetime
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from bernstein.manifest import main  # noqa: E402
+
+sys.exit(main(sys.argv[1:], dict(os.environ), datetime.datetime.now(datetime.timezone.utc), sys.stdout, sys.stderr))
