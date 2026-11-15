@@ -517,7 +517,8 @@ def global_files_of(project, s, home, today):
             other = None
     return globalfiles.renders(s, project.kind, project.name, project.sister, project.folder, project.checkout,
                                other, project.claw_names[1:], home, today.date(),
-                               conductor=bool(project.serves_conductor))
+                               conductor=bool(project.serves_conductor), session=project.session,
+                               claw_paths={name: pair[0] for name, pair in zip(project.claw_names, project.claws)})
 
 
 def encode(params):

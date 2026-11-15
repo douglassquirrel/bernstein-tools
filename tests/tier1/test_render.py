@@ -302,3 +302,61 @@ def test_values_for_a_conductors_claw_name_the_conductor_and_its_folder_and_choo
     pair = values_for("maestro", "code", public=True, tools="maestro-tools",
                       non_code_path="/h/projects/code/maestro-code", **COMMON)
     assert {k for k in claw if claw[k] != pair[k]} == {"SERVED", "FOR_WHOM", "TALKS_TO", "OF_WHOM", "SISTER_FIRST_SESSION"}
+
+
+def test_a_non_code_half_is_told_its_kind_of_session_and_every_other_half_is_told_nothing():
+    assert values_for("recipes", "non-code", public=False, **COMMON)["SESSION"] == "cowork"
+    assert values_for("recipes", "non-code", public=False, session="cowork", **COMMON)["SESSION"] == "cowork"
+    assert values_for("recipes", "non-code", public=False, session="code", **COMMON)["SESSION"] == "code"
+    assert values_for("recipes", "code", public=False, **COMMON)["SESSION"] == ""
+    assert values_for("recipes", "code", public=False, session="code", **COMMON)["SESSION"] == ""
+    assert values_for(None, "code", public=False, tools="word-tools", **COMMON)["SESSION"] == ""
+    assert values_for("agents", "feeler", public=False, **COMMON)["SESSION"] == ""
+
+
+def test_a_session_that_is_neither_cowork_nor_code_is_never_rendered():
+    with pytest.raises(ValueError) as refused:
+        values_for("recipes", "non-code", public=False, session="mac", **COMMON)
+    assert str(refused.value) == "a session is cowork or code, not mac"
+
+
+def test_a_ganglion_on_the_mac_is_shown_each_claw_where_it_really_is_and_nothing_under_mnt():
+    nc = values_for("beyond-ai", "non-code", public=True, tools="book-tools", session="code",
+                    tools_path="/h/projects/code/books/book-tools-code/book-tools",
+                    claws=["word-tools", "google-docs-tools"],
+                    claw_paths={"word-tools": "/h/projects/code/office/word-tools-code/word-tools"}, **COMMON)
+    assert nc["CLAW_MOUNTS"] == (
+        "| `~/projects/code/books/book-tools-code/book-tools` | the home claw, `book-tools`: **read and run only**; never write, commit, install or make a `.venv` in it |\n"
+        "| `~/projects/code/office/word-tools-code/word-tools` | the claw `word-tools`: read and run only, as above |\n"
+        "| `~/projects/code/google-docs-tools` | the claw `google-docs-tools`: read and run only, as above |")
+    assert nc["CLAW_ROWS"] == (
+        "| `book-tools` | {{to fill: as they are made}} | From `~/projects/code/books/book-tools-code/book-tools`, as its README says; the home claw, where new tools are born |\n"
+        "| `word-tools` | {{to fill: as they are used}} | From `~/projects/code/office/word-tools-code/word-tools`, as its README says |\n"
+        "| `google-docs-tools` | {{to fill: as they are used}} | From `~/projects/code/google-docs-tools`, as its README says |")
+    assert not [name for name, value in nc.items() if "~/mnt" in value]
+    same = values_for("beyond-ai", "non-code", public=True, tools="book-tools",
+                      tools_path="/h/projects/code/books/book-tools-code/book-tools",
+                      claws=["word-tools", "google-docs-tools"],
+                      claw_paths={"word-tools": "/h/projects/code/office/word-tools-code/word-tools"}, **COMMON)
+    assert same["CLAW_MOUNTS"].startswith("| `~/mnt/book-tools` |") and "~/mnt/word-tools" in same["CLAW_ROWS"]
+    assert {k: v for k, v in nc.items() if k not in ("SESSION", "CLAW_MOUNTS", "CLAW_ROWS")} == {
+        k: v for k, v in same.items() if k not in ("SESSION", "CLAW_MOUNTS", "CLAW_ROWS")}
+
+
+def test_a_template_says_one_thing_to_a_session_in_the_virtual_machine_and_another_to_one_on_the_mac(tmp_path):
+    t = template(tmp_path)
+    write(t, {"common/sections/where-cowork.md": "Your folders are under ~/mnt.\n",
+              "common/sections/where-code.md": "{{TOOLS}} is at {{TOOLS_PATH}}.\n",
+              "common/lobster.conf": "SELF={{SELF}}\nSESSION={{SESSION}}\n",
+              "non-code/START-HERE.txt": "Start.\n{{> sections/where-{{SESSION}}.md}}\nEnd.\n"})
+    cowork = render_half(str(t), "non-code", values_for("recipes", "non-code", public=False, **COMMON), False)
+    assert cowork["START-HERE.txt"] == "Start.\nYour folders are under ~/mnt.\nEnd.\n"
+    assert cowork["lobster.conf"] == "SELF=recipes\nSESSION=cowork\n"
+    mac = render_half(str(t), "non-code", values_for("recipes", "non-code", public=False, session="code", **COMMON),
+                      False)
+    assert mac["START-HERE.txt"] == "Start.\nrecipes-tools is at ~/projects/code/recipes-tools.\nEnd.\n"
+    assert mac["lobster.conf"] == "SELF=recipes\nSESSION=code\n"
+    assert {k: v for k, v in mac.items() if k not in ("START-HERE.txt", "lobster.conf")} == {
+        k: v for k, v in cowork.items() if k not in ("START-HERE.txt", "lobster.conf")}
+    code = render_half(str(t), "code", values_for("recipes", "code", public=False, **COMMON), False)
+    assert code["lobster.conf"] == "SELF=recipes-tools\nSESSION=\n"

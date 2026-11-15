@@ -6,7 +6,7 @@ import os
 from urllib.parse import parse_qsl, urlsplit
 
 import pytest
-from conftest import tree
+from conftest import tree, write_tree
 from test_conduct_status import COWORK, SID, app_store, entry
 from test_session_setting import calls, ganglion
 
@@ -189,3 +189,65 @@ def test_every_other_verb_does_for_a_ganglion_on_the_mac_what_it_does_for_any_ga
         f.write("SESSION=code\n")
     assert run() == plain
     assert plain[0][0] == 0 and plain[0][2] == ""
+
+
+HOME_CLAW = "the home claw, `recipes-tools`: **read and run only**; never write, commit, install or make a `.venv` in it |\n"
+IN_THE_MACHINE = {
+    "RULES.md": ("Rules for recipes.\nYour claws are under ~/mnt:\n| `~/mnt/recipes-tools` | " + HOME_CLAW
+                 + "| `~/mnt/video-tools` | the claw `video-tools`: read and run only, as above |\n"),
+    "START-HERE.txt": "Start recipes in a cowork session.\n"}
+ON_THE_MAC = {
+    "RULES.md": ("Rules for recipes.\nYour claws are on the Mac:\n| `~/projects/code/recipes-tools` | " + HOME_CLAW
+                 + "| `~/projects/code/video/video-tools-code/video-tools` | the claw `video-tools`: read and run "
+                   "only, as above |\n"),
+    "START-HERE.txt": "Start recipes in a code session.\n"}
+
+
+def split_ganglion(world):
+    """A ganglion with a further claw that keeps the template's global files apart, as rendered for a session
+    in the virtual machine, and a template that says one thing to each kind of session."""
+    folder = ganglion(world, "CLAWS=video-tools")
+    world.project("video-tools", "code", public=True, under="video", sister="")
+    write_tree(world.template, {
+        "common/global-files": "RULES.md\nSTART-HERE.txt\n",
+        "common/sections/where-cowork.md": "Your claws are under ~/mnt:\n{{CLAW_MOUNTS}}\n",
+        "common/sections/where-code.md": "Your claws are on the Mac:\n{{CLAW_MOUNTS}}\n",
+        "non-code/RULES.md": "Rules for {{NAME}}.\n{{> sections/where-{{SESSION}}.md}}\n",
+        "non-code/START-HERE.txt": "Start {{NAME}} in a {{SESSION}} session.\n"})
+    write_tree(folder, dict(IN_THE_MACHINE, **{"CLAUDE.md": "The project's own.\n"}))
+    return folder
+
+
+def test_the_start_after_a_switch_brings_the_files_for_the_new_kind_of_session_and_keeps_the_old(world):
+    folder = split_ganglion(world)
+    conf = os.path.join(folder, "lobster.conf")
+    before = tree(folder)
+    code, out, err = world.conduct("start", "--dry-run", "recipes")
+    assert (code, err) == (0, "") and "up to date" not in out                 # in line, for the virtual machine
+    with open(conf, "a") as f:
+        f.write("SESSION=code\n")
+    code, out, err = world.conduct("start", "--dry-run", "recipes")
+    assert (code, err) == (0, "")
+    assert f"Would bring up to date in {folder}: RULES.md, START-HERE.txt\n" in out
+    assert tree(folder) == dict(before, **{"lobster.conf": before["lobster.conf"] + b"SESSION=code\n"})
+    code, out, err = world.conduct("start", "recipes")
+    assert (code, err) == (0, "")
+    kept = "_to_delete/before-global-update-2026-10-18-0940"
+    files = tree(folder)
+    assert {rel: files[rel].decode() for rel in ON_THE_MAC} == ON_THE_MAC
+    assert {rel: files[f"{kept}/{rel}"].decode() for rel in IN_THE_MACHINE} == IN_THE_MACHINE
+    assert sorted(files) == sorted(list(before) + [f"{kept}/RULES.md", f"{kept}/START-HERE.txt"])
+    assert files["CLAUDE.md"] == b"The project's own.\n"
+    assert f"Brought up to date in {folder}: RULES.md, START-HERE.txt (the old copies are in " in out
+    assert "RULES.md, START-HERE.txt. They are the template's" in calls(world, "send")[0]["stdin"]
+    assert calls(world, "open")[0]["args"][0].startswith("claude://code/new?")
+    code, out, err = world.conduct("start", "--dry-run", "recipes")
+    assert (code, err) == (0, "") and "up to date" not in out                 # in line, for the Mac
+    with open(conf, "a") as f:
+        f.write("SESSION=cowork\n")                                           # and back again
+    code, out, err = world.conduct("start", "recipes")
+    assert (code, err) == (0, "")
+    files = tree(folder)
+    assert {rel: files[rel].decode() for rel in IN_THE_MACHINE} == IN_THE_MACHINE
+    assert {rel: files[f"{kept}-2/{rel}"].decode() for rel in ON_THE_MAC} == ON_THE_MAC
+    assert calls(world, "open")[1]["args"][0].startswith("claude://cowork/new?")

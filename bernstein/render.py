@@ -116,7 +116,7 @@ def feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, to
                 "connects them.")
         the = "no claw yet"
     return {
-        "NAME": name, "SELF": name, "TOOLS": "", "SISTER": "", "KIND": "feeler",
+        "NAME": name, "SELF": name, "TOOLS": "", "SISTER": "", "KIND": "feeler", "SESSION": "",
         "DATE": f"{today.day} {MONTHS[today.month - 1]} {today.year}", "YEAR": str(today.year),
         "MODEL": model[:1].upper() + model[1:], "MODEL_SETTING": model, "EFFORT": effort,
         "NONCODE_PATH": tilde(path, home), "MAIL_ROOT": tilde(mail_root, home),
@@ -129,14 +129,20 @@ def feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, to
 
 def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lobster_mail, public, today, home,
                tools=None, non_code_path=None, tools_path=None, claws=(), backlog_prefix=None,
-               backlog=False, conductor=False):
+               backlog=False, conductor=False, session=None, claw_paths=None):
     """The placeholder values for one half of the pair named `name`; an existing pair may give its own
     tools name and folders, and the prefix its tickets already carry (else it is worked out from the name).
     `backlog` says whether the project keeps tickets: BACKLOG is "yes" or "no", for a template to choose by. `claws` are the further claws a non-code project uses besides its home,
     `tools`. A lone claw (a tools project with no sister) has `name` None and gives `tools`. `conductor` says
     that the tools project's sister `name` is a conductor, the project whose session runs the commands, at
     `non_code_path`: the words that name the sister then name it, and SERVED is "conductor".
+    `session` is the kind of session a non-code project runs in, "cowork" (the default) or "code", a
+    Claude Code session on the Mac: SESSION says which, for a template to choose by (it is empty in every
+    other half), and with "code" the values that show a claw at ~/mnt/<name> show it where it really is,
+    `claw_paths` giving each further claw's checkout (else it is taken to be directly in `code_dir`).
     """
+    if session not in (None, "cowork", "code"):
+        raise ValueError(f"a session is cowork or code, not {session}")
     if half == "feeler":
         return feeler_values(name, model, effort, non_code_dir, mail_root, lobster_mail, today, home,
                              non_code_path, list(claws))
@@ -150,12 +156,17 @@ def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lob
     nc_shown = tilde(non_code_path, home) if non_code_path else ""
     claws = list(claws)
     every = [tools] + claws
-    mounts = [(f"| `~/mnt/{tools}` | the home claw, `{tools}`: **read and run only**; never write, commit, install or "
+    if non_code and session == "code":          # on the Mac nothing is connected: each claw is where it is
+        at = {c: tilde((claw_paths or {}).get(c) or os.path.join(code_dir, c), home) for c in claws}
+        at[tools] = tilde(tools_path, home)
+    else:
+        at = {c: f"~/mnt/{c}" for c in every}
+    mounts = [(f"| `{at[tools]}` | the home claw, `{tools}`: **read and run only**; never write, commit, install or "
                "make a `.venv` in it |")]
-    mounts += [f"| `~/mnt/{c}` | the claw `{c}`: read and run only, as above |" for c in claws]
-    rows = [(f"| `{tools}` | {{{{to fill: as they are made}}}} | From `~/mnt/{tools}`, as its README says; the home "
+    mounts += [f"| `{at[c]}` | the claw `{c}`: read and run only, as above |" for c in claws]
+    rows = [(f"| `{tools}` | {{{{to fill: as they are made}}}} | From `{at[tools]}`, as its README says; the home "
              "claw, where new tools are born |")]
-    rows += [f"| `{c}` | {{{{to fill: as they are used}}}} | From `~/mnt/{c}`, as its README says |" for c in claws]
+    rows += [f"| `{c}` | {{{{to fill: as they are used}}}} | From `{at[c]}`, as its README says |" for c in claws]
     if lone:
         sister_words = {
             "SERVED": "any",
@@ -223,6 +234,7 @@ def values_for(name, half, model, effort, non_code_dir, code_dir, mail_root, lob
         "SELF": name if non_code else tools,
         "SISTER": tools if non_code else name,
         "KIND": half,
+        "SESSION": (session or "cowork") if non_code else "",
         "PACKAGE": tools.replace("-", ""),
         "DATE": f"{today.day} {MONTHS[today.month - 1]} {today.year}",
         "YEAR": str(today.year),
