@@ -112,7 +112,7 @@ def test_render_into_renders_an_existing_pair_for_the_mac_with_each_claw_where_i
     for_both(world)
     world.project("video-tools", "code", public=True, under="video", sister="")
     out_dir = os.path.join(world.home, "rendered")
-    code, out, err = world.run("--render-into", out_dir, "recipes", "--session", "code", "--claws",
+    code, _out, err = world.run("--render-into", out_dir, "recipes", "--session", "code", "--claws",
                                "video-tools word-tools")
     assert (code, err) == (0, "")
     files = tree(out_dir)
