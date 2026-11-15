@@ -135,6 +135,24 @@ def test_a_file_that_cannot_be_written_is_said_and_with_no_settings_file_the_usu
         0, f"recipes: 7 files in {nc}\nSaved to {path}. Nothing else was written.\n", "")
 
 
+def test_a_file_that_appears_while_the_projects_are_read_is_never_written_over(world, monkeypatch):
+    a_pair(world)
+    path = os.path.join(world.home, "before.json")
+    real_isdir = os.path.isdir
+
+    def appears(folder):                 # the last look before the projects are read: someone saves there now
+        if folder == world.home and not os.path.exists(path):
+            with open(path, "w") as f:
+                f.write("someone else's record\n")
+        return real_isdir(folder)
+
+    monkeypatch.setattr(manifest.os.path, "isdir", appears)
+    assert run(world, "save", path, "recipes") == (
+        2, "", f"manifest: {path} cannot be written (File exists); nothing was saved\n")
+    with open(path) as f:
+        assert f.read() == "someone else's record\n"
+
+
 def test_a_file_or_folder_that_cannot_be_read_is_exit_4_and_nothing_is_saved(world):
     nc, _outer = a_pair(world)
     path = os.path.join(world.home, "before.json")
