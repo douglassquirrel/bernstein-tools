@@ -3,7 +3,10 @@ import os
 import pytest
 from conftest import NOW
 
-from bernstein.conduct import dream_message
+from bernstein.conduct import dormant_message, dream_message, quiet_watch, wake_message
+
+WAITS = (" It is not watching mail (a Claude Cowork session, or one whose watch has stopped), so it reads the Wake "
+         "when Squirrel next types to it.")
 
 
 def sent(world):
@@ -419,13 +422,14 @@ def paces(world):
     return [c["args"] for c in world.calls() if c["prog"] == "lobster-mail" and c["args"][:1] == ["pace"]]
 
 
-def test_dormant_sends_the_dormant_message_then_sets_the_pace_relaxed_for_each_session_on_duty(world):
-    world.duty({"bernstein": "fresh", "recipes": "fresh", "audio": "stale", "video-tools": "fresh", "old": None})
+def test_dormant_sends_the_dormant_message_then_sets_the_pace_relaxed_for_each_cowork_session_on_duty(world):
+    world.duty({"bernstein": "fresh", "recipes": "fresh", "audio": "stale", "video-tools": "fresh", "old": None},
+               holder="device")
     code, out, err = world.conduct("dormant", "--all")
     assert (code, err) == (0, "")
     assert [m["args"][4] for m in sent(world)] == ["recipes", "video-tools"]
     assert sent(world)[0]["args"][6] == "Dormant: stop watching mail until Squirrel is back"
-    assert sent(world)[0]["stdin"].startswith("Dormant (from bernstein, 18 October 2026).")
+    assert sent(world)[0]["stdin"] == dormant_message("recipes", NOW)           # word for word what it was
     assert paces(world) == [["pace", "--as", "recipes", "relaxed", "--root", world.mail],
                             ["pace", "--as", "video-tools", "relaxed", "--root", world.mail]]
     lm = [c["args"][:1] + c["args"][2:4] for c in world.calls() if c["prog"] == "lobster-mail"]
@@ -445,7 +449,7 @@ def test_dormant_for_one_project_with_nobody_on_duty_sends_nothing(world):
 
 
 def test_dormant_dry_run_shows_the_message_and_changes_nothing(world):
-    world.duty({"recipes": "fresh"})
+    world.duty({"recipes": "fresh"}, holder="device")
     code, out, _err = world.conduct("dormant", "--dry-run", "recipes")
     assert code == 0
     assert "Would send to recipes, as bernstein, subject \"Dormant: stop watching mail until Squirrel is back\"" in out
@@ -461,21 +465,21 @@ def test_dormant_needs_a_project_or_all_and_refuses_an_unknown_mailbox(world):
     assert code == 3 and err == f"conduct: there is no mailbox recipes in {world.mail}\n"
 
 
-def test_wake_sets_the_pace_normal_then_sends_the_wake_message(world):
-    world.duty({"recipes": "stale", "video-tools": "fresh", "old": None})
+def test_wake_sets_the_pace_normal_then_sends_the_wake_message_to_a_cowork_session(world):
+    world.duty({"recipes": "stale", "video-tools": "fresh", "old": None}, holder="device")
     code, out, err = world.conduct("wake", "recipes")
     assert (code, err) == (0, "")
     assert paces(world) == [["pace", "--as", "recipes", "normal", "--root", world.mail]]
     (mail,) = sent(world)
     assert mail["args"][4:7] == ["recipes", "--subject", "Wake: watch mail again"]
     assert mail["stdin"].startswith("Wake (from bernstein, 18 October 2026).")
-    assert out == "Set the pace of recipes to normal and sent the Wake message.\n"
+    assert out == "Set the pace of recipes to normal and sent the Wake message." + WAITS + "\n"
     code, out, _err = world.conduct("wake", "--all")
     assert code == 0 and [m["args"][4] for m in sent(world)[1:]] == ["recipes", "video-tools"]
 
 
 def test_wake_dry_run_shows_the_message_and_sets_nothing(world):
-    world.duty({"recipes": "stale"})
+    world.duty({"recipes": "stale"}, holder="device")
     code, out, _err = world.conduct("wake", "--dry-run", "recipes")
     assert code == 0
     assert "Would set the pace of recipes to normal, then send to it, as bernstein, subject \"Wake: watch mail again\"" in out
@@ -493,7 +497,8 @@ def test_help_names_the_dream_verb_and_its_options(world):
 
 
 def test_dream_sends_the_dream_message_to_each_session_fresh_on_duty_and_sets_no_pace(world):
-    world.duty({"bernstein": "fresh", "recipes": "fresh", "audio": "stale", "video-tools": "fresh", "old": None})
+    world.duty({"bernstein": "fresh", "recipes": "fresh", "audio": "stale", "video-tools": "fresh", "old": None},
+               holder="device")
     code, out, err = world.conduct("dream", "--all")
     assert (code, err) == (0, "")
     assert [m["args"][4] for m in sent(world)] == ["recipes", "video-tools"]
@@ -542,7 +547,7 @@ def test_dream_with_nobody_on_duty_sends_nothing(world):
 
 
 def test_dream_dry_run_shows_the_message_and_sends_nothing(world):
-    world.duty({"recipes": "fresh"})
+    world.duty({"recipes": "fresh"}, holder="device")
     code, out, err = world.conduct("dream", "recipes", "--dry-run")
     assert (code, err) == (0, "")
     assert out == ("Would send to recipes, as bernstein, subject \"Dream: until 10:40 UTC\":\n\n"
@@ -1011,3 +1016,208 @@ def test_start_gives_the_global_rules_the_tickets_section_only_for_a_project_tha
     code, _out, err = world.conduct("start", name)
     assert code == 0, err
     assert tree(folder)["RULES.md"] == ("Rules.\n" + section).encode()
+
+
+def watch_for(world, name):
+    """The quiet watch as conduct must write it for this world: its own lobster-mail and mail root."""
+    return quiet_watch(name, os.path.join(world.bin, "lobster-mail"), world.mail)
+
+
+def test_dormant_tells_a_session_on_the_mac_to_keep_the_quiet_watch_and_leaves_its_pace_alone(world):
+    world.duty({"bernstein": "fresh", "recipes-tools": "fresh", "video-tools": "fresh"})
+    code, out, err = world.conduct("dormant", "--all")
+    assert (code, err) == (0, "")
+    assert [m["args"][4] for m in sent(world)] == ["recipes-tools", "video-tools"]
+    assert sent(world)[0]["args"][6] == "Dormant: stop watching mail until Squirrel is back"
+    assert sent(world)[0]["stdin"] == dormant_message("recipes-tools", NOW, watch=watch_for(world, "recipes-tools"))
+    assert sent(world)[1]["stdin"] == dormant_message("video-tools", NOW, watch=watch_for(world, "video-tools"))
+    assert f"--root '{world.mail}' --from bernstein --timeout 0" in sent(world)[0]["stdin"]    # the space in HOME
+    assert paces(world) == []                                # a pace that changed would end the quiet watch
+    assert out == ("Sent the Dormant message to recipes-tools, a session on the Mac: it keeps a quiet watch for "
+                   "bernstein's mail, and its pace is left as it is.\n"
+                   "Sent the Dormant message to video-tools, a session on the Mac: it keeps a quiet watch for "
+                   "bernstein's mail, and its pace is left as it is.\n")
+
+
+def held(name, holder, stale=False, pace=None, reported=None):
+    """One mailbox of a duty listing with its duty held by the named session."""
+    entry = {"mailbox": name, "new": 0, "open": 0, "handover_waiting": False, "duty_changing": False,
+             "duty": {"mailbox": name, "holder": holder, "since": "2026-10-18T09:00:00Z",
+                      "last_beat": "2026-10-18T09:30:00Z", "stale": stale, "minutes": 3}}
+    if pace:
+        entry["pace"] = pace
+    if reported:
+        entry["reported"] = reported
+    return entry
+
+
+def test_dormant_all_gives_each_project_the_words_for_its_own_kind_of_session_and_says_which(world):
+    world.listing([held("recipes", "device"), held("recipes-tools", "mac"), held("odd-tools", 'my "laptop"')])
+    code, out, err = world.conduct("dormant", "--all")
+    assert (code, err) == (0, "")
+    assert [m["stdin"] for m in sent(world)] == [
+        dormant_message("recipes", NOW),
+        dormant_message("recipes-tools", NOW, watch=watch_for(world, "recipes-tools")),
+        dormant_message("odd-tools", NOW)]
+    assert paces(world) == [["pace", "--as", "recipes", "relaxed", "--root", world.mail],
+                            ["pace", "--as", "odd-tools", "relaxed", "--root", world.mail]]
+    assert out == (
+        "Sent the Dormant message to recipes and set its pace to relaxed.\n"
+        "Sent the Dormant message to recipes-tools, a session on the Mac: it keeps a quiet watch for bernstein's "
+        "mail, and its pace is left as it is.\n"
+        "Sent the Dormant message to odd-tools and set its pace to relaxed. Its session is named \"my \\\"laptop\\\"\", "
+        "which is neither mac nor device, so it was sent the words for a session that cannot keep a watch.\n")
+
+
+def test_dormant_dry_run_shows_a_session_on_the_mac_its_own_words_and_that_its_pace_would_be_left(world):
+    world.listing([held("recipes", "device"), held("recipes-tools", "mac"), held("odd-tools", "laptop")])
+    code, out, err = world.conduct("dormant", "--all", "--dry-run")
+    assert (code, err) == (0, "")
+    subject = 'as bernstein, subject "Dormant: stop watching mail until Squirrel is back":\n\n'
+    assert out == (
+        "Would send to recipes, " + subject + dormant_message("recipes", NOW) + "\n"
+        "Would set the pace of recipes to relaxed.\n"
+        "Would send to recipes-tools, " + subject
+        + dormant_message("recipes-tools", NOW, watch=watch_for(world, "recipes-tools")) + "\n"
+        "Would leave the pace of recipes-tools as it is: a session on the Mac keeps a quiet watch.\n"
+        "Would send to odd-tools, " + subject + dormant_message("odd-tools", NOW) + "\n"
+        "Would set the pace of odd-tools to relaxed. Its session is named \"laptop\", which is neither mac nor "
+        "device, so it would be sent the words for a session that cannot keep a watch.\n"
+        "Dry run: nothing was sent or set.\n")
+    assert sent(world) == [] and paces(world) == []
+
+
+def test_a_dream_that_ends_dormant_gives_a_session_on_the_mac_the_quiet_watch(world):
+    world.listing([held("recipes", "device"), held("recipes-tools", "mac")])
+    code, out, err = world.conduct("dream", "--all")
+    assert (code, err) == (0, "")
+    assert [m["stdin"] for m in sent(world)] == [
+        dream_message("recipes", NOW, 60, "dormant"),
+        dream_message("recipes-tools", NOW, 60, "dormant", watch=watch_for(world, "recipes-tools"))]
+    assert "quiet watch" in sent(world)[1]["stdin"] and "quiet watch" not in sent(world)[0]["stdin"]
+    assert paces(world) == []
+    code, out, _err = world.conduct("dream", "recipes-tools", "--dry-run")
+    assert out == ("Would send to recipes-tools, as bernstein, subject \"Dream: until 10:40 UTC\":\n\n"
+                   + dream_message("recipes-tools", NOW, 60, "dormant", watch=watch_for(world, "recipes-tools"))
+                   + "\nDry run: nothing was sent.\n")
+    code, out, _err = world.conduct("dream", "recipes-tools", "--then", "stop")
+    assert sent(world)[-1]["stdin"] == dream_message("recipes-tools", NOW, 60, "stop")
+
+
+def test_wake_leaves_the_pace_of_a_session_on_the_mac_alone_so_the_quiet_watch_ends_on_the_wake_itself(world):
+    world.listing([held("recipes-tools", "mac", reported={"status": "dormant"}),
+                   held("video-tools", "mac", pace="eager", reported={"status": "dormant"})])
+    code, out, err = world.conduct("wake", "--all")
+    assert (code, err) == (0, "")
+    assert paces(world) == []
+    assert [(m["args"][4], m["args"][6], m["stdin"]) for m in sent(world)] == [
+        ("recipes-tools", "Wake: watch mail again", wake_message("recipes-tools", NOW)),
+        ("video-tools", "Wake: watch mail again", wake_message("video-tools", NOW))]
+    assert out == ("Sent the Wake message to recipes-tools; its pace was left at normal.\n"
+                   "Sent the Wake message to video-tools; its pace was left at eager.\n")
+
+
+def test_wake_sets_a_relaxed_pace_back_for_a_session_on_the_mac_made_dormant_on_the_old_words(world):
+    world.listing([held("recipes-tools", "mac", stale=True, pace="relaxed", reported={"status": "dormant"})])
+    code, out, err = world.conduct("wake", "recipes-tools")
+    assert (code, err) == (0, "")
+    assert paces(world) == [["pace", "--as", "recipes-tools", "normal", "--root", world.mail]]
+    assert [c["args"][0] for c in world.calls() if c["prog"] == "lobster-mail"][1:] == ["pace", "send"]
+    assert out == "Set the pace of recipes-tools to normal and sent the Wake message." + WAITS + "\n"
+
+
+def test_wake_says_when_the_wake_will_wait_a_cowork_session_or_a_stale_duty_and_not_otherwise(world):
+    world.listing([held("fresh-mac", "mac"), held("stale-mac", "mac", stale=True), held("fresh-desk", "device"),
+                   held("stale-desk", "device", stale=True, pace="relaxed")])
+    code, out, _err = world.conduct("wake", "--all")
+    assert code == 0 and out == (
+        "Sent the Wake message to fresh-mac; its pace was left at normal.\n"
+        "Sent the Wake message to stale-mac; its pace was left at normal." + WAITS + "\n"
+        "Set the pace of fresh-desk to normal and sent the Wake message." + WAITS + "\n"
+        "Set the pace of stale-desk to normal and sent the Wake message." + WAITS + "\n")
+
+
+def test_wake_dry_run_says_what_would_be_done_to_each_pace_and_which_wakes_would_wait(world):
+    world.listing([held("recipes-tools", "mac"), held("recipes", "device", stale=True, pace="relaxed")])
+    code, out, err = world.conduct("wake", "--all", "--dry-run")
+    assert (code, err) == (0, "")
+    assert out == (
+        "Would send to recipes-tools, as bernstein, subject \"Wake: watch mail again\", leaving its pace at "
+        "normal:\n\n" + wake_message("recipes-tools", NOW) + "\n"
+        "Would set the pace of recipes to normal, then send to it, as bernstein, subject \"Wake: watch mail "
+        "again\":\n\n" + wake_message("recipes", NOW) + "\n" + WAITS.strip() + "\n"
+        "Dry run: nothing was sent or set.\n")
+    assert sent(world) == [] and paces(world) == []
+
+
+DORMANT = {"status": "dormant", "set": "2026-10-18T08:00:00Z", "until": None}
+
+
+def passed_over(name):
+    return (f"{name} reports itself dormant and its duty is stale (last beat 2026-10-18T09:30:00Z): it is not "
+            "watching mail, so a Stop would wait until Squirrel next types to it, and none was sent. Speak to that "
+            "session in the app first, then stop it.\n")
+
+
+def test_stop_reaches_a_dormant_session_on_the_mac_whose_quiet_watch_keeps_its_duty_fresh(world):
+    world.listing([held("recipes-tools", "mac", reported=DORMANT)])
+    code, out, err = world.conduct("stop", "recipes-tools")
+    assert (code, err, out) == (0, "", "Sent the Stop message to recipes-tools.\n")
+    assert [m["args"][4] for m in sent(world)] == ["recipes-tools"]
+    code, out, _err = world.conduct("stop", "--all")
+    assert code == 0 and out == "Sent the Stop message to recipes-tools.\n" and len(sent(world)) == 2
+
+
+@pytest.mark.parametrize("holder", ["mac", "device"])
+def test_stop_says_truly_why_nothing_is_sent_to_a_dormant_session_whose_duty_is_stale(world, holder):
+    world.listing([held("recipes", holder, stale=True, pace="relaxed", reported=DORMANT)])
+    for argv in (("stop", "recipes"), ("stop", "recipes", "--dry-run"), ("stop", "recipes", "--wait", "5")):
+        assert world.conduct(*argv) == (0, passed_over("recipes"), "")
+    assert sent(world) == []
+
+
+def test_stop_still_says_nobody_is_on_duty_for_a_stale_duty_that_reports_nothing_and_for_none(world):
+    world.listing([held("recipes", "device", stale=True, pace="relaxed"), held("audio", "mac", stale=True),
+                   {"mailbox": "old", "duty": None, "reported": DORMANT}])
+    for name in ("recipes", "audio", "old"):
+        assert world.conduct("stop", name) == (0, f"Nobody is on duty for {name}: nothing to stop.\n", "")
+    assert sent(world) == []
+
+
+def test_stop_all_stops_who_is_watching_and_says_which_dormant_sessions_it_passed_over(world):
+    world.listing([held("bernstein", "mac"), held("recipes-tools", "mac", reported=DORMANT),
+                   held("recipes", "device", stale=True, pace="relaxed", reported=DORMANT),
+                   held("video-tools", "mac"), held("audio", "device", stale=True),
+                   held("old-tools", "mac", stale=True, reported={"status": " Dormant "})])
+    code, out, err = world.conduct("stop", "--all")
+    assert (code, err) == (0, "")
+    assert [m["args"][4] for m in sent(world)] == ["recipes-tools", "video-tools"]
+    assert out == ("Sent the Stop message to recipes-tools.\nSent the Stop message to video-tools.\n"
+                   + passed_over("recipes") + passed_over("old-tools"))
+    code, out, _err = world.conduct("stop", "--all", "--dry-run")
+    assert out.startswith("Would send to recipes-tools, video-tools, as bernstein, subject \"Stop: hand over\":\n\n")
+    assert out.endswith("Dry run: nothing was sent.\n" + passed_over("recipes") + passed_over("old-tools"))
+    assert len(sent(world)) == 2
+
+
+def test_stop_all_with_only_dormant_sessions_not_watching_says_each_and_that_nobody_else_is_on_duty(world):
+    world.listing([held("bernstein", "mac"), held("recipes", "device", stale=True, reported=DORMANT)])
+    assert world.conduct("stop", "--all") == (
+        0, passed_over("recipes") + "Nobody is on duty anywhere but bernstein: nothing to stop.\n", "")
+    assert sent(world) == []
+
+
+def test_stop_wait_does_not_wait_for_a_dormant_session_it_passed_over(world):
+    world.listing([held("video-tools", "mac"), held("recipes", "device", stale=True, reported=DORMANT)])
+    naps = []
+    code, out, err = world.conduct("stop", "--all", "--wait", "10", sleep=naps.append)
+    assert code == 5 and err == "conduct: after 10 seconds, still on duty: video-tools\n"
+    assert out == "Sent the Stop message to video-tools.\n" + passed_over("recipes")
+
+
+def test_stop_all_never_names_bernstein_s_own_session_or_a_conductor_s_among_those_passed_over(world):
+    world.conductor("maestro", claw="maestro-tools")
+    world.listing([held("bernstein", "device", stale=True, reported=DORMANT),
+                   held("maestro", "device", stale=True, reported=DORMANT), held("video-tools", "mac")])
+    code, out, err = world.conduct("stop", "--all")
+    assert (code, err, out) == (0, "", "Sent the Stop message to video-tools.\n")

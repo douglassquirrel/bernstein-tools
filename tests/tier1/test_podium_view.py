@@ -215,12 +215,19 @@ def test_the_buttons_for_everything_at_once_follow_what_any_session_but_bernstei
     assert podium.buttons_for_all([]) == []
 
 
+WAITS = ("This session is not watching mail (a Claude Cowork session, or one whose watch has stopped): it wakes "
+         "when you next type to it.")
+SOME_WAIT = ("Some of these sessions are not watching mail (a Claude Cowork session, or one whose watch has "
+             "stopped): each of those wakes when you next type to it.")
+
+
 def test_the_view_has_a_bar_of_buttons_for_everything_at_once_only_when_one_applies():
     html = podium.view(a_factory(), NOW)        # menus and recipes are running, video-tools is stale
     assert ('<div class="all"><button type="button" class="act" data-verb="stop" data-all="1">Stop all</button>'
             '<button type="button" class="act" data-verb="dormant" data-all="1">Dormant all</button>'
             '<button type="button" class="act" data-verb="dream" data-all="1">Dream all</button>'
-            '<button type="button" class="act" data-verb="wake" data-all="1">Wake all</button></div>') in html
+            '<button type="button" class="act" data-verb="wake" data-all="1" data-note="' + SOME_WAIT + '" title="'
+            + SOME_WAIT + '">Wake all</button></div>') in html      # video-tools is stale: its Wake will wait
     assert html.index('<div class="all">') < html.index('<section class="card">')
     assert '<div class="all">' not in podium.view([row("lone-tools", "off")], NOW)
 
@@ -552,3 +559,62 @@ def test_the_bar_wears_the_page_s_own_colours_and_has_a_size_of_its_own():
     assert "border: 1px solid var(--muted);" in page
     assert ".facts .context { display: inline-flex; align-items: center; gap: 6px; }" in page
     assert ".facts .context .of" not in page                       # the size is no longer on the line
+
+
+def wake_button(name, note=None):
+    said = f' data-note="{note}" title="{note}"' if note else ""
+    return f'<button type="button" class="act" data-verb="wake" data-project="{name}"{said}>Wake</button>'
+
+
+def test_the_wake_of_a_dormant_session_on_the_mac_that_is_watching_is_a_plain_button():
+    html = podium.view([row("lone-tools", "dormant", duty="mac", reported={"status": "dormant"})], NOW)
+    assert wake_button("lone-tools") in html and "data-note" not in html and "not watching mail" not in html
+
+
+@pytest.mark.parametrize("state, holder", [("dormant", "device"), ("quiet", "device"), ("stale", "device"),
+                                           ("quiet", "mac"), ("stale", "mac"), ("dormant", "laptop")])
+def test_the_wake_of_a_session_that_is_not_watching_says_it_wakes_when_he_next_types_to_it(state, holder):
+    html = podium.view([row("lone-tools", state, duty=holder, reported={"status": "dormant"})], NOW)
+    assert wake_button("lone-tools", WAITS) in html
+
+
+def test_a_dormant_session_on_the_mac_whose_duty_has_gone_stale_is_not_watching_either():
+    r = row("lone-tools", "dormant", duty="mac", reported={"status": "dormant"})
+    r["duty"]["stale"] = True
+    assert wake_button("lone-tools", WAITS) in podium.view([r], NOW)
+
+
+def test_only_a_wake_carries_the_note_never_another_button():
+    html = podium.view([row("a-tools", "running", duty="device"), row("b-tools", "off"),
+                        row("c-tools", "dormant", duty="device")], NOW)
+    assert html.count("data-note=") == 2                       # c-tools' Wake, and Wake all
+    for verb in ("stop", "dormant", "dream", "start"):
+        assert f'data-verb="{verb}" data-project="' in html and f'data-verb="{verb}" data-note' not in html
+
+
+def test_wake_all_carries_the_note_only_when_some_session_asleep_is_not_watching():
+    watching = [row("a-tools", "dormant", duty="mac"), row("b-tools", "running", duty="mac")]
+    assert '<button type="button" class="act" data-verb="wake" data-all="1">Wake all</button>' in podium.view(watching, NOW)
+    mixed = watching + [row("recipes", "dormant", kind="non-code", duty="device", sister="b-tools", claws=("b-tools",))]
+    assert ('<button type="button" class="act" data-verb="wake" data-all="1" data-note="' + SOME_WAIT + '" title="'
+            + SOME_WAIT + '">Wake all</button>') in podium.view(mixed, NOW)
+    # bernstein's own session and a conductor's are never woken by Wake all, so they never bring the note
+    own = watching + [row("bernstein", "dormant", kind=None, duty="device"),
+                      row("maestro", "dormant", kind="conductor", duty="device")]
+    assert "data-note" not in podium.view(own, NOW)
+
+
+def test_the_dialog_shows_a_wake_s_note_before_it_is_sent_and_as_text_never_markup():
+    html = podium.page("<p>THE VIEW</p>")
+    assert '<p id="act-waits" class="note" hidden></p>' in html
+    assert ('open(pressed.dataset.verb, pressed.dataset.project, pressed.dataset.all === "1", '
+            'pressed.dataset.note)') in html
+    assert 'waits.textContent = why || "";' in html and "waits.hidden = !why;" in html
+    assert html.count("innerHTML") == 1
+
+
+def test_a_cowork_session_that_is_awake_does_not_bring_the_note_to_wake_all():
+    rows = [row("a-tools", "dormant", duty="mac"), row("recipes", "running", kind="non-code", duty="device")]
+    html = podium.view(rows, NOW)
+    assert '<button type="button" class="act" data-verb="wake" data-all="1">Wake all</button>' in html
+    assert "data-note" not in html

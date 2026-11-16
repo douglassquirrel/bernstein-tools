@@ -124,6 +124,24 @@ def buttons(row):
     return ["start"] if row["kind"] is not None and not row["refused"] else []
 
 
+WAKE_WAITS = ("This session is not watching mail (a Claude Cowork session, or one whose watch has stopped): it wakes "
+              "when you next type to it.")
+SOME_WAKES_WAIT = ("Some of these sessions are not watching mail (a Claude Cowork session, or one whose watch has "
+                   "stopped): each of those wakes when you next type to it.")
+
+
+def watching(row):
+    """Whether a session that is asleep will be given a turn by a Wake: only a Claude Code session on the Mac
+    whose duty is fresh, which is what its quiet watch keeps it. Any other reads the Wake at its next turn."""
+    duty = row.get("duty")
+    return isinstance(duty, dict) and duty.get("holder") == "mac" and not duty.get("stale")
+
+
+def noted(note):
+    """A button's note, for its hover and for the dialog it opens."""
+    return f' data-note="{e(note)}" title="{e(note)}"' if note else ""
+
+
 def buttons_for_all(rows):
     """The verbs offered for every session at once: bernstein's own and a conductor's are never among them."""
     states = {r["state"] for r in rows if r["mailbox"] != "bernstein" and r["kind"] != "conductor"}
@@ -214,7 +232,8 @@ def row_html(row, now, label=None, claw=False):
     if row.get("refused") and row["mailbox"] != "bernstein":   # conduct never starts bernstein's own session
         refused = f'<p class="refused">Cannot start: {e(row["refused"])}</p>'
     acts = open_link(row, now) + "".join(
-        f'<button type="button" class="act" data-verb="{verb}" data-project="{e(row["mailbox"])}">'
+        f'<button type="button" class="act" data-verb="{verb}" data-project="{e(row["mailbox"])}"'
+        f'{noted(WAKE_WAITS if verb == "wake" and not watching(row) else "")}>'
         f"{LABELS[verb]}</button>" for verb in buttons(row))
     acts = f'<div class="acts">{acts}</div>' if acts else ""
     return (f'{start}{who}<span class="badge {tone}">{e(words)}</span>'
@@ -249,7 +268,10 @@ def view(rows, now, error=None, entries=()):
         return parts[0] + f'<p class="error">{e(error)}</p>' + activity(entries)
     if not rows:
         return parts[0] + '<p class="empty">No mailboxes.</p>' + activity(entries)
-    for_all = "".join(f'<button type="button" class="act" data-verb="{verb}" data-all="1">{LABELS[verb]} all</button>'
+    some_wait = any(r["state"] in ASLEEP and not watching(r) for r in rows
+                    if r["mailbox"] != "bernstein" and r["kind"] != "conductor")
+    for_all = "".join(f'<button type="button" class="act" data-verb="{verb}" data-all="1"'
+                      f'{noted(SOME_WAKES_WAIT if verb == "wake" and some_wait else "")}>{LABELS[verb]} all</button>'
                       for verb in buttons_for_all(rows))
     if for_all:
         parts.append(f'<div class="all">{for_all}</div>')
@@ -398,6 +420,7 @@ input[type="number"] { width: 6rem; }
 <dialog id="act" aria-labelledby="act-title">
 <h2 id="act-title"></h2>
 <div id="act-options"></div>
+<p id="act-waits" class="note" hidden></p>
 <div id="act-shown" class="shown" hidden><code id="act-command"></code><pre id="act-output"></pre></div>
 <p id="act-progress" class="progress" role="status" hidden><span class="spin"></span><span id="act-progress-text"></span></p>
 <p id="act-note" class="note" hidden></p>
@@ -415,6 +438,7 @@ input[type="number"] { width: 6rem; }
   var command = document.getElementById("act-command");
   var output = document.getElementById("act-output");
   var note = document.getElementById("act-note");
+  var waits = document.getElementById("act-waits");
   var progress = document.getElementById("act-progress");
   var progressText = document.getElementById("act-progress-text");
   var ticking = null;    // the timer that counts the seconds while conduct runs
@@ -589,7 +613,7 @@ input[type="number"] { width: 6rem; }
     });
   }
 
-  function open(verb, project, all) {
+  function open(verb, project, all, why) {
     asked = all ? {verb: verb, all: true} : {verb: verb, project: project};
     step = "options";
     title.textContent = names[verb] + " " + (all ? "every session but bernstein's" : project);
@@ -599,6 +623,8 @@ input[type="number"] { width: 6rem; }
     output.textContent = "";
     shown.hidden = true;
     note.hidden = true;
+    waits.textContent = why || "";
+    waits.hidden = !why;
     trouble("");
     working("");
     go.hidden = false;
@@ -608,7 +634,9 @@ input[type="number"] { width: 6rem; }
 
   document.getElementById("view").addEventListener("click", function (event) {
     var pressed = event.target.closest("button.act");
-    if (pressed) { open(pressed.dataset.verb, pressed.dataset.project, pressed.dataset.all === "1"); }
+    if (pressed) {
+      open(pressed.dataset.verb, pressed.dataset.project, pressed.dataset.all === "1", pressed.dataset.note);
+    }
   });
   go.addEventListener("click", function () { if (step === "options") { send(); } });
   cancel.addEventListener("click", function () { dialog.close(); });

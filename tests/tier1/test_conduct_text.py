@@ -294,3 +294,90 @@ def test_the_reset_note_says_so_when_nothing_was_closed_nobody_was_on_duty_or_no
     text = reset_note(DAY, [], DUTY, "é “quoted” $HOME </script> \\n {{NAME}}")
     assert "- Closed: nothing. No message from bernstein to that session was waiting.\n" in text
     assert text.endswith("---\n\né “quoted” $HOME </script> \\n {{NAME}}\n")
+
+
+WATCH = "/l/lobster-mail wait --as recipes-tools --session mac --root /m --from bernstein --timeout 0"
+
+
+def test_the_quiet_watch_is_one_line_to_type_that_counts_only_bernstein_s_mail_and_never_gives_up():
+    from bernstein.conduct import quiet_watch
+    assert quiet_watch("recipes-tools", "/l/lobster-mail", "/m") == WATCH
+
+
+def test_the_quiet_watch_quotes_awkward_paths_so_the_shell_reads_each_as_one_word():
+    import shlex
+
+    from bernstein.conduct import quiet_watch
+    tool = "/Users/sq/My Tools/it's/lobster-mail"
+    root = '/m/"mail" $HOME `x` \\ café </script>\n;rm'
+    line = quiet_watch("recipes-tools", tool, root)
+    assert shlex.split(line) == [tool, "wait", "--as", "recipes-tools", "--session", "mac", "--root", root,
+                                 "--from", "bernstein", "--timeout", "0"]
+    assert "$HOME" not in line.replace("'/m/\"mail\" $HOME", "")       # the $ is inside single quotes
+
+
+DORMANT_ON_THE_MAC = (
+    "Dormant (from bernstein, 18 October 2026).\n\n"
+    "Squirrel has asked this session to go dormant until he comes back: keep running, keep\n"
+    "everything as it is, and do not hand over. First say so: run lobster-mail status --as recipes-tools\n"
+    "--session mac dormant. Then stop your ordinary watch of the mail (the background wait) and start one\n"
+    "quiet watch in its place, as a background command, word for word:\n\n"
+    "    /l/lobster-mail wait --as recipes-tools --session mac --root /m --from bernstein --timeout 0\n\n"
+    "It counts only bernstein's mail and never gives up, so it returns only when bernstein writes. Run no\n"
+    "other mail check, and leave this mailbox's pace as it is. Ask Squirrel nothing until he next speaks\n"
+    "to you: no question, no offer, no reminder.\n\n"
+    "When the quiet watch returns, claim what it lists with ack, and:\n"
+    "- a Wake: do as it says, and you are awake;\n"
+    "- a Stop: hand over, as it says;\n"
+    "- anything else from bernstein: deal with it as your rules say, then start the quiet watch again,\n"
+    "  word for word as above, and stay dormant.\n"
+    "Mail from other projects stays unread until you wake. If the quiet watch ends in any other way (an\n"
+    "error, or exit 6 because the pace changed), start it again.\n\n"
+    "When Squirrel next speaks to you, you are awake too: stop the quiet watch, run lobster-mail status --as\n"
+    "recipes-tools --session mac --clear, start watching again as lobster-mail pace --as recipes-tools\n"
+    "prints, read the mail that arrived meanwhile, and tell him you are back.\n"
+    "Nothing else changes.\n")
+
+
+def test_the_dormant_message_for_a_session_on_the_mac_names_the_quiet_watch_word_for_word():
+    from bernstein.conduct import dormant_message
+    assert dormant_message("recipes-tools", DAY, watch=WATCH) == DORMANT_ON_THE_MAC
+
+
+def test_the_dormant_message_for_any_other_session_is_word_for_word_what_it_was():
+    from bernstein.conduct import dormant_message
+    plain = dormant_message("recipes", DAY)
+    assert plain == dormant_message("recipes", DAY, watch=None)
+    assert "quiet watch" not in plain and "--timeout 0" not in plain and "pace is being set to relaxed" in plain
+
+
+DREAM_ENDS_DORMANT_ON_THE_MAC = (
+    "6. At the end, reply to this message with the files written and a line on each, and tell Squirrel in\n"
+    "   chat, in a line, with no question. Then go dormant: run lobster-mail status --as recipes-tools --session\n"
+    "   mac dormant (it replaces dreaming), stop the watch the dream used, and start one quiet watch in its\n"
+    "   place, as a background command, word for word:\n\n"
+    "       /l/lobster-mail wait --as recipes-tools --session mac --root /m --from bernstein --timeout 0\n\n"
+    "   It counts only bernstein's mail and never gives up. Leave this mailbox's pace as it is, run no other\n"
+    "   mail check, do not hand over, and ask Squirrel nothing until he next speaks to you: no question, no\n"
+    "   offer, no reminder. When the quiet watch returns, claim what it lists with ack: a Wake, do as it\n"
+    "   says; a Stop, hand over; anything else from bernstein, deal with it as your rules say and start the\n"
+    "   quiet watch again. If it ends in any other way, start it again. When you wake, by a Wake or because\n"
+    "   Squirrel speaks to you, stop the quiet watch, run lobster-mail status --as recipes-tools --session mac\n"
+    "   --clear, start watching again as lobster-mail pace --as recipes-tools prints, read the mail that\n"
+    "   arrived meanwhile, and offer to go through the dreams.\n")
+
+
+def test_a_dream_that_ends_dormant_on_the_mac_ends_with_the_quiet_watch_and_sets_no_pace():
+    from bernstein.conduct import dream_message
+    text = dream_message("recipes-tools", MORNING, 60, "dormant", watch=WATCH)
+    plain = dream_message("recipes-tools", MORNING, 60, "dormant")
+    assert text.split("6. At the end")[0] == plain.split("6. At the end")[0]       # the routine is the same
+    assert text.endswith(DREAM_ENDS_DORMANT_ON_THE_MAC)
+    assert "relaxed" not in text and "archive" not in text
+    assert "pace --as recipes-tools relaxed" in plain and "quiet watch" not in plain
+
+
+def test_a_dream_that_ends_in_a_handover_is_the_same_on_the_mac_as_anywhere():
+    from bernstein.conduct import dream_message
+    assert dream_message("recipes-tools", MORNING, 60, "stop", watch=WATCH) == \
+        dream_message("recipes-tools", MORNING, 60, "stop")

@@ -128,9 +128,19 @@ def test_reset_dry_run_shows_what_it_would_close_give_up_and_leave_and_changes_n
 
 
 @pytest.mark.parametrize("entry, says", [
-    ({"mailbox": "recipes", "duty": STALE, "pace": "relaxed", "reported": {"status": "Dormant"}},
-     ("recipes: mac is on duty but stale (last beat 2026-10-18T09:30:00Z). It reported itself dormant: a dormant "
+    ({"mailbox": "recipes", "duty": dict(STALE, holder="device"), "pace": "relaxed", "reported": {"status": "Dormant"}},
+     ("recipes: device is on duty but stale (last beat 2026-10-18T09:30:00Z). It reported itself dormant: a dormant "
       "session is still open in the app, so reset it only if that session is gone.\n")),
+    ({"mailbox": "recipes", "duty": STALE, "reported": {"status": "Dormant"}},
+     ("recipes: mac is on duty but stale (last beat 2026-10-18T09:30:00Z). It reported itself dormant. A dormant "
+      "session on the Mac keeps a quiet watch that keeps its duty fresh, so a stale duty means that watch has "
+      "ended: the session is gone, the Mac slept, or it was made dormant before 16 November 2026. Look at it in "
+      "the app, and reset it only if that session is gone.\n")),
+    ({"mailbox": "recipes", "duty": STALE, "pace": "relaxed", "reported": {"status": "dormant"}},
+     ("recipes: mac is on duty but stale (last beat 2026-10-18T09:30:00Z). It reported itself dormant. A dormant "
+      "session on the Mac keeps a quiet watch that keeps its duty fresh, so a stale duty means that watch has "
+      "ended: the session is gone, the Mac slept, or it was made dormant before 16 November 2026. Look at it in "
+      "the app, and reset it only if that session is gone.\n")),
     ({"mailbox": "recipes", "duty": STALE, "pace": "relaxed"},
      ("recipes: mac is on duty but stale (last beat 2026-10-18T09:30:00Z). Its mail pace is relaxed, at which a "
       "live session's duty is stale between turns, so reset it only if that session is gone.\n")),

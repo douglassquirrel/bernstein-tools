@@ -473,8 +473,9 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
      note if you have it (`--handover FILE`, passed on unchanged), or a line saying none was given.
 
   It refuses (exit 3) while a session is fresh on duty: stop that one with `stop`; if it has just died,
-  run `reset` again once its duty has gone stale. A dormant session, and one at the relaxed pace, have a
-  stale duty while they are still open in the app, so `reset` says so first and `--dry-run` shows
+  run `reset` again once its duty has gone stale. A dormant Cowork session, and one at the relaxed pace,
+  have a stale duty while they are still open in the app; a dormant session on the Mac has a stale duty
+  only when its quiet watch has ended (the session is gone, or the Mac slept). `reset` says which first and `--dry-run` shows
   everything it would do, the note included, and changes nothing: read it before the real run. With
   nobody on duty, nothing of `conduct`'s waiting and no note given, it does nothing and says so (exit 0).
   A `--handover` file that is missing, empty or not UTF-8 text is exit 2. Nothing is deleted: closed
@@ -492,19 +493,41 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
   the session so that it leaves your list (in Claude Code in the desktop app the session does this with
   the app's archive tool, which you approve on a card; a session with no such tool says so instead). `--all` asks every
   session on duty except bernstein's. `--wait SECONDS` waits for each handover, looking every 10
-  seconds.
-- **`dormant`** puts a running session to sleep without a handover, for a pause such as overnight:
-  it mails a Dormant message (keep running, keep everything as it is, do not hand over, report
-  `dormant` with `lobster-mail status`, stop watching mail and run no mail checks; when Squirrel next
-  speaks to you, clear that status, set the pace back to normal and watch again; until then, ask
-  Squirrel nothing) and then sets the mailbox's pace to `relaxed`, at which a session reads mail only at
-  the end of a turn. Only sessions fresh on duty; `--all` is every one but bernstein's. The session's
-  duty goes stale after 45 minutes; `conduct status` shows it as `dormant` from the moment it reports so.
-- **`wake`** is the way back when Squirrel would rather not speak to each session: it sets the pace to
-  `normal` and mails a Wake message (clear the `dormant` status, watch mail again, read what arrived,
-  carry on). A dormant
-  session reads it at the end of its next turn, so it takes effect when the session is next used;
-  stale duties count, since a dormant session's does go stale.
+  seconds. A dormant session on the Mac keeps a quiet watch (see `dormant`), so its duty is fresh and a
+  Stop reaches it like any other. A session that reports itself dormant and whose duty is stale is not
+  watching mail (a Claude Cowork session, or one whose watch has stopped): no Stop is sent to it, since
+  one left waiting would be carried out whenever Squirrel next typed to that session, and `stop` says so
+  ("… reports itself dormant and its duty is stale …: … none was sent. Speak to that session in the app
+  first, then stop it."), for the one named or, with `--all`, for each after what was sent. Exit 0.
+- **`dormant`** puts a running session to sleep without a handover, for a pause such as overnight. Only
+  sessions fresh on duty; `--all` is every one but bernstein's. `conduct status` shows a session as
+  `dormant` from the moment it reports so. What it is told depends on the kind of session, which
+  `conduct` takes from who holds the mailbox's duty when the command runs:
+  - **A Claude Code session on the Mac** (the duty is held by `mac`) is told to report `dormant`, to stop
+    its ordinary watch of the mail, and to start one **quiet watch** in its place as a background command,
+    which the message gives word for word:
+
+    ```
+    <lobster-mail> wait --as <project> --session mac --root <mail root> --from bernstein --timeout 0
+    ```
+
+    It counts only bernstein's mail and never gives up, so it ends only when bernstein writes, and Claude
+    Code gives the session a turn when it ends. The session then does what the mail says: a Wake wakes it,
+    a Stop is a handover, and after anything else from bernstein it starts the quiet watch again. Mail
+    from other projects stays unread until it wakes, and it asks Squirrel nothing; when he speaks to it,
+    it is awake. **`conduct` leaves this mailbox's pace alone**: a watch that is running ends when the pace
+    changes under it. The quiet watch keeps the session's duty fresh.
+  - **Any other session** (a Claude Cowork session, whose duty is held by `device`) cannot keep a watch
+    running, and nothing outside can give it a turn. It is told, as before, to report `dormant`, stop
+    watching mail and run no mail checks, and to wake when Squirrel next speaks to it; `conduct` then
+    sets the mailbox's pace to `relaxed`. Its duty goes stale after 45 minutes. A duty held under any
+    other name gets these words too, and `conduct` says so.
+- **`wake`** mails a Wake message (clear the `dormant` status, watch mail again, read what arrived,
+  carry on). A dormant session on the Mac reads it within moments, because its quiet watch ends. Any
+  other session, and a session on the Mac whose duty has gone stale (its watch has stopped, or it was
+  made dormant before 16 November 2026), reads it at its next turn, which is when Squirrel next types to
+  it: `wake` says so for each ("It is not watching mail …"). Stale duties count. The pace is set to
+  `normal` first, except for a session on the Mac whose pace is not `relaxed`, which is left as it is.
 - **`dream`** asks a running session to spend a while, 60 minutes unless `--minutes` says otherwise (5 to
   240), looking back over its recent work and writing proposals for Squirrel: rules to merge so that less
   has to be read at startup, repeated actions to make into tools, and any other idea, one file per topic
@@ -514,10 +537,12 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
   reports `dreaming` with the finish time (`lobster-mail status … dreaming --until …`), which `conduct
   status` shows; going dormant at the end it reports `dormant` instead, and a handover ends the status. At the end
   it replies, tells Squirrel in a line with no question, and goes dormant, asking nothing until he next
-  speaks to it; or with `--then stop` hands over and stops. `conduct` sets no pace for a
-  dream. Only sessions fresh on duty; `--all` is every one but bernstein's.
+  speaks to it; or with `--then stop` hands over and stops. A session on the Mac that goes dormant at
+  the end of a dream keeps the same quiet watch as after `dormant`, and leaves its pace alone. `conduct`
+  sets no pace for a dream. Only sessions fresh on duty; `--all` is every one but bernstein's.
 - **`--dry-run`** shows the message and the link, and sends and opens nothing (for `dormant` and
-  `wake`, sets nothing either).
+  `wake`, sets nothing either). For `dormant`, `dream` and `wake` it shows each project the words for its
+  own kind of session, and says whether its pace would be set or left.
 - **`status`** shows every mailbox under the mail root, one line each: what its session is doing, the
   project's kind, who is on duty and when it last checked in, the mail waiting (`new`) and claimed
   (`open`), the pace, the status the session reports about itself if it has set one (`lobster-mail
@@ -727,6 +752,11 @@ Each line has buttons for what can be done to that session now: **Start** when n
 it is dormant, quiet or stale. A bar at the top has **Stop all**, **Dormant all**, **Dream all** and
 **Wake all** when any session but bernstein's or a conductor's is in that state; bernstein's own line
 and a conductor's have no buttons.
+A Wake reaches a dormant Claude Code session on the Mac within moments. Any other session that is asleep
+is not watching mail and reads the Wake when you next type to it: its **Wake** button says so when you
+hover over it and in the dialog it opens ("This session is not watching mail (a Claude Cowork session, or
+one whose watch has stopped): it wakes when you next type to it."), and **Wake all** says so when any such
+session is asleep.
 Nothing happens at one press, and there are two:
 
 1. The button opens a dialog. Start asks for an optional brief (sent word for word), a name and the mail
@@ -1272,6 +1302,12 @@ and look at the link the stand-in was given, the files brought, the copies in `_
 message in the scratch mailbox.
 Its buttons send at once (there is no preview since 15 November 2026), so whoever builds podium tries
 them only against a stand-in for `conduct` or a scratch mail root, never the real one.
+The quiet watch of a dormant session on the Mac is tried only on a scratch mail root: make there, with
+the real `lobster-mail init`, the mailboxes `bernstein` and two more; take the duty of one as `mac` and of
+the other as `device` (`lobster-mail duty take`); run `./conduct dormant --all`; start, in the background,
+the watch exactly as the Dormant message in the first mailbox gives it; send that mailbox a message from
+the other and see the watch still running; run `./conduct wake` on it and see the watch end within a few
+seconds, with the pace as it was.
 How full a context window is (`context` in `./conduct status --json`) is checked against the app itself:
 in a Claude Code session, ask the app's usage tool for that session's tokens used, then run `./conduct
 status --json` and compare `tokens` for that project (they were within about 1% of each other on 16
@@ -1284,6 +1320,10 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
   left to the user.
 - One pair at a time; no bulk or scheduled use; macOS only.
 - The template is not shipped with this repository.
+- A dormant session on the Mac depends on one background command that never gives up (`lobster-mail wait
+  --timeout 0`). It has been tried for seconds, not for a night, and not across the Mac's sleep. If it
+  ends, the session is as a dormant session was before: it wakes when you type to it, and its duty goes
+  stale, which `conduct status` and `podium` show.
 - How full a context window is comes from the desktop app's own files, which are undocumented. The
   tokens in use were within about 1% of the app's own figure when compared, not proved to be the same
   count. The size of the window is not in those files: it is one setting for every session
@@ -1292,6 +1332,17 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
 
 ## Notes for users
 
+- 16 November 2026, later still: **a Wake wakes a dormant session on the Mac.** `conduct dormant` (and a
+  dream that ends dormant) now tells a Claude Code session on the Mac to keep one quiet watch for
+  bernstein's mail, and no longer sets its pace to `relaxed`; `conduct wake` and `conduct stop` then reach
+  it within moments, and `wake` leaves its pace alone unless it is `relaxed`. A Claude Cowork session is
+  as before. New words on standard output: `dormant` says "…, a session on the Mac: it keeps a quiet watch
+  for bernstein's mail, and its pace is left as it is."; `wake` says "Sent the Wake message to X; its pace
+  was left at normal." and, for a session that is not watching, adds "It is not watching mail …"; `stop`
+  says "X reports itself dormant and its duty is stale …" where it said "Nobody is on duty for X" of such
+  a session; `reset` has a new sentence for a dormant session on the Mac. No new flag and no exit code
+  changed. `podium`'s Wake button says when a Wake will wait. A session already dormant wakes the old way,
+  once.
 - 16 November 2026, later: `podium` draws the context figure as a bar that fills, with the bare
   percentage beside it ("14%"); "of context", the window's size, the tokens and the time are in the hover.
   At or over the warning level the bar is red. Nothing changes in `conduct status --json`.

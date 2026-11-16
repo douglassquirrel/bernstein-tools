@@ -133,16 +133,21 @@ class World:
             json.dump({"root": self.mail, "mailboxes": [{"mailbox": n, "duty": None} for n in names],
                        "skipped": list(skipped)}, f)
 
-    def duty(self, boxes):
-        """Set the duty listing: {mailbox: None (nobody), "fresh", "stale", "changing" or "handed over"}."""
+    def duty(self, boxes, holder="mac", pace=None, reported=None):
+        """Set the duty listing: {mailbox: None (nobody), "fresh", "stale", "changing" or "handed over"}. holder is
+        the session that holds each duty: mac (Claude Code on the Mac) or device (a Claude Cowork session)."""
         listing = []
         for name, state in boxes.items():
             duty = None
             if state in ("fresh", "stale"):
-                duty = {"mailbox": name, "holder": "mac", "since": "2026-10-18T09:00:00Z",
+                duty = {"mailbox": name, "holder": holder, "since": "2026-10-18T09:00:00Z",
                         "last_beat": "2026-10-18T09:30:00Z", "stale": state == "stale", "minutes": 3}
             listing.append({"mailbox": name, "duty": duty, "new": 0, "open": 0,
                             "handover_waiting": state == "handed over", "duty_changing": state == "changing"})
+            if pace:
+                listing[-1]["pace"] = pace
+            if reported:
+                listing[-1]["reported"] = reported
         with open(os.path.join(self.bin, "duty.json"), "w") as f:
             json.dump({"root": self.mail, "mailboxes": listing, "skipped": []}, f)
 

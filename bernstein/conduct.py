@@ -12,6 +12,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import subprocess
 import urllib.parse
 from types import SimpleNamespace
@@ -162,8 +163,47 @@ def reset_note(today, closed, duty, note):
     return text
 
 
-def dormant_message(project, today):
-    """The body of the Dormant message: keep running, stop watching mail, no handover."""
+ON_THE_MAC = "mac"      # the duty's holder for a Claude Code session on the Mac, which can keep a watch running
+
+
+def quiet_watch(project, lobster_mail, root):
+    """The one command a dormant session on the Mac leaves running: a watch that counts only bernstein's
+    mail and never gives up, so it ends, and Claude Code gives the session a turn, only when bernstein
+    writes. One line to type, each part quoted for the shell."""
+    return " ".join(shlex.quote(part) for part in (
+        lobster_mail, "wait", "--as", project, "--session", ON_THE_MAC, "--root", root, "--from", "bernstein",
+        "--timeout", "0"))
+
+
+def dormant_message(project, today, watch=None):
+    """The body of the Dormant message: keep running, stop watching mail, no handover. watch is the quiet
+    watch for a session on the Mac, which keeps it; any other session gets the words that work anywhere."""
+    if watch:
+        return (f"Dormant (from bernstein, {day(today)}).\n\n"
+                "Squirrel has asked this session to go dormant until he comes back: keep running, keep\n"
+                f"everything as it is, and do not hand over. First say so: run lobster-mail status --as {project}\n"
+                f"--session {ON_THE_MAC} dormant. Then stop your ordinary watch of the mail (the background wait) "
+                "and start one\n"
+                "quiet watch in its place, as a background command, word for word:\n\n"
+                f"    {watch}\n\n"
+                "It counts only bernstein's mail and never gives up, so it returns only when bernstein writes. "
+                "Run no\n"
+                "other mail check, and leave this mailbox's pace as it is. Ask Squirrel nothing until he next "
+                "speaks\n"
+                "to you: no question, no offer, no reminder.\n\n"
+                "When the quiet watch returns, claim what it lists with ack, and:\n"
+                "- a Wake: do as it says, and you are awake;\n"
+                "- a Stop: hand over, as it says;\n"
+                "- anything else from bernstein: deal with it as your rules say, then start the quiet watch again,\n"
+                "  word for word as above, and stay dormant.\n"
+                "Mail from other projects stays unread until you wake. If the quiet watch ends in any other way "
+                "(an\n"
+                "error, or exit 6 because the pace changed), start it again.\n\n"
+                "When Squirrel next speaks to you, you are awake too: stop the quiet watch, run lobster-mail "
+                "status --as\n"
+                f"{project} --session {ON_THE_MAC} --clear, start watching again as lobster-mail pace --as {project}\n"
+                "prints, read the mail that arrived meanwhile, and tell him you are back.\n"
+                "Nothing else changes.\n")
     return (f"Dormant (from bernstein, {day(today)}).\n\n"
             "Squirrel has asked this session to go dormant until he comes back: keep running, keep\n"
             f"everything as it is, and do not hand over. First say so: run lobster-mail status --as {project}\n"
@@ -235,6 +275,21 @@ DREAM_ENDS = {
    <your session> --clear and lobster-mail pace --as {project} normal, start watching again as that
    prints, read the mail that arrived meanwhile, and offer to go through the dreams.
 """,
+    "dormant on the Mac": """go dormant: run lobster-mail status --as {project} --session
+   mac dormant (it replaces dreaming), stop the watch the dream used, and start one quiet watch in its
+   place, as a background command, word for word:
+
+       {watch}
+
+   It counts only bernstein's mail and never gives up. Leave this mailbox's pace as it is, run no other
+   mail check, do not hand over, and ask Squirrel nothing until he next speaks to you: no question, no
+   offer, no reminder. When the quiet watch returns, claim what it lists with ack: a Wake, do as it
+   says; a Stop, hand over; anything else from bernstein, deal with it as your rules say and start the
+   quiet watch again. If it ends in any other way, start it again. When you wake, by a Wake or because
+   Squirrel speaks to you, stop the quiet watch, run lobster-mail status --as {project} --session mac
+   --clear, start watching again as lobster-mail pace --as {project} prints, read the mail that
+   arrived meanwhile, and offer to go through the dreams.
+""",
     "stop": """hand over and stop: bring the record up to date, send the handover with lobster-mail
    handover (it ends the dreaming status with the duty), stop watching mail, and tell Squirrel you
    have stopped. Last of all, archive this session, so it leaves his list (in Claude Code in the
@@ -244,12 +299,14 @@ DREAM_ENDS = {
 }
 
 
-def dream_message(project, now, minutes, then):
-    """The body of the Dream message: the whole routine, so a project whose rules predate dreaming can follow it."""
+def dream_message(project, now, minutes, then, watch=None):
+    """The body of the Dream message: the whole routine, so a project whose rules predate dreaming can follow it.
+    watch is the quiet watch for a session on the Mac: a dream that ends dormant there ends with it."""
     end = now + datetime.timedelta(minutes=minutes)
     fields = {"until": until(now, minutes), "minutes": minutes, "project": project, "date": f"{now:%Y-%m-%d}",
-              "stamp": f"{end:%Y-%m-%dT%H:%M:%SZ}"}
-    return f"Dream (from bernstein, {day(now)}).\n\n" + (DREAM_BODY + DREAM_ENDS[then]).format(**fields)
+              "stamp": f"{end:%Y-%m-%dT%H:%M:%SZ}", "watch": watch}
+    ending = "dormant on the Mac" if watch and then == "dormant" else then
+    return f"Dream (from bernstein, {day(now)}).\n\n" + (DREAM_BODY + DREAM_ENDS[ending]).format(**fields)
 
 
 def conf_settings(lines):
@@ -1025,30 +1082,48 @@ def own(mailbox, s):
     return mailbox == "bernstein" or conductor_folder(mailbox, s["CODE_DIR"]) is not None
 
 
+def not_watching(name, entry):
+    """What stop says of a session that reports itself dormant and whose duty is stale: a Cowork session, one
+    made dormant on the old words, or one whose quiet watch has ended. A Stop left waiting for it would be
+    carried out whenever Squirrel next typed to it, so none is sent."""
+    return (f"{name} reports itself dormant and its duty is stale (last beat {entry['duty'].get('last_beat')}): it "
+            "is not watching mail, so a Stop would wait until Squirrel next types to it, and none was sent. Speak "
+            "to that session in the app first, then stop it.\n")
+
+
 def stop(a, s, env, today, out, err, sleep):
     if a.all == (a.project is not None):
         raise Stop(2, "name one project, or give --all")
     boxes = listing(s, env, sleep)
+
+    def asleep(entry):
+        return entry.get("duty") is not None and not fresh(entry) and state_of(entry) == "dormant"
+
     if a.all:
         targets = [n for n, m in boxes.items() if not own(n, s) and fresh(m)]
+        passed = "".join(not_watching(n, m) for n, m in boxes.items() if not own(n, s) and asleep(m))
         if not targets:
-            out.write("Nobody is on duty anywhere but bernstein: nothing to stop.\n")
+            out.write(passed + "Nobody is on duty anywhere but bernstein: nothing to stop.\n")
             return
     else:
         if a.project not in boxes:
             raise Stop(3, f"there is no mailbox {a.project} in {s['MAIL_ROOT']}")
+        if asleep(boxes[a.project]):
+            out.write(not_watching(a.project, boxes[a.project]))
+            return
         if not fresh(boxes[a.project]):
             out.write(f"Nobody is on duty for {a.project}: nothing to stop.\n")
             return
-        targets = [a.project]
+        targets, passed = [a.project], ""
     body = stop_message(today)
     if a.dry_run:
         out.write(f"Would send to {', '.join(targets)}, as bernstein, subject \"Stop: hand over\":\n\n{body}\n")
-        out.write("Dry run: nothing was sent.\n")
+        out.write("Dry run: nothing was sent.\n" + passed)
         return
     for name in targets:
         send(s, env, name, "Stop: hand over", body, err)
         out.write(f"Sent the Stop message to {name}.\n")
+    out.write(passed)
     if a.wait is None:
         return
     waited = 0
@@ -1092,7 +1167,12 @@ def reset(a, s, env, today, out, err, sleep):
     else:
         out.write(f"{a.project}: {duty['holder']} is on duty but stale (last beat {duty['last_beat']}).")
         state = state_of(boxes[a.project])
-        if state == "dormant":
+        if state == "dormant" and duty.get("holder") == ON_THE_MAC:
+            out.write(" It reported itself dormant. A dormant session on the Mac keeps a quiet watch that keeps "
+                      "its duty fresh, so a stale duty means that watch has ended: the session is gone, the Mac "
+                      "slept, or it was made dormant before 16 November 2026. Look at it in the app, and reset it "
+                      "only if that session is gone.")
+        elif state == "dormant":
             out.write(" It reported itself dormant: a dormant session is still open in the app, so reset it only "
                       "if that session is gone.")
         elif state == "quiet":
@@ -1166,7 +1246,8 @@ def finish(a, s, env, today, out, err, sleep):
 
 
 def targets_for(a, s, env, sleep, what, stale_too=False):
-    """The mailboxes a stop-like verb acts on, or None after saying there is nothing to do."""
+    """(the mailboxes a stop-like verb acts on, None, the duty listing), or (None, the words that say there
+    is nothing to do, the listing)."""
     if a.all == (a.project is not None):
         raise Stop(2, "name one project, or give --all")
     boxes = listing(s, env, sleep)
@@ -1177,13 +1258,36 @@ def targets_for(a, s, env, sleep, what, stale_too=False):
     if a.all:
         found = [n for n, m in boxes.items() if not own(n, s) and on_duty(m)]
         if not found:
-            return None, f"Nobody is on duty anywhere but bernstein: nothing to {what}.\n"
-        return found, None
+            return None, f"Nobody is on duty anywhere but bernstein: nothing to {what}.\n", boxes
+        return found, None, boxes
     if a.project not in boxes:
         raise Stop(3, f"there is no mailbox {a.project} in {s['MAIL_ROOT']}")
     if not on_duty(boxes[a.project]):
-        return None, f"Nobody is on duty for {a.project}: nothing to {what}.\n"
-    return [a.project], None
+        return None, f"Nobody is on duty for {a.project}: nothing to {what}.\n", boxes
+    return [a.project], None, boxes
+
+
+def holder_of(entry):
+    """Who holds a mailbox's duty, as the duty listing names the session: mac, device, or anything else."""
+    return (entry.get("duty") or {}).get("holder")
+
+
+def watch_of(name, entry, s):
+    """The quiet watch for a mailbox whose session is on the Mac, or None for any other session."""
+    return quiet_watch(name, s["LOBSTER_MAIL"], s["MAIL_ROOT"]) if holder_of(entry) == ON_THE_MAC else None
+
+
+def other_session(entry, would=False):
+    """What is said of a session that is neither on the Mac nor a Cowork one: it gets the words that work anywhere."""
+    holder = holder_of(entry)
+    if holder in (ON_THE_MAC, "device"):
+        return ""
+    return (f" Its session is named {json.dumps(str(holder), ensure_ascii=False)}, which is neither mac nor device, "
+            f"so it {'would be' if would else 'was'} sent the words for a session that cannot keep a watch.")
+
+
+WAKE_WAITS = (" It is not watching mail (a Claude Cowork session, or one whose watch has stopped), so it reads the "
+              "Wake when Squirrel next types to it.")
 
 
 def pace(s, env, name, level):
@@ -1191,48 +1295,83 @@ def pace(s, env, name, level):
 
 
 def dormant(a, s, env, today, out, err, sleep):
-    """Send each session on duty the Dormant message, then set its pace to relaxed."""
-    found, nothing = targets_for(a, s, env, sleep, "make dormant")
+    """Send each session on duty the Dormant message. A session on the Mac is told to keep a quiet watch for
+    bernstein's mail, and its pace is left alone (a pace that changes ends a running watch); any other
+    session is told to stop watching, and its pace is set to relaxed."""
+    found, nothing, boxes = targets_for(a, s, env, sleep, "make dormant")
     if nothing:
         out.write(nothing)
         return
     if a.dry_run:
         for name in found:
+            watch = watch_of(name, boxes[name], s)
             out.write(f"Would send to {name}, as bernstein, subject \"Dormant: stop watching mail until Squirrel is "
-                      f"back\":\n\n{dormant_message(name, today)}\n")
-            out.write(f"Would set the pace of {name} to relaxed.\n")
+                      f"back\":\n\n{dormant_message(name, today, watch=watch)}\n")
+            if watch:
+                out.write(f"Would leave the pace of {name} as it is: a session on the Mac keeps a quiet watch.\n")
+            else:
+                out.write(f"Would set the pace of {name} to relaxed.{other_session(boxes[name], would=True)}\n")
         out.write("Dry run: nothing was sent or set.\n")
         return
     for name in found:
-        send(s, env, name, "Dormant: stop watching mail until Squirrel is back", dormant_message(name, today), err)
-        pace(s, env, name, "relaxed")
-        out.write(f"Sent the Dormant message to {name} and set its pace to relaxed.\n")
+        watch = watch_of(name, boxes[name], s)
+        send(s, env, name, "Dormant: stop watching mail until Squirrel is back",
+             dormant_message(name, today, watch=watch), err)
+        if watch:
+            out.write(f"Sent the Dormant message to {name}, a session on the Mac: it keeps a quiet watch for "
+                      "bernstein's mail, and its pace is left as it is.\n")
+        else:
+            pace(s, env, name, "relaxed")
+            out.write(f"Sent the Dormant message to {name} and set its pace to relaxed.{other_session(boxes[name])}\n")
 
 
 def wake(a, s, env, today, out, err, sleep):
-    """Set each session's pace back to normal, then send the Wake message. A dormant session's duty may be
-    stale, so stale duties count too."""
-    found, nothing = targets_for(a, s, env, sleep, "wake", stale_too=True)
+    """Send each session the Wake message, its pace set back to normal first. A dormant session's duty may be
+    stale, so stale duties count too. The pace of a session on the Mac is set only if it is relaxed (it was
+    made dormant on the old words): otherwise it keeps a quiet watch, which a pace that changed would end
+    before the Wake is read. A session that is not on the Mac, or whose duty is stale, is not watching:
+    the command says its Wake waits."""
+    found, nothing, boxes = targets_for(a, s, env, sleep, "wake", stale_too=True)
     if nothing:
         out.write(nothing)
         return
+
+    def plan(name):
+        """(the pace as it is, whether to set it to normal, the words if the Wake will wait)."""
+        entry = boxes[name]
+        now = entry.get("pace") or "normal"
+        on_the_mac = holder_of(entry) == ON_THE_MAC
+        return now, not on_the_mac or now == "relaxed", "" if on_the_mac and fresh(entry) else WAKE_WAITS
+
     if a.dry_run:
         for name in found:
-            out.write(f"Would set the pace of {name} to normal, then send to it, as bernstein, subject \"Wake: watch "
-                      f"mail again\":\n\n{wake_message(name, today)}\n")
+            now, set_it, waits = plan(name)
+            if set_it:
+                out.write(f"Would set the pace of {name} to normal, then send to it, as bernstein, subject \"Wake: "
+                          f"watch mail again\":\n\n{wake_message(name, today)}\n")
+            else:
+                out.write(f"Would send to {name}, as bernstein, subject \"Wake: watch mail again\", leaving its pace "
+                          f"at {now}:\n\n{wake_message(name, today)}\n")
+            if waits:
+                out.write(waits.strip() + "\n")
         out.write("Dry run: nothing was sent or set.\n")
         return
     for name in found:
-        pace(s, env, name, "normal")
+        now, set_it, waits = plan(name)
+        if set_it:
+            pace(s, env, name, "normal")
         send(s, env, name, "Wake: watch mail again", wake_message(name, today), err)
-        out.write(f"Set the pace of {name} to normal and sent the Wake message.\n")
+        if set_it:
+            out.write(f"Set the pace of {name} to normal and sent the Wake message.{waits}\n")
+        else:
+            out.write(f"Sent the Wake message to {name}; its pace was left at {now}.{waits}\n")
 
 
 def dream(a, s, env, now, out, err, sleep):
     """Send each session on duty the Dream message. It sets no pace: the session goes dormant itself at the end."""
     if not 5 <= a.minutes <= 240:
         raise Stop(2, f"--minutes must be from 5 to 240, not {a.minutes}")
-    found, nothing = targets_for(a, s, env, sleep, "dream")
+    found, nothing, boxes = targets_for(a, s, env, sleep, "dream")
     if nothing:
         out.write(nothing)
         return
@@ -1240,12 +1379,13 @@ def dream(a, s, env, now, out, err, sleep):
     if a.dry_run:
         for name in found:
             out.write(f"Would send to {name}, as bernstein, subject \"{subject}\":\n\n"
-                      f"{dream_message(name, now, a.minutes, a.then)}\n")
+                      f"{dream_message(name, now, a.minutes, a.then, watch=watch_of(name, boxes[name], s))}\n")
         out.write("Dry run: nothing was sent.\n")
         return
     after = "dormant" if a.then == "dormant" else "hand over and stop"
     for name in found:
-        send(s, env, name, subject, dream_message(name, now, a.minutes, a.then), err)
+        send(s, env, name, subject,
+             dream_message(name, now, a.minutes, a.then, watch=watch_of(name, boxes[name], s)), err)
         out.write(f"Sent the Dream message to {name}: until {until(now, a.minutes)}, then {after}.\n")
 
 
