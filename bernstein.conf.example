@@ -25,3 +25,11 @@
 #APP_SESSIONS=~/Library/Application Support/Claude/claude-code-sessions
 # Where the app keeps its list of Claude (cowork) sessions: read, never written, for the same link.
 #APP_COWORK_SESSIONS=~/Library/Application Support/Claude/local-agent-mode-sessions
+# Where Claude Code keeps each session's transcript: read, never written, for how full a session's
+# context window is (conduct status --json, and podium).
+#APP_TRANSCRIPTS=~/.claude/projects
+# The size of a session's context window, in tokens. The app's files do not say it, so it is set here:
+# one figure for every session.
+#CONTEXT_WINDOW=1000000
+# The percentage of the window at or over which a session is marked as filling up.
+#CONTEXT_WARN=60

@@ -55,13 +55,15 @@ def test_status_json_joins_each_mailbox_with_its_project(world):
         {"mailbox": "recipes", "state": "running", "kind": "non-code", "folder": nc, "model": "opus",
          "effort": "high", "sister": "recipes-tools", "claws": ["recipes-tools", "video-tools"], "serves": [],
          "refused": None, "duty": recipes["duty"], "pace": "normal", "new": 2, "open": 0,
-         "handover_waiting": False, "reported": DREAMING, "session": None},
+         "handover_waiting": False, "reported": DREAMING, "session": None, "context": None},
         {"mailbox": "recipes-tools", "state": "handed-over", "kind": "code", "folder": tools, "model": "opus",
          "effort": "high", "sister": "recipes", "claws": [], "serves": ["recipes"], "refused": None,
-         "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": True, "reported": None, "session": None},
+         "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": True, "reported": None, "session": None,
+         "context": None},
         {"mailbox": "video-tools", "state": "off", "kind": "code", "folder": video, "model": "opus",
          "effort": "high", "sister": "", "claws": [], "serves": ["recipes"], "refused": None,
-         "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": False, "reported": None, "session": None}]
+         "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": False, "reported": None, "session": None,
+         "context": None}]
 
 
 def test_status_says_why_start_would_refuse_a_project(world):
@@ -251,3 +253,121 @@ def test_status_gives_a_non_code_project_the_link_to_its_newest_cowork_session(w
     world.write_conf(f"APP_COWORK_SESSIONS={tmp_path / 'desk 2'}\n")
     code, out, _err = world.conduct("status", "--json")
     assert code == 0 and json.loads(out)["mailboxes"][0]["session"]["id"] == "session_01ELSEWHEREELSEWHEREELSE"
+
+
+CLI = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+PRIVATE = "private words that must never leave the transcript"
+
+
+def transcript(world, sid, cli, figures, when="2026-10-18T09:30:07.123Z", root=None, folder=None):
+    """Name a session's transcript in its store entry, and write it (invented) where the settings say
+    transcripts are: one thing said, and one reply with the three figures."""
+    store = os.path.join(world.home, "Library", "Application Support", "Claude", "claude-code-sessions")
+    entry_path = os.path.join(store, "acct", "org", sid + ".json")
+    with open(entry_path, encoding="utf-8") as f:
+        data = json.load(f)
+    data["cliSessionId"] = cli
+    with open(entry_path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    root = root or os.path.join(world.home, ".claude", "projects")
+    os.makedirs(os.path.join(root, folder or "-invented-folder"), exist_ok=True)
+    usage = dict(zip(("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"), figures))
+    lines = [{"type": "user", "message": {"role": "user", "content": PRIVATE}},
+             {"type": "assistant", "isSidechain": False, "timestamp": when,
+              "message": {"content": [{"type": "text", "text": PRIVATE}], "usage": usage}},
+             {"type": "last-prompt", "lastPrompt": PRIVATE}]
+    with open(os.path.join(root, folder or "-invented-folder", cli + ".jsonl"), "w", encoding="utf-8") as f:
+        f.write("".join(json.dumps(line) + "\n" for line in lines))
+    return root
+
+
+def test_status_json_says_how_full_the_context_window_of_each_claude_code_session_is(world):
+    _nc, tools, video = a_pair(world)
+    store = app_store(world, [(SID, tools, 1794401892175, False), (OLD, video, 1794300000000, False)])
+    root = transcript(world, SID, CLI, (10, 5709, 130000))
+    world.listing([entry("recipes", "fresh"), entry("recipes-tools"), entry("video-tools")])
+    before = tree(store), tree(root)
+    code, out, err = world.conduct("status", "--json")
+    rows = {r["mailbox"]: r for r in json.loads(out)["mailboxes"]}
+    assert (code, err) == (0, "")
+    assert rows["recipes-tools"]["context"] == {"tokens": 135719, "window": 1000000, "percent": 14,
+                                                "as_of": "2026-10-18T09:30:07Z", "warn": False}
+    assert rows["video-tools"]["session"]["id"] == OLD and rows["video-tools"]["context"] is None   # no transcript
+    assert rows["recipes"]["session"] is None and rows["recipes"]["context"] is None                # no session
+    assert list(rows["recipes-tools"])[-2:] == ["session", "context"]
+    assert PRIVATE not in out
+    assert (tree(store), tree(root)) == before                  # the app's files are only read
+    assert [(c["prog"], c["args"][:2]) for c in world.calls()] == [("lobster-mail", ["duty", "status"])]
+
+
+def test_the_window_s_size_the_warning_level_and_where_transcripts_are_come_from_the_settings(world, tmp_path):
+    _nc, tools, _video = a_pair(world)
+    app_store(world, [(SID, tools, 1794401892175, False)])
+    transcript(world, SID, CLI, (0, 0, 119000), root=str(tmp_path / "my transcripts"), folder="it's [1] *")
+    world.listing([entry("recipes-tools")])
+    world.write_conf(f"APP_TRANSCRIPTS={tmp_path / 'my transcripts'}\nCONTEXT_WINDOW=200000\n")
+    code, out, _err = world.conduct("status", "--json")
+    assert code == 0 and json.loads(out)["mailboxes"][0]["context"] == {
+        "tokens": 119000, "window": 200000, "percent": 60, "as_of": "2026-10-18T09:30:07Z", "warn": True}
+    world.write_conf(f"APP_TRANSCRIPTS={tmp_path / 'my transcripts'}\nCONTEXT_WINDOW=200000\nCONTEXT_WARN=61\n")
+    code, out, _err = world.conduct("status", "--json")
+    assert code == 0 and json.loads(out)["mailboxes"][0]["context"]["warn"] is False
+    world.write_conf("CONTEXT_WINDOW=200000\n")             # transcripts back where none is: not known
+    code, out, err = world.conduct("status", "--json")
+    assert (code, err) == (0, "") and json.loads(out)["mailboxes"][0]["context"] is None
+
+
+def test_status_marks_a_session_at_or_over_60_of_a_million_when_the_settings_say_nothing(world):
+    _nc, tools, video = a_pair(world)
+    other = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    app_store(world, [(SID, tools, 1794401892175, False), (OLD, video, 1794300000000, False)])
+    transcript(world, SID, CLI, (0, 0, 594999))
+    transcript(world, OLD, other, (0, 0, 595000))
+    world.listing([entry("recipes-tools"), entry("video-tools")])
+    rows = {r["mailbox"]: r["context"] for r in json.loads(world.conduct("status", "--json")[1])["mailboxes"]}
+    assert (rows["recipes-tools"]["percent"], rows["recipes-tools"]["warn"]) == (59, False)
+    assert (rows["video-tools"]["percent"], rows["video-tools"]["warn"]) == (60, True)
+
+
+def test_a_cowork_session_s_context_is_not_known(world):
+    nc, _tools, _video = a_pair(world)
+    desk = os.path.join(world.home, "Library", "Application Support", "Claude", "local-agent-mode-sessions")
+    os.makedirs(os.path.join(desk, "acct", "org"))
+    with open(os.path.join(desk, "acct", "org", "remote-session-spaces.json"), "w", encoding="utf-8") as f:
+        json.dump({"entries": [{"sessionId": COWORK, "folders": [nc]}]}, f)
+    world.listing([entry("recipes", "fresh")])
+    code, out, err = world.conduct("status", "--json")
+    row = json.loads(out)["mailboxes"][0]
+    assert (code, err) == (0, "") and row["session"]["app"] == "cowork" and row["context"] is None
+
+
+def test_a_transcript_that_is_not_the_shape_expected_is_not_known_and_is_no_error(world):
+    _nc, tools, _video = a_pair(world)
+    app_store(world, [(SID, tools, 1794401892175, False)])
+    root = transcript(world, SID, CLI, (0, 0, "many"))
+    world.listing([entry("recipes-tools")])
+    code, out, err = world.conduct("status", "--json")
+    assert (code, err) == (0, "") and json.loads(out)["mailboxes"][0]["context"] is None
+    with open(os.path.join(root, "-invented-folder", CLI + ".jsonl"), "wb") as f:
+        f.write(b"\xff\xfe not a transcript at all")
+    code, out, err = world.conduct("status", "--json")
+    assert (code, err) == (0, "") and json.loads(out)["mailboxes"][0]["context"] is None
+
+
+def test_the_text_form_of_status_says_nothing_of_the_context_window(world):
+    _nc, tools, _video = a_pair(world)
+    world.listing([entry("recipes-tools")])
+    plain = world.conduct("status")
+    app_store(world, [(SID, tools, 1794401892175, False)])
+    transcript(world, SID, CLI, (0, 0, 990000))
+    assert world.conduct("status") == plain == (0, "recipes-tools  off  code      nobody on duty  new 0  open 0  pace normal\n", "")
+
+
+def test_a_context_setting_that_is_not_a_number_stops_status_with_exit_2(world):
+    world.listing([entry("recipes-tools")])
+    world.write_conf("CONTEXT_WARN=high\n")
+    assert world.conduct("status", "--json") == (
+        2, "", f"conduct: {world.conf}: line 7: CONTEXT_WARN must be a whole number from 1 to 100\n")
+    world.write_conf("CONTEXT_WINDOW=1M\n")
+    assert world.conduct("status") == (
+        2, "", f"conduct: {world.conf}: line 7: CONTEXT_WINDOW must be a whole number from 1000 to 100000000\n")

@@ -390,3 +390,34 @@ def test_a_post_whose_length_is_not_a_number_is_read_as_empty_and_refused_403(wo
     assert world.podium("--port", "0", "--no-open", serve=serve)[0] == 0
     assert got["reply"].startswith("HTTP/1.0 403 ") and got["reply"].endswith("when it started\n")
     assert world.calls() == []
+
+
+def test_over_the_socket_the_page_shows_what_conduct_says_of_each_context_window_and_reads_no_file_of_the_app_s(world):
+    sid = "local_11111111-1111-4111-8111-111111111111"
+    session = {"id": sid, "link": "claude://claude.ai/epitaxy/" + sid, "app": "code",
+               "last_activity": "2026-10-18T09:38:00Z"}
+    rows = [dict(ROWS[0], session=session, context={"tokens": 612000, "window": 1000000, "percent": 61,
+                                                    "as_of": "2026-10-18T09:38:00Z", "warn": True}),
+            dict(ROWS[0], mailbox="calm-tools", session=session,
+                 context={"tokens": 135719, "window": 1000000, "percent": 14, "as_of": "2026-10-18T09:30:07Z",
+                          "warn": False}),
+            dict(ROWS[0], mailbox="desk-tools", session=dict(session, app="cowork"), context=None)]
+    told = json.dumps({"root": "/m", "mailboxes": rows, "skipped": []}, indent=1) + "\n"
+    world.status(told)
+    world.write_conf("CONTEXT_WARN=99\nCONTEXT_WINDOW=5000\nAPP_TRANSCRIPTS=/nowhere/at/all\n")   # conduct's, not podium's
+    got = {}
+
+    def talk(base):
+        got["view"] = get(base + "/view?t=tok-en")
+        got["status"] = get(base + "/status?t=tok-en")
+
+    assert serving(world, talk) == (0, "")
+    view = got["view"][2]
+    assert got["view"][0] == 200 and view == podium.view(rows, NOW)
+    assert ('<li class="context warn" title="612,000 tokens in use at 09:38 UTC, of a window of 1,000,000 (the '
+            'setting CONTEXT_WINDOW); at or over the warning level (the setting CONTEXT_WARN)">61% of context '
+            '<span class="of">(of 1,000,000)</span></li>') in view
+    assert '>14% of context <span class="of">(of 1,000,000)</span></li>' in view
+    assert view.count('<li class="context unknown">context not known</li>') == 1
+    assert got["status"] == (200, got["status"][1], told)       # passed through, byte for byte
+    assert conducted(world) == [["status", "--json"]] * 2

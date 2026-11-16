@@ -81,7 +81,7 @@ def test_a_row_joins_the_mailbox_with_what_the_project_says():
         "model": "opus", "effort": "high", "sister": "recipes-tools",
         "claws": ["recipes-tools", "video-tools"], "serves": [], "refused": None,
         "duty": entry["duty"], "pace": "eager", "new": 2, "open": 1, "handover_waiting": False,
-        "reported": DREAMING, "session": None}]
+        "reported": DREAMING, "session": None, "context": None}]
 
 
 def test_a_claw_says_which_projects_it_serves_as_sister_or_further_claw():
@@ -106,7 +106,7 @@ def test_a_mailbox_whose_project_start_would_refuse_carries_the_reason_and_no_ki
         "effort": None, "sister": None, "claws": [], "serves": [],
         "refused": "no project bernstein anywhere",
         "duty": box("fresh", name="bernstein")["duty"], "pace": "normal", "new": 0, "open": 1,
-        "handover_waiting": False, "reported": None, "session": None}
+        "handover_waiting": False, "reported": None, "session": None, "context": None}
 
 
 def test_rows_keep_the_listing_s_order_and_fill_what_an_older_lobster_mail_leaves_out():
@@ -184,3 +184,25 @@ def test_an_awkward_reported_status_stays_on_its_one_line_as_data():
 
 def test_no_mailboxes_gives_no_lines():
     assert conduct.status_text([], NOW) == ""
+
+
+def test_a_row_s_context_is_what_is_said_of_its_session_and_a_row_with_no_session_is_never_asked_about():
+    code = {"id": "local_x", "app": "code"}
+    cowork = {"id": "session_x", "app": "cowork"}
+    asked = []
+
+    def context(session):
+        asked.append(session)
+        return {"tokens": 7} if session is code else None
+
+    boxes = {name: box(name=name) for name in ("recipes", "recipes-tools", "video-tools")}
+    projects = {"recipes": project("recipes", "non-code", "recipes-tools", ("video-tools",)),
+                "recipes-tools": project("recipes-tools", "code", "recipes"),
+                "video-tools": project("video-tools", "code")}
+    rows = {r["mailbox"]: r for r in conduct.status_rows(
+        boxes, lookup_in(projects), sessions={"/p/recipes-tools": code}, cowork={"/p/recipes": cowork},
+        context=context)}
+    assert rows["recipes-tools"]["context"] == {"tokens": 7}
+    assert rows["recipes"]["session"] == cowork and rows["recipes"]["context"] is None
+    assert rows["video-tools"]["session"] is None and rows["video-tools"]["context"] is None
+    assert asked == [cowork, code]

@@ -426,3 +426,75 @@ def test_a_start_that_worked_carries_its_reminder_in_the_activity_since_its_box_
     assert html.count('<p class="remind">') == 1
     assert '<p class="remind">Now in the desktop app: confirm the &lt;folder&gt;, then send the first line.</p>' in html
     assert ".remind {" in podium.PAGE
+
+
+def filling(r, tokens=135719, window=1000000, percent=14, warn=False, as_of="2026-10-18T09:30:07Z"):
+    """A row with a session whose context window conduct could read."""
+    return dict(with_session(r), context={"tokens": tokens, "window": window, "percent": percent, "as_of": as_of,
+                                          "warn": warn})
+
+
+def test_a_row_says_how_full_its_session_s_context_window_is_with_the_size_beside_it():
+    html = podium.view([filling(row("lone-tools", "running", duty="mac"))], NOW)
+    assert ('<li>opus, high</li><li class="context" title="135,719 tokens in use at 09:30 UTC, of a window of '
+            '1,000,000 (the setting CONTEXT_WINDOW)">14% of context <span class="of">(of 1,000,000)</span></li>'
+            '</ul>') in html
+
+
+def test_a_session_at_or_over_the_warning_level_is_marked_plainly():
+    html = podium.view([filling(row("lone-tools", "running", duty="mac"), 600000, 1000000, 60, True)], NOW)
+    assert ('<li class="context warn" title="600,000 tokens in use at 09:30 UTC, of a window of 1,000,000 (the '
+            'setting CONTEXT_WINDOW); at or over the warning level (the setting CONTEXT_WARN)">60% of context '
+            '<span class="of">(of 1,000,000)</span></li>') in html
+    calm = podium.view([filling(row("lone-tools", "running", duty="mac"), 590000, 1000000, 59, False)], NOW)
+    assert 'class="context warn"' not in calm and '<li class="context" title="590,000 tokens' in calm
+    page = podium.page("")
+    assert ".facts .context.warn {" in page and "border: 2px solid var(--gold)" in page
+
+
+def test_the_mark_is_conduct_s_to_give_and_the_page_never_works_it_out_for_itself():
+    full = podium.view([filling(row("lone-tools"), 990000, 1000000, 99, False)], NOW)
+    assert '<li class="context" title="990,000 tokens' in full and "context warn" not in full
+    early = podium.view([filling(row("lone-tools"), 20000, 1000000, 2, True)], NOW)
+    assert '<li class="context warn" title="20,000 tokens' in early
+
+
+def test_a_row_with_a_session_whose_context_cannot_be_told_says_not_known_and_one_with_no_session_says_nothing():
+    known_not = '<li class="context unknown">context not known</li>'
+    assert known_not in podium.view([dict(with_session(row("lone-tools", "running", duty="mac")), context=None)], NOW)
+    assert known_not in podium.view([with_session(row("lone-tools"))], NOW)       # an older conduct: no key at all
+    for r in (row("lone-tools", "running", duty="mac"), dict(row("lone-tools"), session=None, context=None),
+              dict(row("lone-tools"), session=None, context={"tokens": 5, "window": 1000, "percent": 1,
+                                                             "as_of": None, "warn": False})):
+        assert "context" not in podium.view([r], NOW)
+
+
+@pytest.mark.parametrize("change", [
+    {"percent": "14"}, {"percent": 14.0}, {"percent": True}, {"percent": -1}, {"percent": None},
+    {"tokens": "135719"}, {"tokens": None}, {"tokens": -5}, {"window": 0}, {"window": "1000000"}, {"window": None},
+    {"warn": "yes"}, {"warn": None}, {"warn": 1},
+    {"percent": "<script>alert(1)</script>"},
+])
+def test_a_context_that_is_not_the_shape_conduct_gives_is_shown_as_not_known_never_as_given(change):
+    r = filling(row("lone-tools", "running", duty="mac"))
+    r["context"].update(change)
+    html = podium.view([r], NOW)
+    assert '<li class="context unknown">context not known</li>' in html
+    assert "% of context" not in html and "<script>" not in html
+    for odd in ("a string", ["a", "list"], 14, True):
+        assert '<li class="context unknown">context not known</li>' in podium.view([dict(r, context=odd)], NOW)
+
+
+def test_the_time_the_figure_is_true_for_names_the_day_when_it_is_not_today_and_is_left_out_when_it_is_no_time():
+    old = podium.view([filling(row("lone-tools"), as_of="2026-10-16T22:04:37Z")], NOW)
+    assert 'title="135,719 tokens in use at 22:04 UTC on 16 October 2026, of a window of 1,000,000 (' in old
+    for odd in (None, "yesterday", 7, '"><script>'):
+        html = podium.view([filling(row("lone-tools"), as_of=odd)], NOW)
+        assert 'title="135,719 tokens in use, of a window of 1,000,000 (the setting CONTEXT_WINDOW)">14% of' in html
+        assert "<script>" not in html
+
+
+def test_a_figure_over_the_whole_window_is_said_as_it_is():
+    html = podium.view([filling(row("lone-tools"), 1500, 1000, 150, True)], NOW)
+    assert '1,500 tokens in use at 09:30 UTC, of a window of 1,000 (' in html
+    assert '150% of context <span class="of">(of 1,000)</span>' in html

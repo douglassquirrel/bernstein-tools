@@ -152,6 +152,31 @@ def e(text):
     return html.escape(str(text), quote=True)
 
 
+def count(value):
+    """A whole number that is not negative, and not true or false."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def context_item(row, now):
+    """How full the context window of the row's session is, as one of the row's facts: nothing for a row
+    with no session, "context not known" when conduct could not tell, or when what it says is not the
+    shape it gives. The mark at the warning level is conduct's to give (warn), never worked out here."""
+    if not isinstance(row.get("session"), dict):
+        return ""
+    found = row.get("context")
+    if not (isinstance(found, dict) and count(found.get("percent")) and count(found.get("tokens"))
+            and count(found.get("window")) and found["window"] > 0 and isinstance(found.get("warn"), bool)):
+        return '<li class="context unknown">context not known</li>'
+    when = stamp(found.get("as_of"))
+    title = (f"{found['tokens']:,} tokens in use" + (f" at {clock(when, now)}" if when else "")
+             + f", of a window of {found['window']:,} (the setting CONTEXT_WINDOW)")
+    if found["warn"]:
+        title += "; at or over the warning level (the setting CONTEXT_WARN)"
+    marked = "context warn" if found["warn"] else "context"
+    return (f'<li class="{marked}" title="{e(title)}">{found["percent"]}% of context '
+            f'<span class="of">(of {found["window"]:,})</span></li>')
+
+
 def row_html(row, now, label=None, claw=False):
     """One mailbox's line on the page. label is what the row is to the card it sits in."""
     start = '<div class="row claw">' if claw else '<div class="row">'
@@ -173,6 +198,8 @@ def row_html(row, now, label=None, claw=False):
         facts.append(f"<li>{e(row['open'])} open</li>")
     if row.get("model"):
         facts.append(f"<li>{e(row['model'])}, {e(row['effort'])}</li>")
+    if context_item(row, now):
+        facts.append(context_item(row, now))
     said = row.get("reported")
     if said and row["state"] != "running":
         facts.append("<li>reporting " + e('"' + str(said.get("status", "")) + '"') + "</li>")
@@ -301,6 +328,10 @@ button:disabled { opacity: 0.5; cursor: default; }
 .facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0 12px;
   color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; grid-column: 3; }
 .facts .new { color: var(--ink); font-weight: 600; }
+.facts .context.warn { color: var(--ink); font-weight: 600; border: 2px solid var(--gold); border-radius: 11px;
+  padding: 0 7px; }
+.facts .context .of { font-weight: 400; }
+.facts .context.unknown { font-style: italic; }
 .refused { grid-column: 1 / -1; margin: 0; color: var(--mistake-text); font-size: 15px; overflow-wrap: anywhere; }
 .acts, .all { display: flex; flex-wrap: wrap; gap: 5px; }
 .acts { grid-column: 4; justify-content: flex-end; }

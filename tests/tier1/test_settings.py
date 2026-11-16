@@ -19,6 +19,9 @@ def test_an_empty_file_gives_the_defaults_with_home_filled_in():
         "PODIUM_LOG": "/home/sq/.bernstein/podium.log",
         "APP_SESSIONS": "/home/sq/Library/Application Support/Claude/claude-code-sessions",
         "APP_COWORK_SESSIONS": "/home/sq/Library/Application Support/Claude/local-agent-mode-sessions",
+        "APP_TRANSCRIPTS": "/home/sq/.claude/projects",
+        "CONTEXT_WINDOW": "1000000",
+        "CONTEXT_WARN": "60",
     }
 
 
@@ -47,6 +50,19 @@ def test_a_path_with_spaces_and_non_ascii_letters_is_kept_whole():
         ("PODIUM_PORT=-1\n", "line 1: PODIUM_PORT must be a whole number from 0 to 65535"),
         ("PODIUM_PORT=80.5\n", "line 1: PODIUM_PORT must be a whole number from 0 to 65535"),
         ("PODIUM_PORT=\n", "line 1: PODIUM_PORT must be a whole number from 0 to 65535"),
+        ("CONTEXT_WARN=sixty\n", "line 1: CONTEXT_WARN must be a whole number from 1 to 100"),
+        ("CONTEXT_WARN=0\n", "line 1: CONTEXT_WARN must be a whole number from 1 to 100"),
+        ("CONTEXT_WARN=101\n", "line 1: CONTEXT_WARN must be a whole number from 1 to 100"),
+        ("CONTEXT_WARN=60%\n", "line 1: CONTEXT_WARN must be a whole number from 1 to 100"),
+        ("CONTEXT_WARN=59.5\n", "line 1: CONTEXT_WARN must be a whole number from 1 to 100"),
+        ("CONTEXT_WARN=\n", "line 1: CONTEXT_WARN must be a whole number from 1 to 100"),
+        ("# c\nCONTEXT_WINDOW=1,000,000\n", "line 2: CONTEXT_WINDOW must be a whole number from 1000 to 100000000"),
+        ("CONTEXT_WINDOW=999\n", "line 1: CONTEXT_WINDOW must be a whole number from 1000 to 100000000"),
+        ("CONTEXT_WINDOW=100000001\n", "line 1: CONTEXT_WINDOW must be a whole number from 1000 to 100000000"),
+        ("CONTEXT_WINDOW=1M\n", "line 1: CONTEXT_WINDOW must be a whole number from 1000 to 100000000"),
+        ("CONTEXT_WINDOW=-200000\n", "line 1: CONTEXT_WINDOW must be a whole number from 1000 to 100000000"),
+        ("CONTEXT_WINDOW=\n", "line 1: CONTEXT_WINDOW must be a whole number from 1000 to 100000000"),
+        ("CONTEXT_WINDOW=٢٠٠٠٠٠\n", "line 1: CONTEXT_WINDOW must be a whole number from 1000 to 100000000"),
     ],
 )
 def test_refuses_a_bad_settings_line_naming_it(text, why):
@@ -123,3 +139,17 @@ def test_the_podium_port_setting_is_kept_when_it_is_a_port_number():
 def test_the_podium_log_setting_is_a_path_with_home_filled_in():
     assert read_settings("PODIUM_LOG=~/logs/my podium.log\n", HOME)["PODIUM_LOG"] == "/home/sq/logs/my podium.log"
     assert read_settings("PODIUM_LOG=/var/tmp/p.log\n", HOME)["PODIUM_LOG"] == "/var/tmp/p.log"
+
+
+
+def test_the_context_window_and_the_warning_level_are_kept_when_they_are_whole_numbers_in_range():
+    got = read_settings("CONTEXT_WINDOW=200000\nCONTEXT_WARN='75'\n", HOME)
+    assert (got["CONTEXT_WINDOW"], got["CONTEXT_WARN"]) == ("200000", "75")
+    edges = read_settings("CONTEXT_WINDOW=1000\nCONTEXT_WARN=1\n", HOME)
+    assert (edges["CONTEXT_WINDOW"], edges["CONTEXT_WARN"]) == ("1000", "1")
+    tops = read_settings("CONTEXT_WINDOW=100000000\nCONTEXT_WARN=100\n", HOME)
+    assert (tops["CONTEXT_WINDOW"], tops["CONTEXT_WARN"]) == ("100000000", "100")
+
+
+def test_where_the_transcripts_are_is_a_path_with_home_filled_in():
+    assert read_settings("APP_TRANSCRIPTS=~/my claude/projects\n", HOME)["APP_TRANSCRIPTS"] == "/home/sq/my claude/projects"

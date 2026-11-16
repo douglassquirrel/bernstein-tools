@@ -26,10 +26,16 @@ DEFAULTS = {
     "PODIUM_LOG": "~/.bernstein/podium.log",
     "APP_SESSIONS": "~/Library/Application Support/Claude/claude-code-sessions",
     "APP_COWORK_SESSIONS": "~/Library/Application Support/Claude/local-agent-mode-sessions",
+    "APP_TRANSCRIPTS": "~/.claude/projects",
+    "CONTEXT_WINDOW": "1000000",
+    "CONTEXT_WARN": "60",
 }
 
+# settings that are whole numbers: the least and the most each may be
+WHOLE = {"CONTEXT_WINDOW": (1000, 100000000), "CONTEXT_WARN": (1, 100)}
+
 PATHS = ("TEMPLATE", "NON_CODE_DIR", "CODE_DIR", "LOBSTER_MAIL", "MAIL_ROOT", "PYTHON", "PODIUM_LOG",
-         "APP_SESSIONS", "APP_COWORK_SESSIONS")
+         "APP_SESSIONS", "APP_COWORK_SESSIONS", "APP_TRANSCRIPTS")
 
 
 def expand(value, home):
@@ -63,6 +69,12 @@ def check_port(port, where, shown=False):
         raise SettingsRefused(f"{where} must be a whole number from 0 to 65535" + (f", not {port}" if shown else ""))
 
 
+def check_whole(value, where, low, high):
+    """A whole number as text, from low to high."""
+    if not re.fullmatch(r"[0-9]{1,9}", value) or not low <= int(value) <= high:
+        raise SettingsRefused(f"{where} must be a whole number from {low} to {high}")
+
+
 def read_settings(text, home):
     """The settings from a ~/.bernstein.conf text, over the defaults, with ~ filled in."""
     found = dict(DEFAULTS)
@@ -82,6 +94,8 @@ def read_settings(text, home):
             check_model(value, f"line {number}: MODEL")
         if key == "PODIUM_PORT":
             check_port(value, f"line {number}: PODIUM_PORT")
+        if key in WHOLE:
+            check_whole(value, f"line {number}: {key}", *WHOLE[key])
         found[key] = value
     for key in PATHS:
         found[key] = expand(found[key], home)

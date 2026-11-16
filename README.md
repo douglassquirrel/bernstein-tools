@@ -662,6 +662,30 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
   own and undocumented, so if they are missing or change shape every `session` is simply `null`. The
   text form does not show it.
 
+  `context` says how full that session's context window is, or is `null` when that cannot be told:
+
+  ```json
+  "context": {"tokens": 135719, "window": 1000000, "percent": 14, "as_of": "2026-11-16T11:45:20Z", "warn": false}
+  ```
+
+  - `tokens`: what the session's newest reply took in, from the session's transcript: the sum of
+    `input_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens` in that reply's `usage`.
+    A sub-agent's reply is not counted. It is the newest reply's figure, not the largest: after the app
+    compacts a session the figure falls.
+  - `window`: the size of the window, which the app's files do not say. It is the setting
+    `CONTEXT_WINDOW`, 1000000 unless set (a whole number from 1000 to 100000000).
+  - `percent`: `tokens` as a whole percentage of `window`, a half rounded up.
+  - `as_of`: when that reply was made. An idle session's figure is as old as this.
+  - `warn`: `true` when `percent` is at or over the setting `CONTEXT_WARN`, 60 unless set (a whole
+    number from 1 to 100).
+
+  Only a Claude Code session has one. The session's file in `APP_SESSIONS` names its transcript, which
+  is looked for in the folders of the setting `APP_TRANSCRIPTS` (`~/.claude/projects` unless set).
+  `context` is `null`, and never a guess, for a project with no session, a Claude Cowork session, a
+  session whose transcript is not there (or is there twice), one with no reply yet, and a newest reply
+  that is not the shape expected. `conduct` reads the end of the transcript and nothing else of it, and
+  never writes it; no word of a conversation is printed. The text form does not show `context`.
+
 ## podium: a page showing every session, with buttons
 
 ```
@@ -680,6 +704,14 @@ until 10:20 UTC`), and `overdue since` once its finish time has passed. The page
 every 15 seconds and when you press Refresh, follows your light or dark setting, and works at the
 width of a phone. It is set in EB Garamond if that typeface is installed on the Mac, and in Georgia if
 not; nothing is fetched from anywhere, so no font is downloaded.
+
+A line whose project has a session in the desktop app also says how full that session's context window
+is, last among its facts: "14% of context (of 1,000,000)", with the tokens in use and the time of the
+figure when you hover over it. At or over the warning level (60% unless `CONTEXT_WARN` says otherwise) it
+is drawn in heavier letters inside a gold border. When `conduct status` could not tell (a Claude Cowork
+session, or a session with no transcript) it says "context not known"; a line with no session says
+nothing. The figures are `conduct status --json`'s `context`, described above: the size of the window is
+the setting `CONTEXT_WINDOW`, not something read from the app.
 
 A line whose project has a session in the desktop app starts its buttons with **Open**, a link that takes
 you straight to the newest one: a non-code project's Claude session, or a tools project's Claude Code
@@ -1174,9 +1206,11 @@ Every failure is one line on standard error starting `new-lobster:`, saying what
 `tests/tier1/` tests the pure parts (names, settings, rendering) against small invented templates;
 `tests/tier2/` runs `new-lobster` end to end against stubs of `git`, `backlog`, `lobster-mail` and
 Python placed on `PATH`, `local-history` against the stubs of `git` and `lobster-mail`, `drop-backlog`, `set-conf` and `notice` against invented projects and the stub of `lobster-mail`, `conduct` against stubs of `lobster-mail` and `open` (and, for `conduct waiting`, of `git`, which prints what each invented repository is given to say), `podium` against a stub of `conduct` (its request
-handling as a plain function; three tests fetch the page from a real socket on `127.0.0.1`, which is this
+handling as a plain function; a few tests fetch the page from a real socket on `127.0.0.1`, which is this
 machine and not the network), and `conform` against invented pairs, with no network. Coverage is 99%: the two uncovered lines handle a folder
 that appears while `new-lobster` is running, a race the tests cannot stage.
+How full a context window is, is tested on invented transcripts only (`tests/tier1/test_context.py`): nothing
+from a real conversation is in a fixture.
 
 The stubs are one shell script, `tests/tier2/stub.sh`, which acts by the name it is called as; each test
 links to it under each program's name in a folder of its own and never writes to it (a test that needs a
@@ -1234,6 +1268,11 @@ and look at the link the stand-in was given, the files brought, the copies in `_
 message in the scratch mailbox.
 Its buttons send at once (there is no preview since 15 November 2026), so whoever builds podium tries
 them only against a stand-in for `conduct` or a scratch mail root, never the real one.
+How full a context window is (`context` in `./conduct status --json`) is checked against the app itself:
+in a Claude Code session, ask the app's usage tool for that session's tokens used, then run `./conduct
+status --json` and compare `tokens` for that project (they were within about 1% of each other on 16
+November 2026, the transcript's figure the smaller); whoever builds it does this with scratch settings
+whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which are only read.
 
 ## Known limitations and non-goals
 
@@ -1241,9 +1280,21 @@ them only against a stand-in for `conduct` or a scratch mail root, never the rea
   left to the user.
 - One pair at a time; no bulk or scheduled use; macOS only.
 - The template is not shipped with this repository.
+- How full a context window is comes from the desktop app's own files, which are undocumented. The
+  tokens in use were within about 1% of the app's own figure when compared, not proved to be the same
+  count. The size of the window is not in those files: it is one setting for every session
+  (`CONTEXT_WINDOW`), so a session on a model with a smaller window shows a percentage that is too low
+  until the setting says otherwise. Nothing is known of a Claude Cowork session's window.
 
 ## Notes for users
 
+- 16 November 2026: `conduct status --json` gives each mailbox a new key, `context`, beside `session`:
+  how full the session's context window is (`tokens`, `window`, `percent`, `as_of`, `warn`), or `null`.
+  `podium` shows it on each line that has a session ("14% of context (of 1,000,000)"), marked at or over
+  60%. Three new settings, all optional: `CONTEXT_WINDOW` (1000000), `CONTEXT_WARN` (60) and
+  `APP_TRANSCRIPTS` (`~/.claude/projects`). A `CONTEXT_WINDOW` or `CONTEXT_WARN` that is not a whole
+  number in range stops every command with exit 2, naming the line. The text form of `conduct status`
+  is unchanged.
 - 15 November 2026: `podium` has no preview any more. A button opens its dialog as before, and the
   dialog's one button, **Send**, runs the `conduct` command for real at once; Dormant and Wake show the
   dialog with nothing to choose. After a Start that worked the dialog closes by itself; every other run,

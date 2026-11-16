@@ -17,6 +17,7 @@ import urllib.parse
 from types import SimpleNamespace
 
 from bernstein import facts, globalfiles, hook, waiting
+from bernstein.context import context_of
 from bernstein.render import MONTHS, TemplateRefused
 from bernstein.settings import SettingsRefused, read_settings
 
@@ -786,13 +787,14 @@ def cowork_sessions(store):
     return newest
 
 
-def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None):
+def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, context=None):
     """One row per mailbox in the duty listing, joined with what lookup(name) says of its project.
     lookup gives what find_project gives, or raises ProjectRefused as conduct start would; folder_of
     then gives the folder alone, if there is one. sessions is what app_sessions found, by folder, and
     cowork what cowork_sessions found: a non-code project gets its cowork session if it has one (its Claude
     Code session, if its lobster.conf says SESSION=code), any other row its Claude Code session, and each
-    falls back to the other kind."""
+    falls back to the other kind. context(session) says how full that session's context window is, or
+    None when that cannot be told."""
     rows = []
     for name, entry in boxes.items():
         row = {"mailbox": name, "state": state_of(entry), "kind": None, "folder": None, "model": None,
@@ -800,7 +802,7 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None):
                "duty": entry.get("duty"), "pace": entry.get("pace") or "normal",
                "new": entry.get("new", 0), "open": entry.get("open", 0),
                "handover_waiting": bool(entry.get("handover_waiting")), "reported": entry.get("reported"),
-               "session": None}
+               "session": None, "context": None}
         in_cowork = False
         try:
             p = lookup(name)
@@ -815,6 +817,8 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None):
             real = os.path.realpath(row["folder"])
             first, second = (cowork, sessions) if in_cowork else (sessions, cowork)
             row["session"] = (first or {}).get(real) or (second or {}).get(real)
+        if context and row["session"]:
+            row["context"] = context(row["session"])
         rows.append(row)
     for row in rows:
         row["serves"] = [r["mailbox"] for r in rows
@@ -1247,7 +1251,8 @@ def dream(a, s, env, now, out, err, sleep):
 
 def status(a, s, env, now, out, err, sleep):
     """Print what every mailbox's session is doing, joined with its project. It reads only: one duty listing
-    from lobster-mail and each project's lobster.conf. Nothing is sent, set, opened or written."""
+    from lobster-mail, each project's lobster.conf, and the desktop app's own files for each session and how
+    full its context window is. Nothing is sent, set, opened or written."""
     skipped = []
     boxes = listing(s, env, sleep, skipped)
     def folder_of(name):
@@ -1260,7 +1265,9 @@ def status(a, s, env, now, out, err, sleep):
 
     rows = status_rows(boxes, lambda name: find_project(name, s["NON_CODE_DIR"], s["CODE_DIR"], env["HOME"]),
                        sessions=app_sessions(s["APP_SESSIONS"]), folder_of=folder_of,
-                       cowork=cowork_sessions(s["APP_COWORK_SESSIONS"]))
+                       cowork=cowork_sessions(s["APP_COWORK_SESSIONS"]),
+                       context=lambda session: context_of(s["APP_SESSIONS"], s["APP_TRANSCRIPTS"], session,
+                                                          int(s["CONTEXT_WINDOW"]), int(s["CONTEXT_WARN"])))
     if a.json:
         out.write(json.dumps({"root": s["MAIL_ROOT"], "mailboxes": rows, "skipped": skipped}, indent=1) + "\n")
     elif not rows:
