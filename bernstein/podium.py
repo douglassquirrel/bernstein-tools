@@ -75,12 +75,24 @@ def badge(row, now):
     return f"{status} until {clock(when, now)}", "busy"
 
 
+def joined(names):
+    """Names as a sentence says them: "a", "a and b", "a, b and c"."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def groups(rows):
-    """The rows as the page lays them out: a card per non-code project with its claws under it (its
-    sister first, as the home claw), then claws that serve nobody, then mailboxes whose project
-    cannot be read, then bernstein's own, then a card per conductor with its claw under it."""
+    """The rows as the page lays them out, each mailbox on one full line only: a card per non-code project
+    with, under it, its home claw when no other non-code project names that one and any claw that has no
+    mailbox, and a label for each other project it names; then "Claws", by name: every other tools project,
+    saying who uses it; then mailboxes whose project cannot be read, then bernstein's own, then a card per
+    conductor with its claw under it."""
     by_name = {r["mailbox"]: r for r in rows}
-    cards, lone, unstartable, conductors, bernstein = [], [], [], [], None
+    ganglia = [r for r in rows if r["kind"] == "non-code"]
+
+    def users(name):
+        return [g["mailbox"] for g in ganglia if name in g["claws"]]
+
+    cards, claws, unstartable, conductors, bernstein, on_a_card = [], [], [], [], None, set()
     for r in rows:
         if r["kind"] == "conductor":
             conductors.append((r, [(by_name.get(name, {"mailbox": name, "missing": True}), "claw")
@@ -88,14 +100,31 @@ def groups(rows):
         elif r["mailbox"] == "bernstein":
             bernstein = r
         elif r["kind"] == "non-code":
-            claws = [(by_name.get(name, {"mailbox": name, "missing": True}),
-                      "home claw" if name == r["sister"] else "claw") for name in r["claws"]]
-            cards.append((r, claws))
+            full, labels = [], []
+            for name in r["claws"]:
+                what = "home claw" if name == r["sister"] else "claw"
+                found = by_name.get(name)
+                if found is None:
+                    full.append(({"mailbox": name, "missing": True}, what))
+                elif what == "home claw" and found["kind"] == "code" and found["serves"] == [r["mailbox"]]:
+                    full.append((found, what))
+                    on_a_card.add(name)
+                else:
+                    labels.append((found, what))
+            cards.append((r, full, labels))
         elif r["kind"] is None:
             unstartable.append(r)
-        elif not r["serves"]:
-            lone.append(r)
-    return {"cards": cards, "lone": lone, "unstartable": unstartable, "bernstein": bernstein,
+    served_by_a_conductor = {name for r in rows if r["kind"] == "conductor" for name in r["claws"]}
+    for r in sorted(rows, key=lambda r: r["mailbox"]):
+        if (r["kind"] in (None, "non-code", "conductor") or r["mailbox"] == "bernstein"
+                or r["mailbox"] in on_a_card or r["mailbox"] in served_by_a_conductor):
+            continue
+        homes = [g["mailbox"] for g in ganglia if r["mailbox"] in g["claws"] and g["sister"] == r["mailbox"]]
+        others = [name for name in users(r["mailbox"]) if name not in homes]
+        said = ", ".join(([f"home claw of {joined(homes)}"] if homes else [])
+                         + ([f"used by {joined(others)}"] if others else []))
+        claws.append((r, said or r["kind"]))
+    return {"cards": cards, "claws": claws, "unstartable": unstartable, "bernstein": bernstein,
             "conductors": conductors}
 
 
@@ -201,9 +230,28 @@ def context_item(row, now):
             f'<span aria-hidden="true">{found["percent"]}%</span></li>')
 
 
-def row_html(row, now, label=None, claw=False):
-    """One mailbox's line on the page. label is what the row is to the card it sits in."""
-    start = '<div class="row claw">' if claw else '<div class="row">'
+def label_html(row, what, now):
+    """A project a card names but does not draw in full: its name, what it is to the card and its state, in the
+    words and tone of its own badge, as a link to its one full line on the page. A screen reader is told the
+    three as the link's name."""
+    words, tone = badge(row, now)
+    return (f'<a class="label" href="#claw-{e(row["mailbox"])}" aria-label="{e(row["mailbox"])}, {e(what)}, '
+            f'{e(words)}">{e(row["mailbox"])} <span class="kind">{e(what)}</span> '
+            f'<span class="badge {tone}">{e(words)}</span></a>')
+
+
+def labels_html(labels, now):
+    """A card's row of labels; nothing when it has none."""
+    if not labels:
+        return ""
+    return '<div class="labels">' + "".join(label_html(r, what, now) for r, what in labels) + "</div>"
+
+
+def row_html(row, now, label=None, claw=False, anchor=False):
+    """One mailbox's line on the page. label is what the row is to the card it sits in; anchor, whether a
+    label elsewhere on the page points to it."""
+    mark = f' id="claw-{e(row["mailbox"])}"' if anchor else ""
+    start = f'<div class="row claw"{mark}>' if claw else f'<div class="row"{mark}>'
     kind = label or row.get("kind")
     who = f'<div class="who"><span class="name">{e(row["mailbox"])}</span>'
     who += f' <span class="kind">{e(kind)}</span></div>' if kind else "</div>"
@@ -276,19 +324,26 @@ def view(rows, now, error=None, entries=()):
     if for_all:
         parts.append(f'<div class="all">{for_all}</div>')
     found = groups(rows)
-    for head, claws in found["cards"]:
-        parts.append('<section class="card">' + row_html(head, now)
-                     + "".join(row_html(c, now, label, claw=True) for c, label in claws) + "</section>")
-    for title, members in (("Lone claws", found["lone"]), ("Cannot be started", found["unstartable"]),
-                           ("bernstein", [found["bernstein"]] if found["bernstein"] else [])):
+    pointed = {r["mailbox"] for _head, _claws, labels in found["cards"] for r, _what in labels}
+
+    def line(r, label=None, claw=False):
+        return row_html(r, now, label, claw, anchor=r["mailbox"] in pointed)
+
+    for head, claws, labels in found["cards"]:
+        parts.append('<section class="card">' + line(head)
+                     + "".join(line(c, label, claw=True) for c, label in claws) + labels_html(labels, now)
+                     + "</section>")
+    for title, members in (("Claws", found["claws"]),
+                           ("Cannot be started", [(r, None) for r in found["unstartable"]]),
+                           ("bernstein", [(found["bernstein"], None)] if found["bernstein"] else [])):
         if members:
             parts.append(f'<h2>{title}</h2><section class="card">'
-                         + "".join(row_html(r, now) for r in members) + "</section>")
+                         + "".join(line(r, said) for r, said in members) + "</section>")
     if found["conductors"]:
         parts.append("<h2>Conductor</h2>")
     for head, claws in found["conductors"]:
-        parts.append('<section class="card">' + row_html(head, now)
-                     + "".join(row_html(c, now, label, claw=True) for c, label in claws) + "</section>")
+        parts.append('<section class="card">' + line(head)
+                     + "".join(line(c, label, claw=True) for c, label in claws) + "</section>")
     return "".join(parts) + activity(entries)
 
 
@@ -345,7 +400,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .who { min-width: 0; }
 .name { font-weight: 600; overflow-wrap: anywhere; }
 .row.claw .name { font-weight: 500; }
-.kind { color: var(--muted); font-style: italic; font-size: 15px; white-space: nowrap; }
+.kind { color: var(--muted); font-style: italic; font-size: 15px; }
 .badge { justify-self: start; font-size: 14px; font-weight: 600; line-height: 1.45; border-radius: 11px;
   padding: 0 9px; border: 1px solid var(--line); color: var(--muted); background: transparent; }
 .badge.ok { background: var(--correct); border-color: var(--correct); color: var(--on); }
@@ -365,6 +420,15 @@ button:disabled { opacity: 0.5; cursor: default; }
 .facts .context.warn .bar { border-color: var(--mistake-text); }
 .facts .context.warn .fill { fill: var(--mistake-text); }
 .facts .context.unknown { font-style: italic; }
+.labels { display: flex; flex-wrap: wrap; gap: 5px 8px; padding: 5px 12px 6px 28px;
+  border-top: 1px solid var(--line); }
+a.label { display: inline-flex; align-items: center; gap: 2px 6px; font-size: 15px; color: var(--ink);
+  text-decoration: none; border: 1px solid var(--line); border-radius: 11px; padding: 1px 3px 1px 10px;
+  flex-wrap: wrap; white-space: nowrap; max-width: 100%; }
+a.label .badge { font-size: 13px; white-space: normal; }
+a.label:hover { border-color: var(--fill); }
+a.label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row:target { background: var(--tint); }
 .refused { grid-column: 1 / -1; margin: 0; color: var(--mistake-text); font-size: 15px; overflow-wrap: anywhere; }
 .acts, .all { display: flex; flex-wrap: wrap; gap: 5px; }
 .acts { grid-column: 4; justify-content: flex-end; }
@@ -408,6 +472,7 @@ input[type="number"] { width: 6rem; }
   .facts, .acts { grid-column: 1 / -1; }
   .acts { justify-content: flex-start; padding-bottom: 2px; }
   .row.claw .who { padding-left: 12px; }
+  .labels { padding-left: 24px; }
 }
 </style>
 </head>

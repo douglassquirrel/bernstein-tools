@@ -87,35 +87,96 @@ def a_factory():
     ]
 
 
-def test_rows_are_grouped_a_card_per_non_code_project_then_lone_claws_then_the_rest_then_bernstein():
+def card_shapes(g):
+    """Each card as (its project, its full claw lines, its labels), by name and what each is to the card."""
+    return [(head["mailbox"], [(c["mailbox"], label) for c, label in claws],
+             [(c["mailbox"], label) for c, label in labels]) for head, claws, labels in g["cards"]]
+
+
+def test_rows_are_grouped_a_card_per_non_code_project_then_the_claws_then_the_rest_then_bernstein():
     g = podium.groups(a_factory())
-    assert [(head["mailbox"], [(c["mailbox"], label) for c, label in claws]) for head, claws in g["cards"]] == [
-        ("menus", [("video-tools", "home claw")]),
-        ("recipes", [("recipes-tools", "home claw"), ("video-tools", "claw"), ("gone-tools", "claw")])]
-    assert [r["mailbox"] for r in g["lone"]] == ["lone-tools"]
+    assert card_shapes(g) == [
+        ("menus", [], [("video-tools", "home claw")]),
+        ("recipes", [("recipes-tools", "home claw"), ("gone-tools", "claw")], [("video-tools", "claw")])]
+    assert [(r["mailbox"], said) for r, said in g["claws"]] == [
+        ("lone-tools", "code"), ("video-tools", "home claw of menus, used by recipes")]
     assert [r["mailbox"] for r in g["unstartable"]] == ["old-thing"]
     assert g["bernstein"]["mailbox"] == "bernstein"
 
 
 def test_a_claw_named_by_a_project_but_with_no_mailbox_is_shown_as_such():
     g = podium.groups(a_factory())
-    gone = g["cards"][1][1][2][0]
+    gone = g["cards"][1][1][1][0]
     assert gone == {"mailbox": "gone-tools", "missing": True}
 
 
 def test_groups_with_nothing_in_them_are_empty_and_bernstein_may_be_absent():
-    assert podium.groups([]) == {"cards": [], "lone": [], "unstartable": [], "bernstein": None, "conductors": []}
+    assert podium.groups([]) == {"cards": [], "claws": [], "unstartable": [], "bernstein": None, "conductors": []}
+
+
+def ganglia(*named, tools=("a-tools", "b-tools", "c-tools")):
+    """Non-code projects g1, g2, … each naming (its home claw, [its further claws]), and the tools projects
+    with what conduct status says of them: whom they serve."""
+    rows = [row(f"g{i}", "running", kind="non-code", duty="mac", sister=home, claws=([home] if home else []) + list(more))
+            for i, (home, more) in enumerate(named, 1)]
+    for name in tools:
+        rows.append(row(name, "off", serves=[r["mailbox"] for r in rows if name in r["claws"]]))
+    return rows
+
+
+def test_a_tools_project_two_ganglia_name_as_a_further_claw_is_a_label_on_each_card_and_one_line_in_claws():
+    g = podium.groups(ganglia(("", ["a-tools"]), ("", ["a-tools"])))
+    assert card_shapes(g) == [("g1", [], [("a-tools", "claw")]), ("g2", [], [("a-tools", "claw")])]
+    assert [(r["mailbox"], said) for r, said in g["claws"]] == [
+        ("a-tools", "used by g1 and g2"), ("b-tools", "code"), ("c-tools", "code")]
+
+
+def test_a_tools_project_three_ganglia_name_says_all_three_and_is_a_label_on_each():
+    g = podium.groups(ganglia(("", ["a-tools"]), ("", ["a-tools"]), ("", ["a-tools"])))
+    assert [labels for _head, _claws, labels in card_shapes(g)] == [[("a-tools", "claw")]] * 3
+    assert {r["mailbox"]: said for r, said in g["claws"]}["a-tools"] == "used by g1, g2 and g3"
+
+
+def test_a_further_claw_only_one_ganglion_names_is_in_claws_and_a_label_on_its_card():
+    g = podium.groups(ganglia(("", ["a-tools"])))
+    assert card_shapes(g) == [("g1", [], [("a-tools", "claw")])]
+    assert {r["mailbox"]: said for r, said in g["claws"]}["a-tools"] == "used by g1"
+
+
+def test_the_home_claw_of_two_ganglia_is_one_line_in_claws_and_a_home_claw_label_on_each_card():
+    g = podium.groups(ganglia(("a-tools", []), ("a-tools", [])))
+    assert card_shapes(g) == [("g1", [], [("a-tools", "home claw")]), ("g2", [], [("a-tools", "home claw")])]
+    assert {r["mailbox"]: said for r, said in g["claws"]}["a-tools"] == "home claw of g1 and g2"
+
+
+def test_the_home_claw_of_one_ganglion_that_another_names_as_a_claw_goes_to_claws_saying_both():
+    g = podium.groups(ganglia(("a-tools", []), ("b-tools", ["a-tools"])))
+    assert card_shapes(g) == [("g1", [], [("a-tools", "home claw")]),
+                              ("g2", [("b-tools", "home claw")], [("a-tools", "claw")])]
+    assert [(r["mailbox"], said) for r, said in g["claws"]] == [
+        ("a-tools", "home claw of g1, used by g2"), ("c-tools", "code")]
+
+
+def test_a_home_claw_nobody_else_names_stays_a_full_line_on_its_card_and_is_not_in_claws():
+    g = podium.groups(ganglia(("a-tools", [])))
+    assert card_shapes(g) == [("g1", [("a-tools", "home claw")], [])]
+    assert [r["mailbox"] for r, _said in g["claws"]] == ["b-tools", "c-tools"]
+
+
+def test_the_claws_section_is_in_order_of_name_whatever_order_conduct_lists_them_in():
+    rows = ganglia(("", ["c-tools", "a-tools"]), tools=("c-tools", "b-tools", "a-tools"))
+    assert [r["mailbox"] for r, _said in podium.groups(rows)["claws"]] == ["a-tools", "b-tools", "c-tools"]
 
 
 def test_the_view_says_when_it_was_made_and_lays_out_cards_then_sections():
     html = podium.view(a_factory(), NOW)
     assert '<p class="asof">As of 09:40:05 UTC</p>' in html
     order = [html.index(mark) for mark in (
-        '<span class="name">menus</span>', '<span class="name">recipes</span>', "<h2>Lone claws</h2>",
+        '<span class="name">menus</span>', '<span class="name">recipes</span>', "<h2>Claws</h2>",
         '<span class="name">lone-tools</span>', "<h2>Cannot be started</h2>", '<span class="name">old-thing</span>',
         "<h2>bernstein</h2>", '<span class="name">bernstein</span>')]
     assert order == sorted(order)
-    assert html.count('<section class="card">') == 5      # menus, recipes, lone claws, cannot be started, bernstein
+    assert html.count('<section class="card">') == 5      # menus, recipes, claws, cannot be started, bernstein
 
 
 def test_a_row_shows_its_kind_badge_duty_pace_mail_and_model():
@@ -151,7 +212,7 @@ def test_a_report_that_is_not_in_the_badge_is_among_the_facts():
 
 def test_sections_with_nothing_in_them_are_left_out_and_no_mailboxes_is_said():
     html = podium.view([row("lone-tools", "off")], NOW)
-    assert "<h2>Lone claws</h2>" in html and "Cannot be started" not in html and "<h2>bernstein</h2>" not in html
+    assert "<h2>Claws</h2>" in html and "Cannot be started" not in html and "<h2>bernstein</h2>" not in html
     assert '<p class="empty">No mailboxes.</p>' in podium.view([], NOW)
 
 
@@ -376,13 +437,13 @@ def an_orchestra():
     ]
 
 
-def test_a_conductor_and_its_claw_are_one_card_and_neither_a_lone_claw_nor_unstartable():
+def test_a_conductor_and_its_claw_are_one_card_and_neither_in_claws_nor_unstartable():
     g = podium.groups(an_orchestra())
     assert [(head["mailbox"], [(c["mailbox"], label) for c, label in claws]) for head, claws in g["conductors"]] == [
         ("maestro", [("maestro-tools", "claw")])]
-    assert [r["mailbox"] for r in g["lone"]] == ["lone-tools"]
+    assert [r["mailbox"] for r, _said in g["claws"]] == ["lone-tools", "video-tools"]
     assert [r["mailbox"] for r in g["unstartable"]] == ["old-thing"]
-    assert [head["mailbox"] for head, _claws in g["cards"]] == ["menus", "recipes"]
+    assert [head["mailbox"] for head, _claws, _labels in g["cards"]] == ["menus", "recipes"]
     assert g["bernstein"]["mailbox"] == "bernstein"
 
 
@@ -391,12 +452,12 @@ def test_the_mailbox_bernstein_once_it_is_a_conductor_is_shown_as_one_with_its_c
             row("bernstein-tools", "running", duty="mac", sister="bernstein", serves=["bernstein"]),
             row("gone", "off", kind="conductor", sister="gone-tools", claws=["gone-tools"])]
     g = podium.groups(rows)
-    assert (g["bernstein"], g["lone"], g["unstartable"], g["cards"]) == (None, [], [], [])
+    assert (g["bernstein"], g["claws"], g["unstartable"], g["cards"]) == (None, [], [], [])
     assert [(head["mailbox"], [(c["mailbox"], c.get("missing", False)) for c, _label in claws])
             for head, claws in g["conductors"]] == [("bernstein", [("bernstein-tools", False)]),
                                                     ("gone", [("gone-tools", True)])]
     html = podium.view(rows, NOW)
-    assert "<h2>bernstein</h2>" not in html and "<h2>Lone claws</h2>" not in html
+    assert "<h2>bernstein</h2>" not in html and "<h2>Claws</h2>" not in html
     assert html.count("<h2>Conductor</h2>") == 1 and html.count('<section class="card">') == 2
     card = html[html.index("<h2>Conductor</h2>"):]
     assert card.index('<span class="name">bernstein</span> <span class="kind">conductor</span>') < card.index(
@@ -406,7 +467,7 @@ def test_the_mailbox_bernstein_once_it_is_a_conductor_is_shown_as_one_with_its_c
 def test_the_conductors_card_comes_last_under_its_own_heading():
     html = podium.view(an_orchestra(), NOW)
     order = [html.index(mark) for mark in (
-        '<span class="name">recipes</span>', "<h2>Lone claws</h2>", "<h2>Cannot be started</h2>",
+        '<span class="name">recipes</span>', "<h2>Claws</h2>", "<h2>Cannot be started</h2>",
         "<h2>bernstein</h2>", "<h2>Conductor</h2>", '<span class="name">maestro</span>',
         '<span class="name">maestro-tools</span>')]
     assert order == sorted(order)
@@ -618,3 +679,129 @@ def test_a_cowork_session_that_is_awake_does_not_bring_the_note_to_wake_all():
     html = podium.view(rows, NOW)
     assert '<button type="button" class="act" data-verb="wake" data-all="1">Wake all</button>' in html
     assert "data-note" not in html
+
+
+def a_label(name, what, words, tone):
+    return (f'<a class="label" href="#claw-{name}" aria-label="{name}, {what}, {words}">{name} '
+            f'<span class="kind">{what}</span> <span class="badge {tone}">{words}</span></a>')
+
+
+def card_of(html, name):
+    """The card whose own line is the named project's."""
+    start = html.index(f'<span class="name">{name}</span> <span class="kind">non-code</span>')
+    return html[html.rindex('<section class="card">', 0, start):html.index("</section>", start)]
+
+
+def test_each_card_names_a_shared_claw_by_a_label_linked_to_its_one_line_in_claws_which_says_who_uses_it():
+    html = podium.view(ganglia(("", ["a-tools"]), ("", ["a-tools"])), NOW)
+    label = a_label("a-tools", "claw", "off", "off")
+    assert card_of(html, "g1").endswith(f'<div class="labels">{label}</div>')
+    assert card_of(html, "g2").endswith(f'<div class="labels">{label}</div>')
+    assert ('<div class="row" id="claw-a-tools"><div class="who"><span class="name">a-tools</span> '
+            '<span class="kind">used by g1 and g2</span></div>') in html
+    assert html.count('data-project="a-tools"') == 1 and html.count('id="claw-a-tools"') == 1
+
+
+def test_a_home_claw_label_says_home_claw_and_a_line_nobody_points_to_has_no_anchor():
+    html = podium.view(ganglia(("a-tools", []), ("a-tools", ["b-tools"])), NOW)
+    assert a_label("a-tools", "home claw", "off", "off") in card_of(html, "g1")
+    assert card_of(html, "g2").endswith(
+        f'<div class="labels">{a_label("a-tools", "home claw", "off", "off")}{a_label("b-tools", "claw", "off", "off")}'
+        '</div>')
+    assert '<span class="kind">home claw of g1 and g2</span>' in html
+    assert '<div class="row"><div class="who"><span class="name">c-tools</span> <span class="kind">code</span>' in html
+
+
+def test_a_card_with_no_claws_drawn_elsewhere_has_no_row_of_labels():
+    html = podium.view(ganglia(("a-tools", []), ("", [])), NOW)
+    assert '<div class="labels">' not in html and 'class="label"' not in html
+    assert '<div class="row claw"><div class="who"><span class="name">a-tools</span> <span class="kind">home claw</span>' \
+        in card_of(html, "g1")
+
+
+@pytest.mark.parametrize("state, reported, words, tone", [
+    ("running", None, "running", "ok"), ("dormant", None, "dormant", "sleep"), ("quiet", None, "quiet", "warn"),
+    ("stale", None, "stale", "alert"), ("handed-over", None, "handed over", "off"), ("off", None, "off", "off"),
+    ("running", DREAMING, "dreaming until 10:20 UTC", "busy"),
+])
+def test_a_label_gives_its_project_s_state_in_the_badge_s_own_words_and_tone(state, reported, words, tone):
+    rows = ganglia(("", ["a-tools"]), ("", ["a-tools"]))
+    rows[2] = dict(row("a-tools", state, duty="mac" if state != "off" else None, reported=reported),
+                   serves=["g1", "g2"])
+    html = podium.view(rows, NOW)
+    assert html.count(a_label("a-tools", "claw", words, tone)) == 2
+    assert f'<span class="badge {tone}">{words}</span>' in html[html.index('id="claw-a-tools"'):]
+
+
+def test_a_label_points_to_the_line_wherever_it_is_a_conductor_s_card_or_cannot_be_started():
+    rows = [row("g1", "running", kind="non-code", duty="mac", claws=["maestro-tools", "old-tools"]),
+            row("maestro", "running", kind="conductor", duty="mac", sister="maestro-tools", claws=["maestro-tools"]),
+            row("maestro-tools", "off", sister="maestro", serves=["g1", "maestro"]),
+            row("old-tools", "off", kind=None, refused="/p/old-tools has no lobster.conf")]
+    html = podium.view(rows, NOW)
+    assert card_of(html, "g1").endswith(
+        f'<div class="labels">{a_label("maestro-tools", "claw", "off", "off")}{a_label("old-tools", "claw", "off", "off")}'
+        '</div>')
+    assert '<div class="row claw" id="claw-maestro-tools"><div class="who"><span class="name">maestro-tools</span>' in html
+    assert '<div class="row" id="claw-old-tools"><div class="who"><span class="name">old-tools</span>' in html
+    assert html.count('<span class="name">old-tools</span>') == 1 and "<h2>Claws</h2>" not in html
+
+
+def test_a_label_s_name_and_state_are_text_never_markup():
+    odd = 'x"<b>&é'
+    rows = [row("g1", "running", kind="non-code", duty="mac", claws=[odd]), row("g2", "off", kind="non-code", claws=[odd]),
+            row(odd, "running", duty="mac", serves=["g1", "g2"],
+                reported={"status": "<i>busy</i>", "set": "2026-10-18T09:20:00Z", "until": None})]
+    html = podium.view(rows, NOW)
+    safe = "x&quot;&lt;b&gt;&amp;é"
+    assert (f'<a class="label" href="#claw-{safe}" aria-label="{safe}, claw, &lt;i&gt;busy&lt;/i&gt;">{safe} '
+            '<span class="kind">claw</span> <span class="badge busy">&lt;i&gt;busy&lt;/i&gt;</span></a>') in html
+    assert f'id="claw-{safe}"' in html and "<b>" not in html and "<i>" not in html
+
+
+def test_labels_wrap_wear_the_page_s_own_colours_and_the_line_a_label_leads_to_is_shown_where_it_is():
+    page = podium.page("")
+    assert ".labels { display: flex; flex-wrap: wrap;" in page
+    assert "a.label { display: inline-flex; align-items: center;" in page and "color: var(--ink);" in page
+    label = page[page.index("a.label {"):]
+    assert "flex-wrap: wrap; white-space: nowrap;" in label[:label.index("}")]     # a name never breaks at its hyphen
+    assert "a.label .badge { font-size: 13px; white-space: normal; }" in page        # a long state still wraps
+    assert "a.label:focus-visible { outline: 2px solid var(--accent);" in page
+    assert ".row:target { background: var(--tint); }" in page
+    assert "  .labels { padding-left: 24px; }" in page[page.index("@media (max-width: 640px)"):]
+
+
+def every_naming(tools):
+    """Every way one ganglion can name the tools projects: a home claw or none, and any further claws."""
+    for home in ("",) + tools:
+        rest = [t for t in tools if t != home]
+        for mask in range(2 ** len(rest)):
+            yield home, [t for i, t in enumerate(rest) if mask >> i & 1]
+
+
+@pytest.mark.parametrize("ganglia_count, tools, conductor", [
+    (3, ("a-tools", "b-tools"), False), (2, ("a-tools", "b-tools", "c-tools"), False),
+    (2, ("a-tools", "b-tools", "c-tools"), True),       # a-tools is also the claw of a conductor
+])
+def test_over_every_way_ganglia_can_name_claws_each_mailbox_has_one_line_and_one_set_of_buttons(
+        ganglia_count, tools, conductor):
+    import itertools
+    ways = list(every_naming(tools))
+    for named in itertools.product(ways, repeat=ganglia_count):
+        rows = ganglia(*named, tools=tools)
+        if conductor:
+            rows.append(row("maestro", "running", kind="conductor", duty="mac", sister="a-tools", claws=["a-tools"]))
+            rows[ganglia_count]["serves"].append("maestro")
+        lines = podium.view(rows, NOW).split('<div class="row')[1:]
+        for r in rows:
+            name = r["mailbox"]
+            full = [ln for ln in lines if f'<span class="name">{name}</span>' in ln]
+            assert len(full) == 1, (named, name)
+            with_buttons = 0 if r["kind"] == "conductor" else 1        # a conductor's line never has any
+            assert sum(f'data-project="{name}"' in ln for ln in lines) == with_buttons, (named, name)
+
+
+def test_who_uses_a_claw_wraps_under_its_name_rather_than_being_cut_off():
+    page = podium.page("")
+    rule = page[page.index(".kind {"):]
+    assert rule[:rule.index("}")] == ".kind { color: var(--muted); font-style: italic; font-size: 15px; "

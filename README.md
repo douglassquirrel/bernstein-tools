@@ -308,7 +308,7 @@ A conductor is outside the template: its folder is the whole of it, with no chec
   start` and `conform` stop with exit 4, naming the file.
 - **`conduct status`** gives a conductor the kind `conductor` and its claw in `claws`; the claw's row has
   the conductor in `serves`. **`podium`** shows the two as one card under "Conductor", the claw beneath
-  the conductor; the conductor's line has no buttons, and the claw is not among the lone claws.
+  the conductor; the conductor's line has no buttons, and the claw is not in "Claws".
 - **`conform <conductor> <claw>`** checks the claw as the tools half of the pair and, of the conductor,
   only what a conductor has: `lobster.conf` (`KIND=conductor`, `SELF`, `SISTER` naming the claw, `MODEL`,
   `EFFORT`, no `CLAWS` or `FOLDERS`), a CLAUDE.md, a git repository and a mailbox.
@@ -717,10 +717,17 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 podium [--port N] [--no-open]
 ```
 
-`podium` shows what `conduct status` shows, as a page in your browser: one card for each non-code
-project with the tools projects it works with under it (its sister as "home claw", the rest as "claw"),
-then the tools projects that serve no one ("lone claws"), then mailboxes whose project `conduct` could
-not start, each with the reason, then bernstein's own. Each line has the session's state as a coloured
+`podium` shows what `conduct status` shows, as a page in your browser, with each mailbox on one line
+only, wherever it is used. First comes one card for each non-code project. Under its own line is its home
+claw (its sister), when no other non-code project names that tools project, and any claw named in its
+`lobster.conf` that has no mailbox ("no mailbox"). Each other tools project it works with is a small label
+at the foot of the card: the name, "home claw" or "claw", and its state in the same words and colour as the
+badge on its own line. A label has no buttons; press it to go to that project's line, which is lit so that
+you can find it. Then comes "Claws", in order of name: every other tools project, each saying who uses it
+("home claw of beyond-ai and wrangling-ai", "used by archivist and audio-description", or both, as "home
+claw of stews, used by soups"), and the tools projects that serve no one, whose line says `code` as
+before. Then the mailboxes whose project `conduct` could not start, each with the reason, then bernstein's
+own, then the conductor's card. Each line has the session's state as a coloured
 badge, the kind of session on duty and how long ago it checked in ("Claude Code" for a session on the Mac,
 whose mail name is `mac`; "Claude Cowork" for one in the app's virtual machine, whose mail name is `device`),
 and the project's model and effort; the pace is
@@ -1332,6 +1339,11 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
 
 ## Notes for users
 
+- 16 November 2026, late: **podium shows each tools project once.** A tools project that two or more
+  non-code projects use, and any further claw, is no longer drawn on each of their cards: it has one line,
+  with its buttons, in a section "Claws" (which takes the place of "Lone claws"), saying who uses it, and
+  each card names it by a label that leads there. A card keeps in full only its home claw that no other
+  project names. `conduct status`, in words and in `--json`, has not changed; restart podium to see it.
 - 16 November 2026, later still: **a Wake wakes a dormant session on the Mac.** `conduct dormant` (and a
   dream that ends dormant) now tells a Claude Code session on the Mac to keep one quiet watch for
   bernstein's mail, and no longer sets its pace to `relaxed`; `conduct wake` and `conduct stop` then reach
