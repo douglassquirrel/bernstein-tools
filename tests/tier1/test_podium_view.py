@@ -434,29 +434,48 @@ def filling(r, tokens=135719, window=1000000, percent=14, warn=False, as_of="202
                                           "warn": warn})
 
 
-def test_a_row_says_how_full_its_session_s_context_window_is_with_the_size_beside_it():
+def bar(percent, fill=None):
+    """The bar and the figure beside it, as the page draws them: fill is the bar's filled length out of 100."""
+    fill = percent if fill is None else fill
+    return ('<svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" role="img" '
+            f'aria-label="{percent}% of context"><rect class="fill" width="{fill}" height="8"/></svg>'
+            f'<span aria-hidden="true">{percent}%</span></li>')
+
+
+def test_a_row_draws_how_full_its_session_s_context_window_is_as_a_bar_with_the_bare_percentage_beside_it():
     html = podium.view([filling(row("lone-tools", "running", duty="mac"))], NOW)
-    assert ('<li>opus, high</li><li class="context" title="135,719 tokens in use at 09:30 UTC, of a window of '
-            '1,000,000 (the setting CONTEXT_WINDOW)">14% of context <span class="of">(of 1,000,000)</span></li>'
-            '</ul>') in html
+    assert ('<li>opus, high</li><li class="context" title="14% of context: 135,719 tokens in use at 09:30 UTC, '
+            'of a window of 1,000,000 (the setting CONTEXT_WINDOW)">' + bar(14) + '</ul>') in html
+    assert "of context (" not in html and "(of 1,000,000)" not in html      # the words have left the line
 
 
-def test_a_session_at_or_over_the_warning_level_is_marked_plainly():
+@pytest.mark.parametrize("percent, fill", [(0, 0), (1, 1), (50, 50), (59, 59), (60, 60), (99, 99), (100, 100),
+                                           (101, 100), (150, 100), (100000, 100)])
+def test_the_bar_fills_with_the_percentage_and_never_overflows_while_the_figure_says_the_real_one(percent, fill):
+    html = podium.view([filling(row("lone-tools"), percent * 10, 1000, percent, percent >= 60)], NOW)
+    assert bar(percent, fill) in html
+    assert html.count("<svg") == 1 and html.count('<rect class="fill" width="') == 1
+
+
+def test_a_session_at_or_over_the_warning_level_has_a_red_bar_and_is_not_marked_by_colour_alone():
     html = podium.view([filling(row("lone-tools", "running", duty="mac"), 600000, 1000000, 60, True)], NOW)
-    assert ('<li class="context warn" title="600,000 tokens in use at 09:30 UTC, of a window of 1,000,000 (the '
-            'setting CONTEXT_WINDOW); at or over the warning level (the setting CONTEXT_WARN)">60% of context '
-            '<span class="of">(of 1,000,000)</span></li>') in html
+    assert ('<li class="context warn" title="60% of context: 600,000 tokens in use at 09:30 UTC, of a window of '
+            '1,000,000 (the setting CONTEXT_WINDOW); at or over the warning level (the setting CONTEXT_WARN)">'
+            + bar(60)) in html
     calm = podium.view([filling(row("lone-tools", "running", duty="mac"), 590000, 1000000, 59, False)], NOW)
-    assert 'class="context warn"' not in calm and '<li class="context" title="590,000 tokens' in calm
+    assert 'class="context warn"' not in calm and '<li class="context" title="59% of context: 590,000 tokens' in calm
     page = podium.page("")
-    assert ".facts .context.warn {" in page and "border: 2px solid var(--gold)" in page
+    assert ".facts .context.warn .bar { border-color: var(--mistake-text); }" in page       # the bar is red:
+    assert ".facts .context.warn .fill { fill: var(--mistake-text); }" in page              # its outline and its fill
+    assert (".facts .context.warn { color: var(--ink); font-weight: 600; border: 2px solid var(--gold);" in page)
+    assert ".facts .context .fill { fill: var(--muted); }" in page                          # and not red below it
 
 
 def test_the_mark_is_conduct_s_to_give_and_the_page_never_works_it_out_for_itself():
     full = podium.view([filling(row("lone-tools"), 990000, 1000000, 99, False)], NOW)
-    assert '<li class="context" title="990,000 tokens' in full and "context warn" not in full
+    assert '<li class="context" title="99% of context: 990,000 tokens' in full and "context warn" not in full
     early = podium.view([filling(row("lone-tools"), 20000, 1000000, 2, True)], NOW)
-    assert '<li class="context warn" title="20,000 tokens' in early
+    assert '<li class="context warn" title="2% of context: 20,000 tokens' in early
 
 
 def test_a_row_with_a_session_whose_context_cannot_be_told_says_not_known_and_one_with_no_session_says_nothing():
@@ -466,35 +485,70 @@ def test_a_row_with_a_session_whose_context_cannot_be_told_says_not_known_and_on
     for r in (row("lone-tools", "running", duty="mac"), dict(row("lone-tools"), session=None, context=None),
               dict(row("lone-tools"), session=None, context={"tokens": 5, "window": 1000, "percent": 1,
                                                              "as_of": None, "warn": False})):
-        assert "context" not in podium.view([r], NOW)
+        assert "context" not in podium.view([r], NOW) and "<svg" not in podium.view([r], NOW)
+
+
+def test_not_known_has_no_bar_so_it_is_never_taken_for_an_empty_one():
+    empty = podium.view([filling(row("lone-tools"), 0, 1000000, 0, False)], NOW)
+    unknown = podium.view([dict(with_session(row("lone-tools")), context=None)], NOW)
+    assert bar(0) in empty and "context not known" not in empty
+    assert "<svg" not in unknown and "0%" not in unknown and "context not known" in unknown
+
+
+def test_the_page_still_makes_itself_when_no_session_has_a_figure_and_then_has_no_bar_at_all():
+    rows = [dict(with_session(row("recipes-tools", "running", duty="mac")), context=None),
+            dict(with_session(row("word-tools")), context=None), row("video-tools")]
+    html = podium.view(rows, NOW)
+    assert html.count("context not known") == 2 and "<svg" not in html and "<rect" not in html
+    assert '<span class="name">video-tools</span>' in html
+    assert "<svg" not in podium.page(html)
 
 
 @pytest.mark.parametrize("change", [
     {"percent": "14"}, {"percent": 14.0}, {"percent": True}, {"percent": -1}, {"percent": None},
     {"tokens": "135719"}, {"tokens": None}, {"tokens": -5}, {"window": 0}, {"window": "1000000"}, {"window": None},
     {"warn": "yes"}, {"warn": None}, {"warn": 1},
-    {"percent": "<script>alert(1)</script>"},
+    {"percent": "<script>alert(1)</script>"}, {"percent": '100"/><script>'},
 ])
 def test_a_context_that_is_not_the_shape_conduct_gives_is_shown_as_not_known_never_as_given(change):
     r = filling(row("lone-tools", "running", duty="mac"))
     r["context"].update(change)
     html = podium.view([r], NOW)
     assert '<li class="context unknown">context not known</li>' in html
-    assert "% of context" not in html and "<script>" not in html
+    assert "% of context" not in html and "<script>" not in html and "<svg" not in html
     for odd in ("a string", ["a", "list"], 14, True):
         assert '<li class="context unknown">context not known</li>' in podium.view([dict(r, context=odd)], NOW)
 
 
+def test_the_hover_gives_the_detail_word_for_word_as_before_after_the_words_that_left_the_line():
+    html = podium.view([filling(row("lone-tools"))], NOW)
+    before = "135,719 tokens in use at 09:30 UTC, of a window of 1,000,000 (the setting CONTEXT_WINDOW)"
+    assert f'title="14% of context: {before}">' in html
+    marked = podium.view([filling(row("lone-tools"), 600000, 1000000, 60, True)], NOW)
+    assert ('title="60% of context: 600,000 tokens in use at 09:30 UTC, of a window of 1,000,000 (the setting '
+            'CONTEXT_WINDOW); at or over the warning level (the setting CONTEXT_WARN)">') in marked
+
+
 def test_the_time_the_figure_is_true_for_names_the_day_when_it_is_not_today_and_is_left_out_when_it_is_no_time():
     old = podium.view([filling(row("lone-tools"), as_of="2026-10-16T22:04:37Z")], NOW)
-    assert 'title="135,719 tokens in use at 22:04 UTC on 16 October 2026, of a window of 1,000,000 (' in old
+    assert ('title="14% of context: 135,719 tokens in use at 22:04 UTC on 16 October 2026, of a window of '
+            '1,000,000 (') in old
     for odd in (None, "yesterday", 7, '"><script>'):
         html = podium.view([filling(row("lone-tools"), as_of=odd)], NOW)
-        assert 'title="135,719 tokens in use, of a window of 1,000,000 (the setting CONTEXT_WINDOW)">14% of' in html
+        assert ('title="14% of context: 135,719 tokens in use, of a window of 1,000,000 (the setting '
+                'CONTEXT_WINDOW)"><svg') in html
         assert "<script>" not in html
 
 
-def test_a_figure_over_the_whole_window_is_said_as_it_is():
+def test_a_figure_over_the_whole_window_is_said_as_it_is_in_the_figure_and_in_the_hover():
     html = podium.view([filling(row("lone-tools"), 1500, 1000, 150, True)], NOW)
-    assert '1,500 tokens in use at 09:30 UTC, of a window of 1,000 (' in html
-    assert '150% of context <span class="of">(of 1,000)</span>' in html
+    assert 'title="150% of context: 1,500 tokens in use at 09:30 UTC, of a window of 1,000 (' in html
+    assert bar(150, 100) in html
+
+
+def test_the_bar_wears_the_page_s_own_colours_and_has_a_size_of_its_own():
+    page = podium.page("")
+    assert ".facts .context .bar { width: 3.5rem; height: 0.5rem;" in page
+    assert "border: 1px solid var(--muted);" in page
+    assert ".facts .context { display: inline-flex; align-items: center; gap: 6px; }" in page
+    assert ".facts .context .of" not in page                       # the size is no longer on the line

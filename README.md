@@ -705,12 +705,16 @@ every 15 seconds and when you press Refresh, follows your light or dark setting,
 width of a phone. It is set in EB Garamond if that typeface is installed on the Mac, and in Georgia if
 not; nothing is fetched from anywhere, so no font is downloaded.
 
-A line whose project has a session in the desktop app also says how full that session's context window
-is, last among its facts: "14% of context (of 1,000,000)", with the tokens in use and the time of the
-figure when you hover over it. At or over the warning level (60% unless `CONTEXT_WARN` says otherwise) it
-is drawn in heavier letters inside a gold border. When `conduct status` could not tell (a Claude Cowork
-session, or a session with no transcript) it says "context not known"; a line with no session says
-nothing. The figures are `conduct status --json`'s `context`, described above: the size of the window is
+A line whose project has a session in the desktop app also shows how full that session's context window
+is, last among its facts: a small bar that fills with the percentage, and the percentage beside it
+("14%"). Hover over it for the detail: "14% of context: 135,719 tokens in use at 09:30 UTC, of a window of
+1,000,000 (the setting CONTEXT_WINDOW)". At or over the warning level (60% unless `CONTEXT_WARN` says
+otherwise) the bar is red, and, so that it is not marked by colour alone, the bar and its figure sit
+inside a gold border with the figure in heavier letters. Over 100% (a window set too small) the bar is
+full and the figure says the real percentage. When `conduct status` could not tell (a Claude Cowork
+session, or a session with no transcript) the line says "context not known" and has no bar, so it is
+never taken for an empty one; a line with no session says nothing. A screen reader is told "14% of
+context" once, as the bar's label. The figures are `conduct status --json`'s `context`, described above: the size of the window is
 the setting `CONTEXT_WINDOW`, not something read from the app.
 
 A line whose project has a session in the desktop app starts its buttons with **Open**, a link that takes
@@ -1288,6 +1292,9 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
 
 ## Notes for users
 
+- 16 November 2026, later: `podium` draws the context figure as a bar that fills, with the bare
+  percentage beside it ("14%"); "of context", the window's size, the tokens and the time are in the hover.
+  At or over the warning level the bar is red. Nothing changes in `conduct status --json`.
 - 16 November 2026: `conduct status --json` gives each mailbox a new key, `context`, beside `session`:
   how full the session's context window is (`tokens`, `window`, `percent`, `as_of`, `warn`), or `null`.
   `podium` shows it on each line that has a session ("14% of context (of 1,000,000)"), marked at or over

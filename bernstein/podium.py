@@ -158,9 +158,11 @@ def count(value):
 
 
 def context_item(row, now):
-    """How full the context window of the row's session is, as one of the row's facts: nothing for a row
-    with no session, "context not known" when conduct could not tell, or when what it says is not the
-    shape it gives. The mark at the warning level is conduct's to give (warn), never worked out here."""
+    """How full the context window of the row's session is, as one of the row's facts: a small bar that
+    fills with the percentage and the bare figure beside it, with the detail in the title. Nothing for a
+    row with no session; "context not known", and no bar, when conduct could not tell or when what it says
+    is not the shape it gives. The mark at the warning level is conduct's to give (warn), never worked out
+    here. The bar is never longer than its outline; the figure says the real percentage."""
     if not isinstance(row.get("session"), dict):
         return ""
     found = row.get("context")
@@ -168,13 +170,17 @@ def context_item(row, now):
             and count(found.get("window")) and found["window"] > 0 and isinstance(found.get("warn"), bool)):
         return '<li class="context unknown">context not known</li>'
     when = stamp(found.get("as_of"))
-    title = (f"{found['tokens']:,} tokens in use" + (f" at {clock(when, now)}" if when else "")
+    said = f"{found['percent']}% of context"
+    title = (f"{said}: {found['tokens']:,} tokens in use" + (f" at {clock(when, now)}" if when else "")
              + f", of a window of {found['window']:,} (the setting CONTEXT_WINDOW)")
     if found["warn"]:
         title += "; at or over the warning level (the setting CONTEXT_WARN)"
     marked = "context warn" if found["warn"] else "context"
-    return (f'<li class="{marked}" title="{e(title)}">{found["percent"]}% of context '
-            f'<span class="of">(of {found["window"]:,})</span></li>')
+    # the figure beside the bar is for the eye; a screen reader is told once, by the bar's label
+    return (f'<li class="{marked}" title="{e(title)}"><svg class="bar" viewBox="0 0 100 8" '
+            f'preserveAspectRatio="none" role="img" aria-label="{e(said)}"><rect class="fill" '
+            f'width="{min(found["percent"], 100)}" height="8"/></svg>'
+            f'<span aria-hidden="true">{found["percent"]}%</span></li>')
 
 
 def row_html(row, now, label=None, claw=False):
@@ -328,9 +334,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 .facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0 12px;
   color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; grid-column: 3; }
 .facts .new { color: var(--ink); font-weight: 600; }
+.facts .context { display: inline-flex; align-items: center; gap: 6px; }
+.facts .context .bar { width: 3.5rem; height: 0.5rem; flex: none; border: 1px solid var(--muted);
+  border-radius: 4px; background: transparent; }
+.facts .context .fill { fill: var(--muted); }
 .facts .context.warn { color: var(--ink); font-weight: 600; border: 2px solid var(--gold); border-radius: 11px;
   padding: 0 7px; }
-.facts .context .of { font-weight: 400; }
+.facts .context.warn .bar { border-color: var(--mistake-text); }
+.facts .context.warn .fill { fill: var(--mistake-text); }
 .facts .context.unknown { font-style: italic; }
 .refused { grid-column: 1 / -1; margin: 0; color: var(--mistake-text); font-size: 15px; overflow-wrap: anywhere; }
 .acts, .all { display: flex; flex-wrap: wrap; gap: 5px; }

@@ -414,10 +414,13 @@ def test_over_the_socket_the_page_shows_what_conduct_says_of_each_context_window
     assert serving(world, talk) == (0, "")
     view = got["view"][2]
     assert got["view"][0] == 200 and view == podium.view(rows, NOW)
-    assert ('<li class="context warn" title="612,000 tokens in use at 09:38 UTC, of a window of 1,000,000 (the '
-            'setting CONTEXT_WINDOW); at or over the warning level (the setting CONTEXT_WARN)">61% of context '
-            '<span class="of">(of 1,000,000)</span></li>') in view
-    assert '>14% of context <span class="of">(of 1,000,000)</span></li>' in view
+    assert ('<li class="context warn" title="61% of context: 612,000 tokens in use at 09:38 UTC, of a window of '
+            '1,000,000 (the setting CONTEXT_WINDOW); at or over the warning level (the setting CONTEXT_WARN)">'
+            '<svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" role="img" aria-label="61% of context">'
+            '<rect class="fill" width="61" height="8"/></svg><span aria-hidden="true">61%</span></li>') in view
+    assert ('aria-label="14% of context"><rect class="fill" width="14" height="8"/></svg>'
+            '<span aria-hidden="true">14%</span></li>') in view
+    assert view.count("<svg") == 2                              # none for the session whose figure is not known
     assert view.count('<li class="context unknown">context not known</li>') == 1
     assert got["status"] == (200, got["status"][1], told)       # passed through, byte for byte
     assert conducted(world) == [["status", "--json"]] * 2
