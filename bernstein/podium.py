@@ -408,10 +408,83 @@ def labels_html(labels, now):
     return '<div class="labels">' + "".join(label_html(r, what, now) for r, what in labels) + "</div>"
 
 
-def row_html(row, now, label=None, claw=False, anchor=False, unread=False, idle_warn=60):
+CHECK_MINUTES = 10      # how long a new session is waited for after a Start
+LINE_MINUTES = 30       # how long "no session has appeared" stays on the project's line
+STARTED = {"right": "started right", "waiting": "started", "wrong": "started wrong", "none": "started wrong"}
+
+
+def start_checks(starts, rows, top, now):
+    """What became of each Start podium sent and remembers, from what conduct status --json says is alive:
+    one check for each that can be checked, in the order they were sent. starts is {project: {"at": when
+    the Start was sent, "entry": its place in what podium has run, "right": what was said once a new
+    session was seen in the project's folder}}; a Start seen to be right is marked so in it, and stays so.
+
+    A check is {"project", "entry", "state", "said", "line"}: state is right (a session that started
+    after the Start is alive in the project's folder), wrong (one is alive in a folder that is no listed
+    mailbox's, and none in the project's), waiting (neither, in the first CHECK_MINUTES) or none (neither,
+    after them); line says whether the project's line says it too. Nothing is checked when conduct did not
+    read the listing of live sessions, nor for a project that is not listed or does not run on the Mac."""
+    listing = top.get("live_listing") if isinstance(top, dict) else None
+    if not isinstance(listing, dict) or listing.get("read") is not True:
+        return []
+    by_name = {r["mailbox"]: r for r in rows}
+    found = []
+    for project, start in sorted(starts.items(), key=lambda item: item[1]["entry"]):
+        row = by_name.get(project)
+        if row is None or row.get("runs_in") != "code":
+            continue
+        age = now - start["at"]
+        here = alive(row)
+        began = stamp(here.get("started")) if here else None
+        if start["right"] is None and began is not None and began >= start["at"]:
+            name = here.get("name") if isinstance(here.get("name"), str) else "a session with no name"
+            on = ", ".join(here[key] for key in ("model", "effort") if isinstance(here.get(key), str)
+                           and (key == "model" or isinstance(here.get("model"), str)))
+            start["right"] = f"Started, in the right folder: {name}." + (f" It is running on {on}." if on else "")
+        if start["right"] is not None:
+            found.append({"project": project, "entry": start["entry"], "state": "right", "said": start["right"],
+                          "line": age <= datetime.timedelta(minutes=CHECK_MINUTES)})
+            continue
+        strays = []
+        for session in top.get("live_elsewhere") or []:
+            if not isinstance(session, dict) or not isinstance(session.get("folder"), str):
+                continue
+            opened = stamp(session.get("started"))
+            if opened is not None and opened >= start["at"] and session["folder"] not in strays:
+                strays.append(session["folder"])
+        if strays:
+            found.append({"project": project, "entry": start["entry"], "state": "wrong", "line": True,
+                          "said": (f"A session that started after this Start is alive in {joined(strays)}, which "
+                                   "is no project's folder, and none is in this project's folder: it may have "
+                                   "opened in the wrong folder. If so, stop that session in the app, press Start "
+                                   "again, and before you send the first line change the form's folder to another "
+                                   "and back.")})
+        elif age <= datetime.timedelta(minutes=CHECK_MINUTES):
+            found.append({"project": project, "entry": start["entry"], "state": "waiting", "line": True,
+                          "said": "No new session in this project's folder yet: in the app, confirm the folder "
+                                  "and send the first line."})
+        else:
+            found.append({"project": project, "entry": start["entry"], "state": "none",
+                          "said": "No session has appeared: was the first line sent?",
+                          "line": age <= datetime.timedelta(minutes=LINE_MINUTES)})
+    open_still = [c["project"] for c in found if c["state"] != "right"]
+    for c in found:
+        others = [name for name in open_still if name != c["project"]]
+        if c["state"] == "wrong" and others:
+            c["said"] += f" A Start of {joined(others)} is waited for too: it may be that one's."
+    return found
+
+
+def check_html(found):
+    """A check as a paragraph, for the project's line and for the Start's run in the Activity."""
+    return f'<p class="{STARTED[found["state"]]}">{e(found["said"])}</p>'
+
+
+def row_html(row, now, label=None, claw=False, anchor=False, unread=False, idle_warn=60, check=None):
     """One mailbox's line on the page. label is what the row is to the card it sits in; anchor, whether a
     label elsewhere on the page points to it; unread, whether conduct could not read the listing of live
-    sessions; idle_warn, the minutes at which an idle session is marked."""
+    sessions; idle_warn, the minutes at which an idle session is marked; check, what became of the Start
+    podium last sent it, when the line is to say so."""
     mark = f' id="claw-{e(row["mailbox"])}"' if anchor else ""
     start = f'<div class="row claw"{mark}>' if claw else f'<div class="row"{mark}>'
     kind = label or row.get("kind")
@@ -452,15 +525,17 @@ def row_html(row, now, label=None, claw=False, anchor=False, unread=False, idle_
     disagreement = live_badge(row)
     hint = f' title="{e(disagreement[2])}"' if disagreement else ""
     return (f'{start}{who}<span class="badge {tone}"{hint}>{e(words)}</span>'
-            f"{facts}{acts}{refused}</div>")
+            f"{facts}{acts}{refused}{check_html(check) if check else ''}</div>")
 
 
-def activity(entries):
-    """What podium has run since it started, newest first; nothing when it has run nothing."""
+def activity(entries, checks=()):
+    """What podium has run since it started, newest first; nothing when it has run nothing. A Start that
+    was checked says, under its reminder, what became of it."""
     if not entries:
         return ""
+    checked = {found["entry"]: found for found in checks}
     runs = []
-    for entry in reversed(entries):
+    for index, entry in reversed(list(enumerate(entries))):
         done = entry["exit"] is not None
         mark = f'exit {e(entry["exit"])}' if done else "not run"
         tone = "ok" if entry["exit"] == 0 else "alert"
@@ -469,21 +544,23 @@ def activity(entries):
         trouble = f'<p class="refused">{e(entry["log_error"])}</p>' if entry.get("log_error") else ""
         # a Start that worked closes its box, so what only he can do in the app is said here
         remind = f'<p class="remind">{e(entry["reminder"])}</p>' if entry.get("reminder") else ""
+        remind += check_html(checked[index]) if index in checked else ""
         runs.append(f'<div class="run"><p class="what"><span class="time">{time}</span> '
                     f'<code>{e(entry["command"])}</code> <span class="badge {tone}">{mark}</span></p>'
                     f'<pre>{e(entry["output"])}{e(entry["error"])}</pre>{remind}{trouble}</div>')
     return '<h2>Activity</h2><section class="card log">' + "".join(runs) + "</section>"
 
 
-def view(rows, now, error=None, entries=(), top=None, idle_warn=60):
+def view(rows, now, error=None, entries=(), top=None, idle_warn=60, checks=()):
     """The part of the page that is made again at every refresh: when, then the cards or the error, then
     what podium has run. top is everything conduct status --json printed (for whether it read the listing
-    of live sessions); idle_warn, the minutes at which an idle session is marked."""
+    of live sessions); idle_warn, the minutes at which an idle session is marked; checks, what became of
+    the Starts podium sent (start_checks)."""
     parts = [f'<p class="asof">As of {now:%H:%M:%S} UTC</p>']
     if error:
-        return parts[0] + f'<p class="error">{e(error)}</p>' + activity(entries)
+        return parts[0] + f'<p class="error">{e(error)}</p>' + activity(entries, checks)
     if not rows:
-        return parts[0] + '<p class="empty">No mailboxes.</p>' + activity(entries)
+        return parts[0] + '<p class="empty">No mailboxes.</p>' + activity(entries, checks)
     some_wait = any(r["state"] in ASLEEP and not watching(r) for r in rows
                     if r["mailbox"] != "bernstein" and r["kind"] != "conductor")
     lost = [r["mailbox"] for r in rows if r["mailbox"] != "bernstein" and r["kind"] != "conductor"
@@ -503,8 +580,11 @@ def view(rows, now, error=None, entries=(), top=None, idle_warn=60):
     listing = top.get("live_listing") if isinstance(top, dict) else None
     unread = isinstance(listing, dict) and listing.get("read") is False
 
+    on_line = {found["project"]: found for found in checks if found["line"]}
+
     def line(r, label=None, claw=False):
-        return row_html(r, now, label, claw, anchor=r["mailbox"] in pointed, unread=unread, idle_warn=idle_warn)
+        return row_html(r, now, label, claw, anchor=r["mailbox"] in pointed, unread=unread, idle_warn=idle_warn,
+                        check=on_line.get(r["mailbox"]))
 
     for head, claws, labels in found["cards"]:
         parts.append('<section class="card">' + line(head)
@@ -521,7 +601,7 @@ def view(rows, now, error=None, entries=(), top=None, idle_warn=60):
     for head, claws in found["conductors"]:
         parts.append('<section class="card">' + line(head)
                      + "".join(line(c, label, claw=True) for c, label in claws) + "</section>")
-    return "".join(parts) + activity(entries)
+    return "".join(parts) + activity(entries, checks)
 
 
 PAGE = """<!doctype html>
@@ -614,6 +694,11 @@ a.label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .all { margin: 0 0 10px; }
 .log .run { padding: 6px 12px; }
 .remind { margin: 4px 0 0; font-size: 15px; color: var(--muted); }
+.started { grid-column: 1 / -1; margin: 4px 0 0; font-size: 15px; color: var(--muted); overflow-wrap: anywhere; }
+.started.right { color: var(--ink); }
+.started.right::before { content: "\\2713\\00a0"; color: var(--correct); font-weight: 600; }
+.started.wrong { color: var(--mistake-text); font-weight: 600; border: 2px solid var(--mistake-text);
+  border-radius: 6px; padding: 3px 8px; }
 .log .run + .run { border-top: 1px solid var(--line); }
 .what { margin: 0 0 3px; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; }
 .time { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
@@ -663,8 +748,8 @@ input[type="number"] { width: 6rem; }
 </div>
 <dialog id="act" aria-labelledby="act-title">
 <h2 id="act-title"></h2>
-<div id="act-options"></div>
 <p id="act-waits" class="note" hidden></p>
+<div id="act-options"></div>
 <div id="act-shown" class="shown" hidden><code id="act-command"></code><pre id="act-output"></pre></div>
 <p id="act-progress" class="progress" role="status" hidden><span class="spin"></span><span id="act-progress-text"></span></p>
 <p id="act-note" class="note" hidden></p>
@@ -930,10 +1015,10 @@ NO_TOKEN = (403, "text/plain",
 BODY_LIMIT = 200000
 
 
-def respond(method, target, token, fetch, now, entries=(), idle_warn=60):
+def respond(method, target, token, fetch, now, entries=(), idle_warn=60, check=None):
     """(status, content type, body) for a request to look. Nothing is answered without the token; fetch,
     which asks conduct, is called only for an address that shows the listing. idle_warn is the minutes at
-    which the page marks an idle session."""
+    which the page marks an idle session; check(rows, top, now) says what became of the Starts podium sent."""
     parts = urllib.parse.urlsplit(target)
     given = urllib.parse.parse_qs(parts.query, keep_blank_values=True).get("t", [])
     if len(given) != 1 or not hmac.compare_digest(given[0].encode("utf-8"), token.encode("utf-8")):
@@ -951,7 +1036,8 @@ def respond(method, target, token, fetch, now, entries=(), idle_warn=60):
         top = json.loads(raw) if raw else None
     except ValueError:
         top = None
-    made = view(rows, now, error, entries, top=top, idle_warn=idle_warn)
+    checks = check(rows, top, now) if check and not error else ()
+    made = view(rows, now, error, entries, top=top, idle_warn=idle_warn, checks=checks)
     return 200, "text/html", page(made) if parts.path == "/" else made
 
 
@@ -981,7 +1067,7 @@ def answer(method, target, body, token, panel, now):
         if method == "POST":
             return act(target, body, token, panel)
         return respond(method, target, token, panel.listing, now, panel.entries,
-                       idle_warn=getattr(panel, "idle_warn", 60))
+                       idle_warn=getattr(panel, "idle_warn", 60), check=getattr(panel, "checks", None))
     except Exception as fault:  # noqa: BLE001 - the last line of defence for a page someone is looking at
         return 500, "text/plain", (f"podium: something went wrong inside podium ({type(fault).__name__}: {fault}); "
                                    "try Refresh\n")
@@ -1238,6 +1324,7 @@ class Panel:
     def __init__(self, conduct, env, clock, log_path, run=subprocess.run, idle_warn=60):
         self.conduct, self.env, self.clock, self.log_path, self.run = conduct, env, clock, log_path, run
         self.idle_warn = idle_warn      # the minutes at which the page marks an idle session (IDLE_WARN)
+        self.starts = {}                # the Starts that worked, by project, for start_checks: in memory only
         self.names, self.entries = None, []
         self.lock = threading.Lock()
 
@@ -1247,6 +1334,10 @@ class Panel:
         if not error:
             self.names = {r["mailbox"] for r in rows}
         return rows, raw, error
+
+    def checks(self, rows, top, now):
+        """What became of the Starts podium sent, from the listing just read (start_checks)."""
+        return start_checks(self.starts, rows, top, now)
 
     def call(self, argv, brief):
         """Run conduct with these arguments: (exit code or None if it did not run to the end, what it
@@ -1282,7 +1373,12 @@ class Panel:
                 argv, brief = command_for(action, self.names or set())
             except Refused as why:
                 return 400, {"error": str(why)}
+            began = self.clock() if argv[0] == "start" else None      # a new session can only be later than this
             code, output, error = self.call(argv, brief)
+            if began is not None and code == 0:
+                self.starts.pop(argv[1], None)                          # a later Start takes the earlier one's place
+                self.starts[argv[1]] = {"at": began.replace(microsecond=0), "entry": len(self.entries),
+                                        "right": None}
             entry = {"time": f"{self.clock():%Y-%m-%dT%H:%M:%SZ}", "command": shown(argv, brief), "exit": code,
                      "output": output, "error": error,
                      "reminder": REMINDER if argv[0] == "start" and code == 0 else None, "log_error": None}

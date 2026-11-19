@@ -370,3 +370,24 @@ def test_the_view_marks_idle_by_the_level_it_is_given_and_says_not_known_when_th
     assert "live state not known" in podium.view([a_row("stale")], NOW, top=unread)
     for top in (None, {}, {"live_listing": {"read": True, "why": None}}, {"live_listing": "odd"}, {"live_listing": None}):
         assert "live state not known" not in podium.view([a_row("stale")], NOW, top=top)
+
+
+def test_a_button_s_note_is_said_first_in_its_dialog_before_the_options():
+    page = podium.page("")
+    assert page.index('<p id="act-waits" class="note" hidden></p>') < page.index('<div id="act-options"></div>')
+    assert page.index('<h2 id="act-title"></h2>') < page.index('<p id="act-waits"')
+
+
+def test_a_sentence_podium_has_a_badge_for_is_not_said_again_among_the_facts():
+    html = line("stale", live=LIVE, live_note="alive, not watching mail; 2 sessions alive in its folder")
+    assert facts(html)[0] == "idle 25 min"
+    assert html.count("not watching mail") == 3     # the badge, and the Wake button's note and hover
+    assert facts(line("stale", live_note="no session alive: it ended without a handover")) == []
+
+
+def test_an_effort_is_ranked_as_a_whole_word_so_high_in_use_is_lower_than_xhigh_asked():
+    asks = dict(a_row(), effort="xhigh")
+    html = podium.row_html(dict(asks, live=dict(LIVE, model="claude-opus-4-8", effort="high")), NOW)
+    assert ('<li class="live lower" title="lower than the project asks for (opus, xhigh)">'
+            "in use: claude-opus-4-8, high (lower than asked)</li>") in html
+

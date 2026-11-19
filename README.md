@@ -918,6 +918,28 @@ Nothing happens at one press, and there are two:
    by then: the run, and the reminder of what only you can do in the app, are under "Activity". A Start
    that failed keeps its dialog, with `conduct`'s reason.
 
+**After a Start, podium checks where the new session opened.** The desktop app has opened a new session
+in another folder after the folder was confirmed, and a Start from podium has nobody to check it. So
+podium remembers each Start that worked (in memory: a podium that is restarted has forgotten them), and
+each time it makes the page it looks, in what `conduct status --json` says is alive, for a session that
+started after the Start. It says what it finds on the project's line and under that Start in "Activity":
+
+- **"Started, in the right folder: NAME. It is running on MODEL, EFFORT."** A new session is alive in the
+  project's folder. Once seen it stays said in "Activity"; the line says it for ten minutes.
+- **A warning in a border**, when a new session is alive in a folder that is no listed mailbox's and none
+  is in the project's: "A session that started after this Start is alive in FOLDER, which is no project's
+  folder, and none is in this project's folder: it may have opened in the wrong folder. If so, stop that
+  session in the app, press Start again, and before you send the first line change the form's folder to
+  another and back." It stands for as long as it is so. It says "may": a session you opened by hand
+  elsewhere after the Start looks the same, and when another Start is waited for too it names that one.
+- "No new session in this project's folder yet: in the app, confirm the folder and send the first line.",
+  for the first ten minutes; then **"No session has appeared: was the first line sent?"**, on the line for
+  twenty minutes more and in "Activity" for good.
+
+A session that was alive in the project's folder before the Start is never taken for the new one. Nothing
+is checked for a Claude Cowork project (the listing cannot see its session: the reminder is as before),
+nor while `conduct` cannot read the listing. podium stops and archives nothing: it only says.
+
 There is no preview since 15 November 2026: podium never runs `conduct` with `--dry-run`. For a dry run,
 run `conduct <verb> ... --dry-run` in Terminal.
 
@@ -1488,8 +1510,13 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
   is the lower. Where the duty and the listing disagree, the badge says so ("alive, not watching mail",
   "ended without a handover", "alive after its handover: not archived", "alive, not on duty", "a watch with
   no session"), with what to do on hover. Start, Wake and the "all" buttons say in their dialogs what the
-  real state means for them. A Claude Cowork project's line has not changed. `conduct status --json` has
-  one more key for each mailbox, `runs_in` (`code`, `cowork` or `null`). Restart podium to see it.
+  real state means for them, and a button's note now comes first in its dialog. A Claude Cowork project's
+  line has not changed. `conduct status --json` has one more key for each mailbox, `runs_in` (`code`,
+  `cowork` or `null`). **After a Start that worked, podium checks where the new session opened**, and says
+  on the project's line and under "Activity": "Started, in the right folder: …"; or, in a border, that a
+  new session is alive in a folder that is no project's and none in the project's, with what to do; or,
+  after ten minutes, "No session has appeared: was the first line sent?". It remembers the Starts only
+  while it runs. Restart podium to see all of this.
 - 19 November 2026, later: **`conduct status --json` says what each live session is running on, and which
   sessions are in no project's folder.** `live` has four more keys: `id` (the session's id, its
   transcript's name), and `model`, `effort` and `last_reply` from the newest reply in that transcript
