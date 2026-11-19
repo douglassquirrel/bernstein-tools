@@ -12,7 +12,8 @@ file `read-ID.txt` if there is one. The git stub prints
 the file `.git/stub-<verb>` of its working folder, if there is one, for its first argument that is not a flag,
 and exits with the number in `.git/stub-<verb>-exit` (World.repo() writes them). The conduct stub's
 `status` prints the text in `status.json` (default: no mailboxes); its other verbs print "conduct stub: "
-and their first two arguments, and a `--brief FILE` is read into the call's record as `brief`.
+and their first two arguments, and a `--brief FILE` is read into the call's record as `brief`. The claude
+stub's `agents --json` prints the text in `live.json` (default: `[]`, no session alive; World.live() writes it).
 """
 
 import datetime
@@ -114,7 +115,7 @@ class World:
         for d in (self.home, self.bin, self.non_code, self.code, self.mail):
             os.makedirs(d, exist_ok=True)
         write_tree(self.template, TEMPLATE)
-        for prog in ("git", "backlog", "lobster-mail", "python3", "open", "conduct"):
+        for prog in ("git", "backlog", "lobster-mail", "python3", "open", "conduct", "claude"):
             os.symlink(STUB, os.path.join(self.bin, prog))
         self.conf = os.path.join(base, "bernstein.conf")
         self.write_conf("")
@@ -155,6 +156,11 @@ class World:
         """Set the duty listing to these mailbox entries, as lobster-mail would print them."""
         with open(os.path.join(self.bin, "duty.json"), "w") as f:
             json.dump({"root": self.mail, "mailboxes": entries, "skipped": list(skipped)}, f)
+
+    def live(self, sessions):
+        """Set what `claude agents --json` prints: the sessions alive, as a list, or the raw text."""
+        with open(os.path.join(self.bin, "live.json"), "w", encoding="utf-8") as f:
+            f.write(sessions if isinstance(sessions, str) else json.dumps(sessions))
 
     def waiting(self, messages):
         """Set the new mail `lobster-mail check --json` lists: (sender, date, subject) each, or the raw text."""

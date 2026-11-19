@@ -17,7 +17,7 @@ import subprocess
 import urllib.parse
 from types import SimpleNamespace
 
-from bernstein import facts, globalfiles, hook, waiting
+from bernstein import facts, globalfiles, hook, live, waiting
 from bernstein.context import context_of
 from bernstein.render import MONTHS, TemplateRefused
 from bernstein.settings import SettingsRefused, read_settings
@@ -844,14 +844,18 @@ def cowork_sessions(store):
     return newest
 
 
-def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, context=None):
+def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, context=None, alive=None,
+                looked=None):
     """One row per mailbox in the duty listing, joined with what lookup(name) says of its project.
     lookup gives what find_project gives, or raises ProjectRefused as conduct start would; folder_of
     then gives the folder alone, if there is one. sessions is what app_sessions found, by folder, and
     cowork what cowork_sessions found: a non-code project gets its cowork session if it has one (its Claude
     Code session, if its lobster.conf says SESSION=code), any other row its Claude Code session, and each
     falls back to the other kind. context(session) says how full that session's context window is, or
-    None when that cannot be told."""
+    None when that cannot be told. alive is what live.read found, the sessions alive on the Mac by folder
+    (None: the listing was not read): a project that could be read and whose session is a Claude Code
+    session on the Mac gets live and live_note from it, and its sessions are added to looked, by mailbox,
+    when a dict is given."""
     rows = []
     for name, entry in boxes.items():
         row = {"mailbox": name, "state": state_of(entry), "kind": None, "folder": None, "model": None,
@@ -859,8 +863,8 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, conte
                "duty": entry.get("duty"), "pace": entry.get("pace") or "normal",
                "new": entry.get("new", 0), "open": entry.get("open", 0),
                "handover_waiting": bool(entry.get("handover_waiting")), "reported": entry.get("reported"),
-               "session": None, "context": None}
-        in_cowork = False
+               "session": None, "context": None, "live": None, "live_note": None}
+        in_cowork, read = False, False
         try:
             p = lookup(name)
         except ProjectRefused as why:
@@ -868,6 +872,7 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, conte
             row["folder"] = folder_of(name) if folder_of else None
         else:
             in_cowork = p.kind in ("non-code", "feeler") and getattr(p, "session", "cowork") == "cowork"
+            read = True
             row.update(kind=p.kind, folder=p.folder, model=p.model, effort=p.effort, sister=p.sister,
                        claws=list(p.claw_names))
         if row["folder"]:
@@ -876,6 +881,12 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, conte
             row["session"] = (first or {}).get(real) or (second or {}).get(real)
         if context and row["session"]:
             row["context"] = context(row["session"])
+        if alive is not None and read and not in_cowork:
+            there = live.there(alive, row["folder"])
+            row["live"] = live.of(alive, row["folder"])
+            row["live_note"] = live.note(row["state"], row["duty"], row["handover_waiting"], len(there))
+            if looked is not None:
+                looked[name] = there
         rows.append(row)
     for row in rows:
         row["serves"] = [r["mailbox"] for r in rows
@@ -892,8 +903,9 @@ def overdue(until_text, now):
     return when.replace(tzinfo=datetime.timezone.utc) < now
 
 
-def status_text(rows, now):
-    """The rows as text, one aligned line per mailbox, in the style of lobster-mail duty status --all."""
+def status_text(rows, now, looked=None):
+    """The rows as text, one aligned line per mailbox, in the style of lobster-mail duty status --all. looked
+    is what status_rows filled: the sessions alive in the folder of each project it looked at."""
     wide = max((len(r["mailbox"]) for r in rows), default=0)
     states = max((len(r["state"]) for r in rows), default=0)
     kinds = max([8] + [len(r["kind"] or "-") for r in rows])     # 8, as ever, unless a conductor is listed
@@ -904,6 +916,8 @@ def status_text(rows, now):
             f"on duty {duty.get('holder')}, last beat {duty.get('last_beat')} ({duty.get('minutes')} minutes ago)")
         line = (f"{r['mailbox'].ljust(wide)}  {r['state'].ljust(states)}  {(r['kind'] or '-').ljust(kinds)}  {who}"
                 f"  new {r['new']}  open {r['open']}  pace {r['pace']}")
+        if looked is not None and r["mailbox"] in looked:
+            line += "  " + live.text(r["live"], r["live_note"], looked[r["mailbox"]])
         said = r["reported"]
         if said:
             line += "  reporting " + json.dumps(str(said.get("status", "")), ensure_ascii=False)
@@ -1391,10 +1405,13 @@ def dream(a, s, env, now, out, err, sleep):
 
 def status(a, s, env, now, out, err, sleep):
     """Print what every mailbox's session is doing, joined with its project. It reads only: one duty listing
-    from lobster-mail, each project's lobster.conf, and the desktop app's own files for each session and how
-    full its context window is. Nothing is sent, set, opened or written."""
+    from lobster-mail, each project's lobster.conf, the desktop app's own files for each session and how
+    full its context window is, and the listing of the sessions alive on the Mac that `claude agents --json`
+    prints. Nothing is sent, set, opened or written."""
     skipped = []
     boxes = listing(s, env, sleep, skipped)
+    alive, why = live.read(s["CLAUDE"], env)
+    looked = {}
     def folder_of(name):
         """The folder of a mailbox whose project start would refuse, if it has one."""
         try:
@@ -1407,13 +1424,18 @@ def status(a, s, env, now, out, err, sleep):
                        sessions=app_sessions(s["APP_SESSIONS"]), folder_of=folder_of,
                        cowork=cowork_sessions(s["APP_COWORK_SESSIONS"]),
                        context=lambda session: context_of(s["APP_SESSIONS"], s["APP_TRANSCRIPTS"], session,
-                                                          int(s["CONTEXT_WINDOW"]), int(s["CONTEXT_WARN"])))
+                                                          int(s["CONTEXT_WINDOW"]), int(s["CONTEXT_WARN"])),
+                       alive=alive, looked=looked)
+    if why is not None:
+        err.write(f"conduct status: the listing of live sessions could not be read ({why}): nothing is said of "
+                  "which sessions are alive.\n")
     if a.json:
-        out.write(json.dumps({"root": s["MAIL_ROOT"], "mailboxes": rows, "skipped": skipped}, indent=1) + "\n")
+        out.write(json.dumps({"root": s["MAIL_ROOT"], "mailboxes": rows, "skipped": skipped,
+                              "live_listing": {"read": why is None, "why": why}}, indent=1) + "\n")
     elif not rows:
         out.write(f"No mailboxes in {s['MAIL_ROOT']}.\n")
     else:
-        out.write(status_text(rows, now))
+        out.write(status_text(rows, now, looked))
 
 
 def git_facts(folder, env):

@@ -22,6 +22,7 @@ def test_an_empty_file_gives_the_defaults_with_home_filled_in():
         "APP_TRANSCRIPTS": "/home/sq/.claude/projects",
         "CONTEXT_WINDOW": "1000000",
         "CONTEXT_WARN": "60",
+        "CLAUDE": "claude",
     }
 
 
@@ -153,3 +154,9 @@ def test_the_context_window_and_the_warning_level_are_kept_when_they_are_whole_n
 
 def test_where_the_transcripts_are_is_a_path_with_home_filled_in():
     assert read_settings("APP_TRANSCRIPTS=~/my claude/projects\n", HOME)["APP_TRANSCRIPTS"] == "/home/sq/my claude/projects"
+
+
+def test_the_claude_command_is_a_name_path_finds_or_a_path_with_home_filled_in():
+    assert read_settings("", HOME)["CLAUDE"] == "claude"
+    assert read_settings("CLAUDE=~/my tools/claude\n", HOME)["CLAUDE"] == "/home/sq/my tools/claude"
+    assert read_settings("CLAUDE='/opt/odd bin/claude'\n", HOME)["CLAUDE"] == "/opt/odd bin/claude"

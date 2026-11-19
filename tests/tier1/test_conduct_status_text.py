@@ -81,7 +81,7 @@ def test_a_row_joins_the_mailbox_with_what_the_project_says():
         "model": "opus", "effort": "high", "sister": "recipes-tools",
         "claws": ["recipes-tools", "video-tools"], "serves": [], "refused": None,
         "duty": entry["duty"], "pace": "eager", "new": 2, "open": 1, "handover_waiting": False,
-        "reported": DREAMING, "session": None, "context": None}]
+        "reported": DREAMING, "session": None, "context": None, "live": None, "live_note": None}]
 
 
 def test_a_claw_says_which_projects_it_serves_as_sister_or_further_claw():
@@ -106,7 +106,8 @@ def test_a_mailbox_whose_project_start_would_refuse_carries_the_reason_and_no_ki
         "effort": None, "sister": None, "claws": [], "serves": [],
         "refused": "no project bernstein anywhere",
         "duty": box("fresh", name="bernstein")["duty"], "pace": "normal", "new": 0, "open": 1,
-        "handover_waiting": False, "reported": None, "session": None, "context": None}
+        "handover_waiting": False, "reported": None, "session": None, "context": None, "live": None,
+        "live_note": None}
 
 
 def test_rows_keep_the_listing_s_order_and_fill_what_an_older_lobster_mail_leaves_out():
@@ -206,3 +207,31 @@ def test_a_row_s_context_is_what_is_said_of_its_session_and_a_row_with_no_sessio
     assert rows["recipes"]["session"] == cowork and rows["recipes"]["context"] is None
     assert rows["video-tools"]["session"] is None and rows["video-tools"]["context"] is None
     assert asked == [cowork, code]
+
+
+ALIVE = {"name": "recipes-tools · 18 October", "status": "idle", "kind": "interactive", "pid": 4242,
+         "started": "2026-10-15T08:00:00Z", "id": "00000000-0000-4000-8000-000000000000"}
+
+
+def test_a_row_of_a_project_on_the_mac_says_what_is_alive_in_its_folder_and_a_cowork_one_nothing():
+    boxes = {"recipes": box("stale", name="recipes"), "recipes-tools": box("stale", name="recipes-tools")}
+    projects = {"recipes": project("recipes", "non-code", "recipes-tools"),
+                "recipes-tools": project("recipes-tools", "code", "recipes")}
+    alive = {"/p/recipes": [ALIVE], "/p/recipes-tools": [ALIVE]}
+    looked = {}
+    cowork, tools = conduct.status_rows(boxes, lookup_in(projects), alive=alive, looked=looked)
+    assert (cowork["live"], cowork["live_note"]) == (None, None)
+    assert tools["live"] == {"name": "recipes-tools · 18 October", "status": "idle", "kind": "interactive",
+                             "started": "2026-10-15T08:00:00Z", "pid": 4242, "count": 1}
+    assert tools["live_note"] == "alive, not watching mail"
+    assert looked == {"recipes-tools": [ALIVE]}
+    assert conduct.status_rows(boxes, lookup_in(projects), alive=alive) == [cowork, tools]   # with nowhere to note them
+
+
+def test_with_the_listing_unread_no_row_says_anything_of_a_live_session():
+    looked = {}
+    (row,) = conduct.status_rows({"recipes-tools": box("stale", name="recipes-tools")},
+                                 lookup_in({"recipes-tools": project("recipes-tools", "code", "recipes")}),
+                                 alive=None, looked=looked)
+    assert (row["live"], row["live_note"], looked) == (None, None, {})
+    assert "alive" not in conduct.status_text([row], NOW, looked)

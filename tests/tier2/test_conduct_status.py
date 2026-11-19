@@ -37,9 +37,9 @@ def test_status_prints_one_line_per_mailbox_and_exits_0(world):
         " or a folder directly inside either\n"
         "recipes        running      non-code  on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)"
         '  new 2  open 0  pace normal  reporting "dreaming" until 2026-10-18T10:20:00Z\n'
-        "recipes-tools  handed-over  code      nobody on duty  new 0  open 0  pace normal\n"
+        "recipes-tools  handed-over  code      nobody on duty  new 0  open 0  pace normal  no session alive\n"
         "video-tools    quiet        code      on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)"
-        "  new 0  open 0  pace relaxed\n")
+        "  new 0  open 0  pace relaxed  no session alive: it ended without a handover\n")
 
 
 def test_status_json_joins_each_mailbox_with_its_project(world):
@@ -49,21 +49,22 @@ def test_status_json_joins_each_mailbox_with_its_project(world):
     code, out, err = world.conduct("status", "--json")
     assert (code, err) == (0, "")
     said = json.loads(out)
-    assert sorted(said) == ["mailboxes", "root", "skipped"]
+    assert sorted(said) == ["live_listing", "mailboxes", "root", "skipped"]
     assert (said["root"], said["skipped"]) == (world.mail, ["odd"])
     assert said["mailboxes"] == [
         {"mailbox": "recipes", "state": "running", "kind": "non-code", "folder": nc, "model": "opus",
          "effort": "high", "sister": "recipes-tools", "claws": ["recipes-tools", "video-tools"], "serves": [],
          "refused": None, "duty": recipes["duty"], "pace": "normal", "new": 2, "open": 0,
-         "handover_waiting": False, "reported": DREAMING, "session": None, "context": None},
+         "handover_waiting": False, "reported": DREAMING, "session": None, "context": None, "live": None,
+         "live_note": None},
         {"mailbox": "recipes-tools", "state": "handed-over", "kind": "code", "folder": tools, "model": "opus",
          "effort": "high", "sister": "recipes", "claws": [], "serves": ["recipes"], "refused": None,
          "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": True, "reported": None, "session": None,
-         "context": None},
+         "context": None, "live": None, "live_note": None},
         {"mailbox": "video-tools", "state": "off", "kind": "code", "folder": video, "model": "opus",
          "effort": "high", "sister": "", "claws": [], "serves": ["recipes"], "refused": None,
          "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": False, "reported": None, "session": None,
-         "context": None}]
+         "context": None, "live": None, "live_note": None}]
 
 
 def test_status_says_why_start_would_refuse_a_project(world):
@@ -84,14 +85,16 @@ def test_status_asks_lobster_mail_once_and_sends_opens_and_writes_nothing(world)
     assert world.conduct("status")[0] == 0 and world.conduct("status", "--json")[0] == 0
     assert tree(projects) == before and len(before) == 6
     assert [(c["prog"], c["args"]) for c in world.calls()] == [
-        ("lobster-mail", ["duty", "status", "--all", "--json", "--root", world.mail])] * 2
+        ("lobster-mail", ["duty", "status", "--all", "--json", "--root", world.mail]),
+        ("claude", ["agents", "--json"])] * 2
 
 
 def test_status_with_no_mailboxes_says_so_and_exits_0(world):
     world.listing([])
     assert world.conduct("status") == (0, f"No mailboxes in {world.mail}.\n", "")
     code, out, _err = world.conduct("status", "--json")
-    assert code == 0 and json.loads(out) == {"root": world.mail, "mailboxes": [], "skipped": []}
+    assert code == 0 and json.loads(out) == {"root": world.mail, "mailboxes": [], "skipped": [],
+                                             "live_listing": {"read": True, "why": None}}
 
 
 def test_status_keeps_an_awkward_reported_status_exactly_in_json(world):
@@ -294,10 +297,11 @@ def test_status_json_says_how_full_the_context_window_of_each_claude_code_sessio
                                                 "as_of": "2026-10-18T09:30:07Z", "warn": False}
     assert rows["video-tools"]["session"]["id"] == OLD and rows["video-tools"]["context"] is None   # no transcript
     assert rows["recipes"]["session"] is None and rows["recipes"]["context"] is None                # no session
-    assert list(rows["recipes-tools"])[-2:] == ["session", "context"]
+    assert list(rows["recipes-tools"])[-4:] == ["session", "context", "live", "live_note"]
     assert PRIVATE not in out
     assert (tree(store), tree(root)) == before                  # the app's files are only read
-    assert [(c["prog"], c["args"][:2]) for c in world.calls()] == [("lobster-mail", ["duty", "status"])]
+    assert [(c["prog"], c["args"][:2]) for c in world.calls()] == [("lobster-mail", ["duty", "status"]),
+                                                                   ("claude", ["agents", "--json"])]
 
 
 def test_the_window_s_size_the_warning_level_and_where_transcripts_are_come_from_the_settings(world, tmp_path):
@@ -360,7 +364,8 @@ def test_the_text_form_of_status_says_nothing_of_the_context_window(world):
     plain = world.conduct("status")
     app_store(world, [(SID, tools, 1794401892175, False)])
     transcript(world, SID, CLI, (0, 0, 990000))
-    assert world.conduct("status") == plain == (0, "recipes-tools  off  code      nobody on duty  new 0  open 0  pace normal\n", "")
+    assert world.conduct("status") == plain == (
+        0, "recipes-tools  off  code      nobody on duty  new 0  open 0  pace normal  no session alive\n", "")
 
 
 def test_a_context_setting_that_is_not_a_number_stops_status_with_exit_2(world):

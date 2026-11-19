@@ -259,10 +259,10 @@ def test_status_lists_a_conductor_and_its_claw_as_a_pair(world):
     assert (code, err) == (0, "")
     assert out == (
         "maestro        running  conductor  on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)"
-        "  new 0  open 0  pace normal\n"
-        "maestro-tools  off      code       nobody on duty  new 0  open 0  pace normal\n"
-        "word-tools     off      code       nobody on duty  new 0  open 0  pace normal\n")
-    assert [c["args"][:2] for c in world.calls()] == [["duty", "status"], ["duty", "status"]]
+        "  new 0  open 0  pace normal  no session alive, though its duty is fresh: a watch has outlived its session\n"
+        "maestro-tools  off      code       nobody on duty  new 0  open 0  pace normal  no session alive\n"
+        "word-tools     off      code       nobody on duty  new 0  open 0  pace normal  no session alive\n")
+    assert [c["args"][:2] for c in world.calls()] == [["duty", "status"], ["agents", "--json"]] * 2
 
 
 HOOK = '{{"command": "\\"$HOME/l/lobster-mail\\" start --project \\"$CLAUDE_PROJECT_DIR\\" --root {root}"}}\n'

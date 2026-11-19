@@ -1,6 +1,6 @@
 #!/bin/sh
 # The stand-in for every external program the Tier 2 tests need (git, backlog, lobster-mail, python3, open,
-# conduct, pip). One file for them all: each test's World links to it by each program's name, and it acts by
+# conduct, pip, claude). One file for them all: each test's World links to it by each program's name, and it acts by
 # the name it was called as. It is a file of its own, never written by a test, because macOS takes about a
 # sixth of a second over the first run of a script it has not seen, and a few thousandths over a link to one
 # it has. Its folder of canned answers and its log are the first folder of PATH, which is the World's bin.
@@ -63,6 +63,8 @@ git)
     for a in "$@"; do case "$a" in -*) ;; *) verb=$a; break ;; esac; done
     if [ -n "$verb" ] && [ -f ".git/stub-$verb" ]; then /bin/cat ".git/stub-$verb"; fi
     if [ -n "$verb" ] && [ -f ".git/stub-$verb-exit" ]; then exit "$(/bin/cat ".git/stub-$verb-exit")"; fi ;;
+claude)
+    if [ "${1-}" = agents ] && [ "${2-}" = --json ]; then show live.json "[]"; fi ;;
 python3)
     if [ "${1-}" = -m ] && [ "${2-}" = venv ]; then
         /bin/mkdir -p "$3/bin" && /bin/ln -s "$0" "$3/bin/pip"

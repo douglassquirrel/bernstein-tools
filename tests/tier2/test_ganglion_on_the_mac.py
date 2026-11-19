@@ -163,7 +163,10 @@ def test_status_gives_a_ganglion_on_the_mac_its_claude_code_session_before_a_cow
     row = session_of(world, "recipes")
     assert row["session"]["id"] == SID and row["session"]["app"] == "code"
     assert row["session"]["link"] == "claude://claude.ai/epitaxy/" + SID
-    assert {k: v for k, v in row.items() if k != "session"} == {k: v for k, v in plain.items() if k != "session"}
+    differ = ("session", "live_note")       # and on the Mac its session can be seen: none is alive here
+    assert {k: v for k, v in row.items() if k not in differ} == {k: v for k, v in plain.items() if k not in differ}
+    assert plain["live_note"] is None
+    assert row["live_note"] == "no session alive, though its duty is fresh: a watch has outlived its session"
     os.remove(os.path.join(world.home, "Library", "Application Support", "Claude", "claude-code-sessions", "acct",
                            "org", SID + ".json"))
     assert session_of(world, "recipes")["session"]["id"] == COWORK      # none of its own kind: the other will do
@@ -172,7 +175,7 @@ def test_status_gives_a_ganglion_on_the_mac_its_claude_code_session_before_a_cow
 @pytest.mark.parametrize("argv", [("stop", "recipes"), ("stop", "--dry-run", "recipes"), ("dormant", "recipes"),
                                   ("wake", "recipes"), ("dream", "recipes"), ("dream", "recipes", "--then", "stop"),
                                   ("reset", "--dry-run", "recipes"), ("reset", "recipes"), ("waiting",),
-                                  ("status",), ("stop", "--all"), ("dormant", "--all")])
+                                  ("stop", "--all"), ("dormant", "--all")])   # status: test_conduct_live.py
 def test_every_other_verb_does_for_a_ganglion_on_the_mac_what_it_does_for_any_ganglion(world, argv):
     folder = ganglion(world)
     world.duty({"recipes": "stale" if argv[0] == "reset" else "fresh", "recipes-tools": None})

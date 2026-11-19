@@ -147,6 +147,7 @@ optional quotes, `~` for your home folder. All optional; `bernstein.conf.example
 | `LOBSTER_MAIL` | `~/projects/code/lobster-tools-code/lobster-tools/lobster-mail` | |
 | `MAIL_ROOT` | `~/projects/mail` | |
 | `PYTHON` | `/usr/bin/python3` | |
+| `CLAUDE` | `claude`, as `PATH` finds it | |
 
 ### The template
 
@@ -547,14 +548,16 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
   project's kind, who is on duty and when it last checked in, the mail waiting (`new`) and claimed
   (`open`), the pace, the status the session reports about itself if it has set one (`lobster-mail
   status`; marked `(overdue)` once its finish time has passed), and, where `start` would refuse the
-  project, why. It reads one duty listing and each project's `lobster.conf`; it sends, sets, opens and
-  writes nothing, so it has no `--dry-run`.
+  project, why. After the pace, a project whose session is a Claude Code session on the Mac says
+  whether a session is alive in its folder ("Whether a session is alive", below). It reads one duty
+  listing, each project's `lobster.conf` and the listing `claude agents --json` prints; it sends, sets,
+  opens and writes nothing, so it has no `--dry-run`.
 
   ```
   $ ./conduct status
   recipes        running      non-code  on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)  new 2  open 0  pace normal  reporting "dreaming" until 2026-10-18T10:20:00Z
-  recipes-tools  handed-over  code      nobody on duty  new 0  open 0  pace normal
-  video-tools    quiet        code      on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)  new 0  open 0  pace relaxed
+  recipes-tools  handed-over  code      nobody on duty  new 0  open 0  pace normal  alive after its handover: not archived ("recipes-tools · 18 October", idle)
+  video-tools    quiet        code      on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)  new 0  open 0  pace relaxed  no session alive: it ended without a handover
   ```
 
   The second word is the state, the first of these that fits:
@@ -710,6 +713,63 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
   session whose transcript is not there (or is there twice), one with no reply yet, and a newest reply
   that is not the shape expected. `conduct` reads the end of the transcript and nothing else of it, and
   never writes it; no word of a conversation is printed. The text form does not show `context`.
+
+  **Whether a session is alive.** A duty's heartbeat comes from the session's mail watch, so a fresh duty
+  says that a watch is running, not that the session is alive. `conduct status` therefore also runs
+  `claude agents --json` once (the setting `CLAUDE` names the command; `claude`, as `PATH` finds it,
+  unless set). That prints every Claude Code session alive on this Mac, at once and using no model.
+  A session belongs to a project when the folder it was opened in is the project's folder (the same
+  real path, so a link or a trailing slash makes no difference; a folder inside it does not count).
+  Only a project whose session is a Claude Code session on the Mac is looked at: a tools project, a
+  conductor, and a non-code project with `SESSION=code`. A Claude Cowork project, a feeler, a mailbox
+  with no project and a project `start` would refuse get nothing, since the listing cannot see a Cowork
+  session and nothing is said of what cannot be seen.
+
+  In the text form the field after the pace is "alive" or "no session alive", or, where the duty and
+  the listing disagree, the sentence below; then each session alive there in brackets, its name and
+  "busy" or "idle" (and its kind, when it is not an interactive one), several separated by "; ".
+
+  | The duty | A session alive | It says |
+  |---|---|---|
+  | fresh | yes | `alive` |
+  | fresh | no | `no session alive, though its duty is fresh: a watch has outlived its session` |
+  | stale, at pace relaxed (`quiet`) | yes | `alive` |
+  | stale, otherwise | yes | `alive, not watching mail` |
+  | stale | no | `no session alive: it ended without a handover` |
+  | nobody on duty, a handover waiting | yes | `alive after its handover: not archived` |
+  | nobody on duty, no handover waiting | yes | `alive, not on duty` |
+  | nobody on duty | no | `no session alive` |
+
+  With more than one session in the folder it says `2 sessions alive in its folder`, after the sentence
+  and "; " where there is one.
+
+  In `--json` each mailbox has two more keys, and the top level one:
+
+  ```json
+  "live": {"name": "recipes-tools · 18 October", "status": "idle", "kind": "interactive",
+           "started": "2026-10-18T07:36:00Z", "pid": 4242, "count": 1},
+  "live_note": "alive after its handover: not archived"
+  ```
+
+  - `live` is the newest session alive in the project's folder, or `null` when there is none, when the
+    project is not one that is looked at, or when the listing could not be read. `count` is how many
+    are alive there; with more than one, `names` lists each, oldest first. `status` is "busy" or "idle"
+    as the listing gives it. A fact the listing does not give, or gives as another type, is `null`.
+  - `live_note` is the sentence of the table where the duty and the listing disagree (and the count,
+    with more than one session), or `null`.
+  - `live_listing`, beside `root`: `{"read": true, "why": null}`, or `false` with the reason.
+
+  **If the listing cannot be read** (`claude` is not found or cannot be run, it fails, it gives no
+  answer in five seconds, or it prints anything but a JSON array), `conduct status` prints exactly what
+  it printed before this was built, with no such field on any line and every `live` and `live_note`
+  `null`, exits 0 as ever, and says so in one line on standard error:
+
+  ```
+  conduct status: the listing of live sessions could not be read (claude was not found): nothing is said of which sessions are alive.
+  ```
+
+  `conduct` runs `claude` with `agents --json` and nothing else. It never stops, archives, opens or
+  writes to a session.
 
 ## podium: a page showing every session, with buttons
 
@@ -1339,6 +1399,16 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
 
 ## Notes for users
 
+- 19 November 2026: **`conduct status` says whether a session is alive.** It now runs `claude agents
+  --json` once (read only, no model) and, for each project whose session is a Claude Code session on the
+  Mac, adds one field after the pace: `alive ("NAME", idle)`, `no session alive`, or the sentence where
+  the duty and the listing disagree (`alive, not watching mail`; `no session alive: it ended without a
+  handover`; `alive after its handover: not archived`; `alive, not on duty`; `no session alive, though
+  its duty is fresh: a watch has outlived its session`). `--json` has two new keys for each mailbox,
+  `live` and `live_note`, and `live_listing` at the top level. A Claude Cowork project's line has not
+  changed. One new setting, optional: `CLAUDE`, the command's path (`claude`, as `PATH` finds it). If the
+  listing cannot be read, every line is as it was and one line on standard error says why; the exit
+  code is still 0. **Anything that reads the text form by its columns should know a field was added.**
 - 16 November 2026, late: **podium shows each tools project once.** A tools project that two or more
   non-code projects use, and any further claw, is no longer drawn on each of their cards: it has one line,
   with its buttons, in a section "Claws" (which takes the place of "Lone claws"), saying who uses it, and

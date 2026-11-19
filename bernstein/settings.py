@@ -29,13 +29,14 @@ DEFAULTS = {
     "APP_TRANSCRIPTS": "~/.claude/projects",
     "CONTEXT_WINDOW": "1000000",
     "CONTEXT_WARN": "60",
+    "CLAUDE": "claude",
 }
 
 # settings that are whole numbers: the least and the most each may be
 WHOLE = {"CONTEXT_WINDOW": (1000, 100000000), "CONTEXT_WARN": (1, 100)}
 
 PATHS = ("TEMPLATE", "NON_CODE_DIR", "CODE_DIR", "LOBSTER_MAIL", "MAIL_ROOT", "PYTHON", "PODIUM_LOG",
-         "APP_SESSIONS", "APP_COWORK_SESSIONS", "APP_TRANSCRIPTS")
+         "APP_SESSIONS", "APP_COWORK_SESSIONS", "APP_TRANSCRIPTS", "CLAUDE")
 
 
 def expand(value, home):
