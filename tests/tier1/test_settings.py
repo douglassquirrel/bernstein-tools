@@ -23,6 +23,7 @@ def test_an_empty_file_gives_the_defaults_with_home_filled_in():
         "CONTEXT_WINDOW": "1000000",
         "CONTEXT_WARN": "60",
         "CLAUDE": "claude",
+        "IDLE_WARN": "60",
     }
 
 
@@ -160,3 +161,16 @@ def test_the_claude_command_is_a_name_path_finds_or_a_path_with_home_filled_in()
     assert read_settings("", HOME)["CLAUDE"] == "claude"
     assert read_settings("CLAUDE=~/my tools/claude\n", HOME)["CLAUDE"] == "/home/sq/my tools/claude"
     assert read_settings("CLAUDE='/opt/odd bin/claude'\n", HOME)["CLAUDE"] == "/opt/odd bin/claude"
+
+
+@pytest.mark.parametrize("value", ["0", "100001", "an hour", "60.5", "-5", "", "1h"])
+def test_the_idle_level_must_be_a_whole_number_of_minutes_in_range(value):
+    with pytest.raises(SettingsRefused) as refused:
+        read_settings(f"IDLE_WARN={value}\n", HOME)
+    assert str(refused.value) == "line 1: IDLE_WARN must be a whole number from 1 to 100000"
+
+
+def test_the_idle_level_is_sixty_minutes_unless_set():
+    assert read_settings("", HOME)["IDLE_WARN"] == "60"
+    assert read_settings("IDLE_WARN=1\nCLAUDE=x\n", HOME)["IDLE_WARN"] == "1"
+    assert read_settings("IDLE_WARN='100000'\n", HOME)["IDLE_WARN"] == "100000"

@@ -37,3 +37,5 @@
 # read only, no model), from which conduct status says whether each project has a live session. A name
 # that PATH finds, or a path.
 #CLAUDE=claude
+# The minutes a live session may sit idle before podium marks it "long idle".
+#IDLE_WARN=60

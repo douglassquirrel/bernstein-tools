@@ -163,7 +163,8 @@ def test_status_gives_a_ganglion_on_the_mac_its_claude_code_session_before_a_cow
     row = session_of(world, "recipes")
     assert row["session"]["id"] == SID and row["session"]["app"] == "code"
     assert row["session"]["link"] == "claude://claude.ai/epitaxy/" + SID
-    differ = ("session", "live_note")       # and on the Mac its session can be seen: none is alive here
+    differ = ("session", "live_note", "runs_in")    # and on the Mac its session can be seen: none is alive here
+    assert (plain["runs_in"], row["runs_in"]) == ("cowork", "code")
     assert {k: v for k, v in row.items() if k not in differ} == {k: v for k, v in plain.items() if k not in differ}
     assert plain["live_note"] is None
     assert row["live_note"] == "no session alive, though its duty is fresh: a watch has outlived its session"

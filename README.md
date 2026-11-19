@@ -148,6 +148,7 @@ optional quotes, `~` for your home folder. All optional; `bernstein.conf.example
 | `MAIL_ROOT` | `~/projects/mail` | |
 | `PYTHON` | `/usr/bin/python3` | |
 | `CLAUDE` | `claude`, as `PATH` finds it | |
+| `IDLE_WARN` | `60` (minutes; podium marks a session idle for that long or longer) | |
 
 ### The template
 
@@ -787,6 +788,9 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
     Only the end of the transcript is read, it is never written, and no word of a conversation is printed.
   - `live_note` is the sentence of the table where the duty and the listing disagree (and the count,
     with more than one session), or `null`.
+  - `runs_in` says which kind of session the project runs in: `code` (a Claude Code session on the Mac:
+    the projects that are looked at) or `cowork`; `null` for a mailbox with no project and a project
+    `start` would refuse. It does not depend on the listing.
   - `live_listing`, beside `root`: `{"read": true, "why": null}`, or `false` with the reason.
   - `live_elsewhere`, beside `root`: the sessions alive in a folder that is no listed mailbox's folder,
     oldest first, each `{"folder", "name", "status", "kind", "started", "pid"}`; `[]` when there is none,
@@ -824,17 +828,55 @@ before. Then the mailboxes whose project `conduct` could not start, each with th
 own, then the conductor's card. Each line has the session's state as a coloured
 badge, the kind of session on duty and how long ago it checked in ("Claude Code" for a session on the Mac,
 whose mail name is `mac`; "Claude Cowork" for one in the app's virtual machine, whose mail name is `device`),
-and the project's model and effort; where `conduct status --json` says what is alive in the project's
-folder (`live` and `live_note`: "Whether a session is alive", above), that too, after who is on duty:
-"alive (recipes-tools · 18 October, idle)", or the sentence where the duty and the listing disagree, such
-as "alive, not watching mail (…)" or "no session alive: it ended without a handover". A project that is
-off with no session alive says nothing of it, like everything usual on the page; so does a Claude Cowork
-project, and every line when the listing could not be read. The pace is
+and the project's model and effort. The pace is
 shown only when it is not normal, and mail waiting or claimed only when there is some. A running session that reports a status shows that in the badge (`dreaming
 until 10:20 UTC`), and `overdue since` once its finish time has passed. The page makes itself again
 every 15 seconds and when you press Refresh, follows your light or dark setting, and works at the
 width of a phone. It is set in EB Garamond if that typeface is installed on the Mac, and in Georgia if
 not; nothing is fetched from anywhere, so no font is downloaded.
+
+**What the live session is doing.** For a project whose session is a Claude Code session on the Mac, the
+line says what `conduct status --json` gives in `live` and `live_note` ("Whether a session is alive",
+above), after who is on duty. podium works none of it out but the lengths of time:
+
+- **working**, while the session is busy; or **idle 25 min**, counted from its newest reply. At or past an
+  hour it is marked, in words and with a border, not by colour alone: **long idle: 2 h 5 min**. The level
+  is the setting `IDLE_WARN`, in minutes (60 unless set; a whole number from 1 to 100000).
+- **since 07:36 UTC**: when the session started (with the day, when that is not today).
+- **named …**: the session's name, only when it is not the name `conduct start` gives one started that
+  day (the project, " · " and the day).
+- **2 sessions: …**, marked, with each name, when more than one is alive in the folder.
+- **in use: claude-sonnet-5-5, high (lower than asked)**, beside the project's own model and effort, only
+  when the model or the effort the session is really running on differs from what the project's
+  `lobster.conf` asks for. It is marked "lower than asked" when it is the lower (models from lowest by the
+  word in the id: haiku, sonnet, opus, fable; efforts: low, medium, high, xhigh, max). A model whose id
+  has none of the four words is shown and not marked.
+- **The badge says the disagreement**, where the duty and the listing disagree, with what you can do
+  about it when you hover over it:
+
+  | The badge | What you can do |
+  |---|---|
+  | `alive, not watching mail` (`dormant, not watching mail` for a dormant one) | speak to the session in the app: it reads mail only when you next type to it |
+  | `ended without a handover` | `conduct reset NAME`, then Start |
+  | `alive after its handover: not archived` | archive it in the app |
+  | `alive, not on duty` | it may be starting; if not, speak to it in the app |
+  | `a watch with no session` | its duty is fresh but no session is alive in its folder: it may have been opened in another folder |
+
+  A label on a card says the same words as the badge of the line it leads to.
+- **The buttons say what the real state means for them**, on hover and in the dialog. **Start**, where a
+  session is already alive in the folder and nobody is on duty: "A session is already alive in this
+  project's folder (…): a Start would open a second one. Speak to that session in the app, or archive it
+  there, first." **Wake**, where the session is alive and not watching: "it reads the Wake only when you
+  next type to it"; where none is alive: "nothing would read a Wake: conduct reset NAME clears its duty,
+  and Start then starts it afresh." **Stop all**, **Dormant all** and **Dream all** name the sessions that
+  are alive but not watching mail, since `conduct` passes a stale duty over and sends them nothing. (Stop,
+  Dormant and Dream are offered on a line only while its duty is fresh, so on a line they need no such
+  words.)
+
+A project that is off with no session alive says nothing of it, like everything usual on the page. A
+Claude Cowork project's line is exactly as it was. When `conduct` could not read the listing of live
+sessions, a project on the Mac says "live state not known", so that a blank is never read as "not alive";
+with a `conduct` from before 19 November 2026 the page is the page of before.
 
 A line whose project has a session in the desktop app also shows how full that session's context window
 is, last among its facts: a small bar that fills with the percentage, and the percentage beside it
@@ -1438,6 +1480,16 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
 
 ## Notes for users
 
+- 19 November 2026, later still: **podium says what each live session is doing.** For a project on the
+  Mac the line now says "working" or "idle 25 min" (marked "long idle" at or past an hour: the new setting
+  `IDLE_WARN`, in minutes), "since 07:36 UTC", the session's name when it is not the one a Start gives,
+  "2 sessions: …" when more than one is alive in the folder, and "in use: …" when the model or effort the
+  session is really running on differs from what the project asks for, marked "lower than asked" when it
+  is the lower. Where the duty and the listing disagree, the badge says so ("alive, not watching mail",
+  "ended without a handover", "alive after its handover: not archived", "alive, not on duty", "a watch with
+  no session"), with what to do on hover. Start, Wake and the "all" buttons say in their dialogs what the
+  real state means for them. A Claude Cowork project's line has not changed. `conduct status --json` has
+  one more key for each mailbox, `runs_in` (`code`, `cowork` or `null`). Restart podium to see it.
 - 19 November 2026, later: **`conduct status --json` says what each live session is running on, and which
   sessions are in no project's folder.** `live` has four more keys: `id` (the session's id, its
   transcript's name), and `model`, `effort` and `last_reply` from the newest reply in that transcript

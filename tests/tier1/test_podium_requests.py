@@ -249,3 +249,22 @@ def test_a_connection_that_breaks_mid_answer_prints_nothing_in_the_terminal(caps
     finally:
         server.server_close()
     assert capsys.readouterr() == ("", "")
+
+
+def test_the_page_is_made_with_the_panel_s_idle_level_and_all_that_conduct_printed():
+    alive = {"name": "x", "status": "idle", "started": None, "count": 1, "last_reply": "2026-10-18T09:10:00Z"}
+    rows = [{"mailbox": "soups-tools", "state": "running", "kind": "code", "refused": None, "duty": None,
+             "pace": "normal", "new": 0, "open": 0, "runs_in": "code", "live": alive, "live_note": None}]
+    told = {"root": "/m", "mailboxes": rows, "skipped": [], "live_listing": {"read": False, "why": "x"}}
+
+    class Told(FakePanel):
+        idle_warn = 20
+
+        def listing(self):
+            return rows, json.dumps(told), None
+
+    assert podium.answer("GET", "/view?t=secret", b"", "secret", Told(), NOW) == (
+        200, "text/html", podium.view(rows, NOW, top=told, idle_warn=20))
+    assert "long idle: 30 min" in podium.view(rows, NOW, top=told, idle_warn=20)
+    assert podium.respond("GET", "/view?t=secret", "secret", lambda: (rows, "not json", None), NOW)[2] == \
+        podium.view(rows, NOW)                                  # what conduct printed is the listing's to check

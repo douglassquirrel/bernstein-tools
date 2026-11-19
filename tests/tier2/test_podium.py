@@ -424,3 +424,39 @@ def test_over_the_socket_the_page_shows_what_conduct_says_of_each_context_window
     assert view.count('<li class="context unknown">context not known</li>') == 1
     assert got["status"] == (200, got["status"][1], told)       # passed through, byte for byte
     assert conducted(world) == [["status", "--json"]] * 2
+
+
+def test_over_the_socket_the_page_says_what_each_live_session_is_doing_by_podium_s_own_level(world):
+    alive = {"name": "lone-tools · 18 October", "status": "idle", "kind": "interactive",
+             "started": "2026-10-18T07:36:00Z", "pid": 4242, "count": 1, "id": "00000000-0000-4000-8000-000000000000",
+             "model": "claude-sonnet-5-5", "effort": "high", "last_reply": "2026-10-18T09:10:00Z"}   # NOW is 09:40
+    rows = [dict(ROWS[0], runs_in="code", live=alive, live_note=None),
+            dict(ROWS[0], mailbox="lost-tools", state="stale", runs_in="code", live=None, live_note=None)]
+    read = {"root": "/m", "mailboxes": rows, "skipped": [], "live_listing": {"read": True, "why": None},
+            "live_elsewhere": []}
+    got = {}
+
+    def talk(base):
+        got["view"] = get(base + "/view?t=tok-en")[2]
+        got["page"] = get(base + "/?t=tok-en")[2]
+
+    world.status(json.dumps(read))
+    assert serving(world, talk) == (0, "")
+    assert got["view"] == podium.view(rows, NOW, top=read) and "long idle" not in got["view"]
+    assert '<li class="live">idle 30 min</li><li class="live">since 07:36 UTC</li>' in got["view"]
+    assert "in use: claude-sonnet-5-5, high (lower than asked)" in got["view"] and got["view"] in got["page"]
+    world.write_conf("IDLE_WARN=30\n")
+    assert serving(world, talk) == (0, "")
+    assert got["view"] == podium.view(rows, NOW, top=read, idle_warn=30) and "long idle: 30 min" in got["view"]
+    assert "live state not known" not in got["view"]
+    unread = dict(read, live_listing={"read": False, "why": "claude was not found"})
+    world.status(json.dumps(unread))
+    assert serving(world, talk) == (0, "")
+    assert got["view"].count('<li class="live unknown">live state not known</li>') == 1    # the row with no session
+    assert [c["args"] for c in world.calls() if c["prog"] != "conduct"] == []               # it asks conduct, and nothing else
+
+
+def test_an_idle_level_that_is_not_a_whole_number_of_minutes_stops_podium_with_exit_2(world):
+    world.write_conf("IDLE_WARN=an hour\n")
+    assert world.podium("--no-open") == (
+        2, "", f"podium: {world.conf}: line 7: IDLE_WARN must be a whole number from 1 to 100000\n")

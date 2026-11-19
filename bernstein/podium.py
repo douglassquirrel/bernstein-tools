@@ -22,7 +22,8 @@ import threading
 import urllib.parse
 
 from bernstein.conduct import day
-from bernstein.settings import SettingsRefused, check_port, read_settings
+from bernstein.conduct import session_name as started_name
+from bernstein.settings import EFFORTS, SettingsRefused, check_port, read_settings
 
 TONES = {"running": "ok", "dormant": "sleep", "quiet": "warn", "stale": "alert", "handed-over": "off", "off": "off"}
 
@@ -56,9 +57,51 @@ def clock(when, now):
     return text if when.date() == now.date() else f"{text} on {day(when)}"
 
 
+# Where the duty and the listing of live sessions disagree, conduct's sentence (live_note) becomes the
+# badge: (conduct's sentence, the badge's words, its tone, what he can do, said on hover).
+LIVE_BADGES = (
+    ("no session alive, though its duty is fresh: a watch has outlived its session", "a watch with no session",
+     "alert", ("Its duty is fresh but no session is alive in its folder: a watch has outlived its session, or the "
+               "session was opened in another folder.")),
+    ("no session alive: it ended without a handover", "ended without a handover", "alert",
+     "No session is alive in its folder: conduct reset {name} clears its duty, and Start then starts it afresh."),
+    ("alive, not watching mail", "alive, not watching mail", "warn",
+     ("Its session is alive but its mail watch has stopped: it reads mail only when you next type to it, so "
+      "speak to it in the app.")),
+    ("alive after its handover: not archived", "alive after its handover: not archived", "warn",
+     "It has handed over and its session is still open: archive it in the app."),
+    ("alive, not on duty", "alive, not on duty", "warn",
+     ("A session is alive in its folder and has not taken the duty: it may be starting. If it is not, speak to "
+      "it in the app.")),
+)
+SEVERAL = re.compile(r"[0-9]+ sessions alive in its folder")
+
+
+def live_note(row):
+    """conduct's sentence for the row, in its parts, or [] when it gives none."""
+    note = row.get("live_note")
+    return note.split("; ") if isinstance(note, str) else []
+
+
+def live_badge(row):
+    """(words, tone, what to do) where conduct says the duty and the listing of live sessions disagree, in
+    a sentence podium knows; None otherwise. podium works none of it out: it words what conduct says."""
+    for part in live_note(row):
+        for sentence, words, tone, hint in LIVE_BADGES:
+            if part == sentence:
+                if sentence == "alive, not watching mail" and row.get("state") == "dormant":
+                    words = "dormant, not watching mail"
+                return words, tone, hint.replace("{name}", str(row["mailbox"]))
+    return None
+
+
 def badge(row, now):
-    """(words, tone) for a row's state. A running session's own report takes the badge, until its
-    finish time passes: after that it is overdue, not trusted."""
+    """(words, tone) for a row's state. Where the duty and the listing of live sessions disagree, that is
+    the badge. Otherwise a running session's own report takes it, until its finish time passes: after that
+    it is overdue, not trusted."""
+    disagreement = live_badge(row)
+    if disagreement:
+        return disagreement[0], disagreement[1]
     state = row["state"]
     said = row.get("reported")
     if state != "running" or not said:
@@ -230,21 +273,122 @@ def context_item(row, now):
             f'<span aria-hidden="true">{found["percent"]}%</span></li>')
 
 
-def live_item(row):
-    """What conduct status says is alive in the project's folder, as one of the row's facts: its note where
-    the duty and the listing disagree, or "alive", then the session's name and status. Nothing where it says
-    neither (a Claude Cowork project, a listing unread, an older conduct, or a project that is off with no
-    session, which is the usual and goes unsaid); nothing is worked out here."""
-    found = row.get("live") if isinstance(row.get("live"), dict) else None
-    note = row.get("live_note") if isinstance(row.get("live_note"), str) else None
-    if found is None and note is None:
+def span(minutes):
+    """A length of time in whole minutes, as the page says it."""
+    if minutes == 0:
+        return "under a minute"
+    return ago(minutes)[: -len(" ago")]
+
+
+def alive(row):
+    """The session conduct says is alive in the row's folder, or None."""
+    return row.get("live") if isinstance(row.get("live"), dict) else None
+
+
+def named(found):
+    """A live session in a sentence: its name and its status, or what is not known of them."""
+    name = found.get("name") if isinstance(found.get("name"), str) else "a session with no name"
+    status = found.get("status") if isinstance(found.get("status"), str) else "status not known"
+    return f"{name}, {status}"
+
+
+def live_items(row, now, idle_warn=60, unread=False):
+    """What the session alive in the row's folder is doing, as facts of the row, from conduct's `live`:
+    working, or idle and for how long since its newest reply (marked "long idle" at or past idle_warn
+    minutes); since when it has been alive; its name, when it is not the one conduct start gives for that
+    day; and how many sessions are there, when more than one. Before them, a sentence of conduct's that
+    podium has no badge for. With the listing unread, a project that runs on the Mac says the live state
+    is not known, so that a blank is never read as "not alive". Nothing for any other row."""
+    items = []
+    known = {sentence for sentence, _words, _tone, _hint in LIVE_BADGES}
+    if any(part not in known and not SEVERAL.fullmatch(part) for part in live_note(row)):
+        items.append(f'<li class="live">{e(row["live_note"])}</li>')
+    found = alive(row)
+    if found is None:
+        if unread and row.get("runs_in") == "code":
+            items.append('<li class="live unknown">live state not known</li>')
+        return items
+    status = found.get("status")
+    if status == "busy":
+        items.append('<li class="live">working</li>')
+    elif status == "idle":
+        replied = stamp(found.get("last_reply"))
+        minutes = int((now - replied).total_seconds() // 60) if replied and replied <= now else None
+        if minutes is None:
+            items.append('<li class="live">idle</li>')
+        elif minutes >= idle_warn:
+            items.append(f'<li class="live long" title="idle for {idle_warn} minutes or more (the setting '
+                         f'IDLE_WARN)">long idle: {span(minutes)}</li>')
+        else:
+            items.append(f'<li class="live">idle {span(minutes)}</li>')
+    else:
+        items.append(f'<li class="live">{e(status) if isinstance(status, str) else "status not known"}</li>')
+    began = stamp(found.get("started"))
+    if began:
+        items.append(f'<li class="live">since {clock(began, now)}</li>')
+    name = found.get("name")
+    if isinstance(name, str) and (began is None or name != started_name(row["mailbox"], began)):
+        items.append(f'<li class="live">named {e(name)}</li>')
+    if count(found.get("count")) and found["count"] > 1:
+        names = found.get("names")
+        each = ": " + ", ".join(names) if isinstance(names, list) and names and all(
+            isinstance(n, str) for n in names) else ""
+        items.append('<li class="live several" title="More than one session is alive in this project&#x27;s '
+                     f'folder: archive the ones you do not want, in the app">{found["count"]} sessions{e(each)}</li>')
+    return items
+
+
+MODELS = ("haiku", "sonnet", "opus", "fable")       # lowest first, by the word in the model's id
+
+
+def rank(text, order):
+    """Where a model's id or an effort stands in its order, lowest first; None when it names none of them."""
+    found = [at for at, word in enumerate(order) if word in text.lower()] if order is MODELS else [
+        at for at, word in enumerate(order) if word == text.lower()]
+    return found[0] if found else None
+
+
+def in_use_item(row):
+    """The model and effort the live session is really running on, beside what the project asks for: said
+    only when one of them differs, and marked "lower than asked" when it is the lower. A model whose id has
+    none of the four words is shown and never marked."""
+    found = alive(row)
+    asked_model, asked_effort = row.get("model"), row.get("effort")
+    if found is None or not isinstance(asked_model, str) or not isinstance(asked_effort, str):
         return ""
-    said = note or "alive"
-    if found is not None:
-        name = found.get("name") if isinstance(found.get("name"), str) else "a session with no name"
-        status = found.get("status") if isinstance(found.get("status"), str) else "status not known"
-        said += f" ({name}, {status})"
-    return f'<li class="live">{e(said)}</li>'
+    model = found.get("model") if isinstance(found.get("model"), str) else None
+    effort = found.get("effort") if isinstance(found.get("effort"), str) else None
+    model_ranks = (rank(model, MODELS), rank(asked_model, MODELS)) if model else (None, None)
+    effort_ranks = (rank(effort, EFFORTS), rank(asked_effort, EFFORTS)) if effort else (None, None)
+    same_model = model is None or model.lower() == asked_model.lower() or (
+        None not in model_ranks and model_ranks[0] == model_ranks[1])
+    same_effort = effort is None or effort.lower() == asked_effort.lower()
+    if same_model and same_effort:
+        return ""
+    lower = any(None not in ranks and ranks[0] < ranks[1] for ranks in (model_ranks, effort_ranks))
+    said = "in use: " + (", ".join(part for part in (model, effort) if part) if model else f"effort {effort}")
+    if not lower:
+        return f'<li class="live">{e(said)}</li>'
+    return (f'<li class="live lower" title="lower than the project asks for ({e(asked_model)}, {e(asked_effort)})">'
+            f"{e(said)} (lower than asked)</li>")
+
+
+def button_note(row, verb):
+    """What a button says on hover and in its dialog, from what is really alive: a Start where a session is
+    already alive in the folder with nobody on duty, and a Wake for a session that is not watching mail."""
+    found = alive(row)
+    if verb == "start" and found is not None and not row.get("duty"):
+        return (f"A session is already alive in this project's folder ({named(found)}): a Start would open a "
+                "second one. Speak to that session in the app, or archive it there, first.")
+    if verb == "wake" and not watching(row):
+        if found is not None:
+            return (f"Its session is alive ({named(found)}) but not watching mail: it reads the Wake only when "
+                    "you next type to it.")
+        if any(part.startswith("no session alive") for part in live_note(row)):
+            return ("No session is alive in this project's folder, so nothing would read a Wake: conduct reset "
+                    f"{row['mailbox']} clears its duty, and Start then starts it afresh.")
+        return WAKE_WAITS
+    return ""
 
 
 def label_html(row, what, now):
@@ -264,9 +408,10 @@ def labels_html(labels, now):
     return '<div class="labels">' + "".join(label_html(r, what, now) for r, what in labels) + "</div>"
 
 
-def row_html(row, now, label=None, claw=False, anchor=False):
+def row_html(row, now, label=None, claw=False, anchor=False, unread=False, idle_warn=60):
     """One mailbox's line on the page. label is what the row is to the card it sits in; anchor, whether a
-    label elsewhere on the page points to it."""
+    label elsewhere on the page points to it; unread, whether conduct could not read the listing of live
+    sessions; idle_warn, the minutes at which an idle session is marked."""
     mark = f' id="claw-{e(row["mailbox"])}"' if anchor else ""
     start = f'<div class="row claw"{mark}>' if claw else f'<div class="row"{mark}>'
     kind = label or row.get("kind")
@@ -279,8 +424,7 @@ def row_html(row, now, label=None, claw=False, anchor=False):
     facts = []      # only what is not the usual: nobody on duty, normal pace and no mail go unsaid
     if duty:
         facts.append(f"<li>{e(session_name(duty.get('holder')))}, {ago(duty.get('minutes'))}</li>")
-    if live_item(row):
-        facts.append(live_item(row))
+    facts.extend(live_items(row, now, idle_warn, unread))
     if row["pace"] != "normal":
         facts.append(f"<li>pace {e(row['pace'])}</li>")
     if row["new"]:
@@ -289,6 +433,8 @@ def row_html(row, now, label=None, claw=False, anchor=False):
         facts.append(f"<li>{e(row['open'])} open</li>")
     if row.get("model"):
         facts.append(f"<li>{e(row['model'])}, {e(row['effort'])}</li>")
+    if in_use_item(row):
+        facts.append(in_use_item(row))
     if context_item(row, now):
         facts.append(context_item(row, now))
     said = row.get("reported")
@@ -300,10 +446,12 @@ def row_html(row, now, label=None, claw=False, anchor=False):
         refused = f'<p class="refused">Cannot start: {e(row["refused"])}</p>'
     acts = open_link(row, now) + "".join(
         f'<button type="button" class="act" data-verb="{verb}" data-project="{e(row["mailbox"])}"'
-        f'{noted(WAKE_WAITS if verb == "wake" and not watching(row) else "")}>'
+        f'{noted(button_note(row, verb))}>'
         f"{LABELS[verb]}</button>" for verb in buttons(row))
     acts = f'<div class="acts">{acts}</div>' if acts else ""
-    return (f'{start}{who}<span class="badge {tone}">{e(words)}</span>'
+    disagreement = live_badge(row)
+    hint = f' title="{e(disagreement[2])}"' if disagreement else ""
+    return (f'{start}{who}<span class="badge {tone}"{hint}>{e(words)}</span>'
             f"{facts}{acts}{refused}</div>")
 
 
@@ -327,9 +475,10 @@ def activity(entries):
     return '<h2>Activity</h2><section class="card log">' + "".join(runs) + "</section>"
 
 
-def view(rows, now, error=None, entries=()):
+def view(rows, now, error=None, entries=(), top=None, idle_warn=60):
     """The part of the page that is made again at every refresh: when, then the cards or the error, then
-    what podium has run."""
+    what podium has run. top is everything conduct status --json printed (for whether it read the listing
+    of live sessions); idle_warn, the minutes at which an idle session is marked."""
     parts = [f'<p class="asof">As of {now:%H:%M:%S} UTC</p>']
     if error:
         return parts[0] + f'<p class="error">{e(error)}</p>' + activity(entries)
@@ -337,16 +486,25 @@ def view(rows, now, error=None, entries=()):
         return parts[0] + '<p class="empty">No mailboxes.</p>' + activity(entries)
     some_wait = any(r["state"] in ASLEEP and not watching(r) for r in rows
                     if r["mailbox"] != "bernstein" and r["kind"] != "conductor")
+    lost = [r["mailbox"] for r in rows if r["mailbox"] != "bernstein" and r["kind"] != "conductor"
+            and r["state"] in ASLEEP and not watching(r) and alive(r) is not None]
+    one = len(lost) == 1
+    passed = (f"{joined(lost)} {'is' if one else 'are'} alive but not watching mail: conduct passes a stale duty "
+              f"over and sends {'it' if one else 'them'} nothing. Speak to {'it' if one else 'them'} in the app."
+              ) if lost else ""
     for_all = "".join(f'<button type="button" class="act" data-verb="{verb}" data-all="1"'
-                      f'{noted(SOME_WAKES_WAIT if verb == "wake" and some_wait else "")}>{LABELS[verb]} all</button>'
-                      for verb in buttons_for_all(rows))
+                      f'{noted((SOME_WAKES_WAIT if some_wait else "") if verb == "wake" else passed)}>'
+                      f"{LABELS[verb]} all</button>" for verb in buttons_for_all(rows))
     if for_all:
         parts.append(f'<div class="all">{for_all}</div>')
     found = groups(rows)
     pointed = {r["mailbox"] for _head, _claws, labels in found["cards"] for r, _what in labels}
 
+    listing = top.get("live_listing") if isinstance(top, dict) else None
+    unread = isinstance(listing, dict) and listing.get("read") is False
+
     def line(r, label=None, claw=False):
-        return row_html(r, now, label, claw, anchor=r["mailbox"] in pointed)
+        return row_html(r, now, label, claw, anchor=r["mailbox"] in pointed, unread=unread, idle_warn=idle_warn)
 
     for head, claws, labels in found["cards"]:
         parts.append('<section class="card">' + line(head)
@@ -438,7 +596,9 @@ button:disabled { opacity: 0.5; cursor: default; }
   padding: 0 7px; }
 .facts .context.warn .bar { border-color: var(--mistake-text); }
 .facts .context.warn .fill { fill: var(--mistake-text); }
-.facts .context.unknown { font-style: italic; }
+.facts .context.unknown, .facts .live.unknown { font-style: italic; }
+.facts .live.long, .facts .live.several, .facts .live.lower { color: var(--ink); font-weight: 600;
+  border: 2px solid var(--gold); border-radius: 11px; padding: 0 7px; }
 .labels { display: flex; flex-wrap: wrap; gap: 5px 8px; padding: 5px 12px 6px 28px;
   border-top: 1px solid var(--line); }
 a.label { display: inline-flex; align-items: center; gap: 2px 6px; font-size: 15px; color: var(--ink);
@@ -770,9 +930,10 @@ NO_TOKEN = (403, "text/plain",
 BODY_LIMIT = 200000
 
 
-def respond(method, target, token, fetch, now, entries=()):
+def respond(method, target, token, fetch, now, entries=(), idle_warn=60):
     """(status, content type, body) for a request to look. Nothing is answered without the token; fetch,
-    which asks conduct, is called only for an address that shows the listing."""
+    which asks conduct, is called only for an address that shows the listing. idle_warn is the minutes at
+    which the page marks an idle session."""
     parts = urllib.parse.urlsplit(target)
     given = urllib.parse.parse_qs(parts.query, keep_blank_values=True).get("t", [])
     if len(given) != 1 or not hmac.compare_digest(given[0].encode("utf-8"), token.encode("utf-8")):
@@ -786,7 +947,11 @@ def respond(method, target, token, fetch, now, entries=()):
         if error:
             return 502, "application/json", json.dumps({"error": error}) + "\n"
         return 200, "application/json", raw
-    made = view(rows, now, error, entries)
+    try:
+        top = json.loads(raw) if raw else None
+    except ValueError:
+        top = None
+    made = view(rows, now, error, entries, top=top, idle_warn=idle_warn)
     return 200, "text/html", page(made) if parts.path == "/" else made
 
 
@@ -815,7 +980,8 @@ def answer(method, target, body, token, panel, now):
     try:
         if method == "POST":
             return act(target, body, token, panel)
-        return respond(method, target, token, panel.listing, now, panel.entries)
+        return respond(method, target, token, panel.listing, now, panel.entries,
+                       idle_warn=getattr(panel, "idle_warn", 60))
     except Exception as fault:  # noqa: BLE001 - the last line of defence for a page someone is looking at
         return 500, "text/plain", (f"podium: something went wrong inside podium ({type(fault).__name__}: {fault}); "
                                    "try Refresh\n")
@@ -928,7 +1094,8 @@ def main(argv, env, out, err, conduct=None, token=None, serve=None, clock=None, 
         token = token or secrets.token_urlsafe(32)
         conduct = conduct or conduct_beside()
         clock = clock or (lambda: datetime.datetime.now(datetime.timezone.utc))
-        handler = handler_for(token, Panel(conduct, env, clock, s["PODIUM_LOG"]), clock)
+        handler = handler_for(token, Panel(conduct, env, clock, s["PODIUM_LOG"], idle_warn=int(s["IDLE_WARN"])),
+                              clock)
         try:
             server, busy = listen(port, handler, make_server)
         except OSError as why:
@@ -1068,8 +1235,9 @@ class Panel:
     is no preview since 15 November 2026: an action sent is run), and writes only the brief's temporary
     file and the log."""
 
-    def __init__(self, conduct, env, clock, log_path, run=subprocess.run):
+    def __init__(self, conduct, env, clock, log_path, run=subprocess.run, idle_warn=60):
         self.conduct, self.env, self.clock, self.log_path, self.run = conduct, env, clock, log_path, run
+        self.idle_warn = idle_warn      # the minutes at which the page marks an idle session (IDLE_WARN)
         self.names, self.entries = None, []
         self.lock = threading.Lock()
 

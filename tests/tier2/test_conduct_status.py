@@ -56,15 +56,15 @@ def test_status_json_joins_each_mailbox_with_its_project(world):
          "effort": "high", "sister": "recipes-tools", "claws": ["recipes-tools", "video-tools"], "serves": [],
          "refused": None, "duty": recipes["duty"], "pace": "normal", "new": 2, "open": 0,
          "handover_waiting": False, "reported": DREAMING, "session": None, "context": None, "live": None,
-         "live_note": None},
+         "live_note": None, "runs_in": "cowork"},
         {"mailbox": "recipes-tools", "state": "handed-over", "kind": "code", "folder": tools, "model": "opus",
          "effort": "high", "sister": "recipes", "claws": [], "serves": ["recipes"], "refused": None,
          "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": True, "reported": None, "session": None,
-         "context": None, "live": None, "live_note": None},
+         "context": None, "live": None, "live_note": None, "runs_in": "code"},
         {"mailbox": "video-tools", "state": "off", "kind": "code", "folder": video, "model": "opus",
          "effort": "high", "sister": "", "claws": [], "serves": ["recipes"], "refused": None,
          "duty": None, "pace": "normal", "new": 0, "open": 0, "handover_waiting": False, "reported": None, "session": None,
-         "context": None, "live": None, "live_note": None}]
+         "context": None, "live": None, "live_note": None, "runs_in": "code"}]
 
 
 def test_status_says_why_start_would_refuse_a_project(world):
@@ -297,7 +297,7 @@ def test_status_json_says_how_full_the_context_window_of_each_claude_code_sessio
                                                 "as_of": "2026-10-18T09:30:07Z", "warn": False}
     assert rows["video-tools"]["session"]["id"] == OLD and rows["video-tools"]["context"] is None   # no transcript
     assert rows["recipes"]["session"] is None and rows["recipes"]["context"] is None                # no session
-    assert list(rows["recipes-tools"])[-4:] == ["session", "context", "live", "live_note"]
+    assert list(rows["recipes-tools"])[-5:] == ["session", "context", "live", "live_note", "runs_in"]
     assert PRIVATE not in out
     assert (tree(store), tree(root)) == before                  # the app's files are only read
     assert [(c["prog"], c["args"][:2]) for c in world.calls()] == [("lobster-mail", ["duty", "status"]),

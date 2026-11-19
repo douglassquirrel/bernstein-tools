@@ -384,3 +384,25 @@ def test_with_the_listing_unread_elsewhere_is_null_not_an_empty_list(world):
     os.remove(os.path.join(world.bin, "fail"))
     assert json.loads(world.conduct("status", "--json")[1])["live_elsewhere"] == []
 
+
+def test_each_row_says_where_its_session_runs(world):
+    ganglion(world)                                             # recipes (Claude Cowork) and recipes-tools
+    feeler(world)
+    world.conductor("maestro")
+    world.project("maestro-tools", "code", sister="maestro")
+    mac = world.project("stews", "non-code")
+    world.project("stews-tools", "code")
+    with open(os.path.join(mac, "lobster.conf"), "a") as f:
+        f.write("SESSION=code\n")
+    lost = world.project("lost", "non-code")                    # its sister is not there: start would refuse
+    assert os.path.isdir(lost)
+    names = ["recipes", "recipes-tools", "agents", "maestro", "maestro-tools", "stews", "stews-tools", "lost", "nowhere"]
+    world.listing([entry(name) for name in names])
+    rows = {r["mailbox"]: r for r in json.loads(world.conduct("status", "--json")[1])["mailboxes"]}
+    assert {name: rows[name]["runs_in"] for name in names} == {
+        "recipes": "cowork", "recipes-tools": "code", "agents": "cowork", "maestro": "code", "maestro-tools": "code",
+        "stews": "code", "stews-tools": "code", "lost": None, "nowhere": None}
+    assert list(rows["recipes"])[-3:] == ["live", "live_note", "runs_in"]
+    world.fail("claude")
+    again = {r["mailbox"]: r["runs_in"] for r in json.loads(world.conduct("status", "--json")[1])["mailboxes"]}
+    assert again == {name: rows[name]["runs_in"] for name in names}     # whether or not the listing was read

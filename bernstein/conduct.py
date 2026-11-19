@@ -859,7 +859,9 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, conte
     None when that cannot be told. alive is what live.read found, the sessions alive on the Mac by folder
     (None: the listing was not read): a project that could be read and whose session is a Claude Code
     session on the Mac gets live and live_note from it, and its sessions are added to looked, by mailbox,
-    when a dict is given. reply(id) gives the model, effort and time of a live session's newest reply."""
+    when a dict is given. reply(id) gives the model, effort and time of a live session's newest reply.
+    runs_in says which kind of session a project that could be read runs in: code (Claude Code on the Mac)
+    or cowork."""
     rows = []
     for name, entry in boxes.items():
         row = {"mailbox": name, "state": state_of(entry), "kind": None, "folder": None, "model": None,
@@ -867,7 +869,7 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, conte
                "duty": entry.get("duty"), "pace": entry.get("pace") or "normal",
                "new": entry.get("new", 0), "open": entry.get("open", 0),
                "handover_waiting": bool(entry.get("handover_waiting")), "reported": entry.get("reported"),
-               "session": None, "context": None, "live": None, "live_note": None}
+               "session": None, "context": None, "live": None, "live_note": None, "runs_in": None}
         in_cowork, read = False, False
         try:
             p = lookup(name)
@@ -877,6 +879,7 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, conte
         else:
             in_cowork = p.kind in ("non-code", "feeler") and getattr(p, "session", "cowork") == "cowork"
             read = True
+            row["runs_in"] = "cowork" if in_cowork else "code"
             row.update(kind=p.kind, folder=p.folder, model=p.model, effort=p.effort, sister=p.sister,
                        claws=list(p.claw_names))
         if row["folder"]:

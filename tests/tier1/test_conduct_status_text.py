@@ -81,7 +81,8 @@ def test_a_row_joins_the_mailbox_with_what_the_project_says():
         "model": "opus", "effort": "high", "sister": "recipes-tools",
         "claws": ["recipes-tools", "video-tools"], "serves": [], "refused": None,
         "duty": entry["duty"], "pace": "eager", "new": 2, "open": 1, "handover_waiting": False,
-        "reported": DREAMING, "session": None, "context": None, "live": None, "live_note": None}]
+        "reported": DREAMING, "session": None, "context": None, "live": None, "live_note": None,
+        "runs_in": "cowork"}]
 
 
 def test_a_claw_says_which_projects_it_serves_as_sister_or_further_claw():
@@ -107,7 +108,7 @@ def test_a_mailbox_whose_project_start_would_refuse_carries_the_reason_and_no_ki
         "refused": "no project bernstein anywhere",
         "duty": box("fresh", name="bernstein")["duty"], "pace": "normal", "new": 0, "open": 1,
         "handover_waiting": False, "reported": None, "session": None, "context": None, "live": None,
-        "live_note": None}
+        "live_note": None, "runs_in": None}
 
 
 def test_rows_keep_the_listing_s_order_and_fill_what_an_older_lobster_mail_leaves_out():
