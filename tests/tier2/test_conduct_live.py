@@ -17,10 +17,28 @@ UNREAD = ("conduct status: the listing of live sessions could not be read ({}): 
           "sessions are alive.\n")
 
 
-def listed(cwd, name=NAME, status="idle", started=1792051200000, pid=4242, kind="interactive"):
+CLI = "00000000-0000-4000-8000-000000000000"
+NO_REPLY = {"id": CLI, "model": None, "effort": None, "last_reply": None}
+
+
+def listed(cwd, name=NAME, status="idle", started=1792051200000, pid=4242, kind="interactive", sid=CLI):
     """One session as `claude agents --json` prints it."""
-    return {"pid": pid, "cwd": cwd, "kind": kind, "startedAt": started,
-            "sessionId": "00000000-0000-4000-8000-000000000000", "name": name, "status": status}
+    return {"pid": pid, "cwd": cwd, "kind": kind, "startedAt": started, "sessionId": sid, "name": name,
+            "status": status}
+
+
+def transcript(world, cli=CLI, model="invented-model-7", effort="xhigh", when="2026-10-18T09:12:00.000Z",
+               root=None):
+    """An invented transcript of that name where the settings say transcripts are: one thing said, one reply."""
+    folder = os.path.join(root or os.path.join(world.home, ".claude", "projects"), "-invented-folder")
+    os.makedirs(folder, exist_ok=True)
+    lines = [{"type": "user", "message": {"role": "user", "content": "private words"}},
+             {"type": "assistant", "isSidechain": False, "timestamp": when, "effort": effort,
+              "message": {"model": model, "content": [{"type": "text", "text": "private words"}]}}]
+    path = os.path.join(folder, cli + ".jsonl")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("".join(json.dumps(line) + "\n" for line in lines))
+    return path
 
 
 def claw(world, duty=None, **how):
@@ -53,8 +71,8 @@ def test_status_names_the_session_alive_in_a_project_s_folder_and_says_busy_or_i
     assert (code, err) == (0, "")
     assert out == ("soups-tools  running  code      on duty mac, last beat 2026-10-18T09:30:00Z (10 minutes ago)"
                    f'  new 0  open 0  pace normal  alive ("soups-tools · 18 October", {status})\n')
-    assert row(world)["live"] == {"name": NAME, "status": status, "kind": "interactive",
-                                  "started": "2026-10-15T08:00:00Z", "pid": 4242, "count": 1}
+    assert row(world)["live"] == dict({"name": NAME, "status": status, "kind": "interactive",
+                                       "started": "2026-10-15T08:00:00Z", "pid": 4242, "count": 1}, **NO_REPLY)
     assert row(world)["live_note"] is None
 
 
@@ -69,7 +87,7 @@ def test_status_says_no_session_alive_of_a_project_that_is_off_and_has_none(worl
 def test_status_json_says_the_listing_was_read(world):
     claw(world)
     said = json.loads(world.conduct("status", "--json")[1])
-    assert sorted(said) == ["live_listing", "mailboxes", "root", "skipped"]
+    assert sorted(said) == ["live_elsewhere", "live_listing", "mailboxes", "root", "skipped"]
     assert said["live_listing"] == {"read": True, "why": None}
 
 
@@ -113,9 +131,9 @@ def test_two_sessions_in_one_folder_are_said_with_each_name(world):
                 listed(folder, name="first", pid=1)])
     assert after_pace(world.conduct("status")[1]) == (
         '2 sessions alive in its folder ("first", idle; "second", busy)')
-    assert row(world)["live"] == {"name": "second", "status": "busy", "kind": "interactive",
-                                  "started": "2026-10-15T08:01:00Z", "pid": 2, "count": 2,
-                                  "names": ["first", "second"]}
+    assert row(world)["live"] == dict({"name": "second", "status": "busy", "kind": "interactive",
+                                       "started": "2026-10-15T08:01:00Z", "pid": 2, "count": 2,
+                                       "names": ["first", "second"]}, **NO_REPLY)
     assert row(world)["live_note"] == "2 sessions alive in its folder"
 
 
@@ -268,7 +286,8 @@ def test_status_with_no_mailboxes_still_says_whether_the_listing_was_read(world)
     world.listing([])
     assert world.conduct("status") == (0, f"No mailboxes in {world.mail}.\n", "")
     assert json.loads(world.conduct("status", "--json")[1]) == {
-        "root": world.mail, "mailboxes": [], "skipped": [], "live_listing": {"read": True, "why": None}}
+        "root": world.mail, "mailboxes": [], "skipped": [], "live_listing": {"read": True, "why": None},
+        "live_elsewhere": []}
 
 
 def test_the_readme_s_example_is_what_status_prints(world):
@@ -289,4 +308,79 @@ def test_help_says_status_shows_whether_a_session_is_alive(world):
     code, out, err = world.conduct("--help")
     assert (code, err) == (0, "")
     assert "whether a session is alive in its folder" in " ".join(out.split())
+
+
+# --- what the live session is running on, and sessions elsewhere (Request 28, Settled 175) ---
+
+def test_live_says_the_model_the_effort_and_the_time_of_the_session_s_newest_reply(world):
+    folder = claw(world, "fresh")
+    world.live([listed(folder)])
+    path = transcript(world)
+    with open(path, "rb") as f:
+        before = f.read()
+    found = row(world)["live"]
+    assert (found["id"], found["model"], found["effort"], found["last_reply"]) == (
+        CLI, "invented-model-7", "xhigh", "2026-10-18T09:12:00Z")
+    assert list(found) == ["name", "status", "kind", "started", "pid", "count", "id", "model", "effort", "last_reply"]
+    with open(path, "rb") as f:
+        assert f.read() == before
+    assert "private words" not in world.conduct("status", "--json")[1]
+
+
+def test_the_transcript_is_the_one_named_by_the_session_given_and_is_looked_for_where_the_setting_says(world, tmp_path):
+    folder = claw(world, "fresh")
+    other = "11111111-1111-4111-8111-111111111111"
+    world.live([listed(folder, name="older", sid=other), listed(folder, name="newer", started=1792051260000)])
+    transcript(world, other, model="the-older-one")
+    transcript(world, CLI, model="the-newer-one", root=str(tmp_path / "my transcripts"))
+    assert row(world)["live"]["model"] is None                  # the newer session's is not where the default looks
+    world.write_conf(f"APP_TRANSCRIPTS={tmp_path / 'my transcripts'}\n")
+    assert (row(world)["live"]["name"], row(world)["live"]["model"]) == ("newer", "the-newer-one")
+
+
+@pytest.mark.parametrize("sid", [None, 7, "../../etc/passwd", "*", "not-an-id"])
+def test_a_session_whose_id_names_no_transcript_has_no_model_effort_or_time(world, sid):
+    folder = claw(world, "fresh")
+    transcript(world)
+    world.live([listed(folder, sid=sid)])
+    found = row(world)["live"]
+    assert (found["model"], found["effort"], found["last_reply"]) == (None, None, None)
+    assert found["id"] == (sid if isinstance(sid, str) else None)
+
+
+def test_the_text_form_says_nothing_of_the_model_the_effort_or_the_reply(world):
+    folder = claw(world, "fresh")
+    world.live([listed(folder)])
+    plain = world.conduct("status")
+    transcript(world)
+    assert world.conduct("status") == plain
+    assert "invented-model-7" not in plain[1] and "xhigh" not in plain[1]
+
+
+def test_sessions_alive_in_no_listed_mailbox_s_folder_are_listed_elsewhere_oldest_first(world):
+    folder = claw(world, "fresh")
+    nc = ganglion(world)                                        # recipes, in Claude Cowork, and recipes-tools
+    world.listing([entry("soups-tools", "fresh"), entry("recipes"), entry("recipes-tools")])
+    away = os.path.join(world.home, "some where")
+    os.makedirs(away)
+    os.symlink(away, os.path.join(world.home, "a link"))
+    inside = os.path.join(folder, "soups-tools")
+    world.live([listed(inside, name="inside a project", started=1792051320000, pid=3, status="busy"),
+                listed(os.path.join(world.home, "a link") + "/", name='away "x" </script>', pid=2, kind="background"),
+                listed(folder), listed(nc, name="in a Cowork project's folder")])
+    said = json.loads(world.conduct("status", "--json")[1])
+    assert said["live_elsewhere"] == [
+        {"folder": os.path.realpath(away), "name": 'away "x" </script>', "status": "idle", "kind": "background",
+         "started": "2026-10-15T08:00:00Z", "pid": 2},
+        {"folder": os.path.realpath(inside), "name": "inside a project", "status": "busy", "kind": "interactive",
+         "started": "2026-10-15T08:02:00Z", "pid": 3}]
+    assert world.conduct("status")[1].count("\n") == 3         # and the text form has a line for each mailbox only
+
+
+def test_with_the_listing_unread_elsewhere_is_null_not_an_empty_list(world):
+    claw(world, "fresh")
+    world.fail("claude")
+    assert json.loads(world.conduct("status", "--json")[1])["live_elsewhere"] is None
+    os.remove(os.path.join(world.bin, "fail"))
+    assert json.loads(world.conduct("status", "--json")[1])["live_elsewhere"] == []
 

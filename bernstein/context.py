@@ -68,6 +68,18 @@ def newest_reply(path, block=BLOCK):
     return None
 
 
+def stamp(when):
+    """A transcript's time as lobster-mail's UTC stamp, to the second, or None when it is not one."""
+    if not isinstance(when, str):
+        return None
+    for form in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return f"{datetime.datetime.strptime(when, form):%Y-%m-%dT%H:%M:%SZ}"
+        except ValueError:
+            continue
+    return None
+
+
 def figures_of(row):
     """(tokens in use, the time they are true for) from a reply, or None when it is not the shape expected."""
     try:
@@ -77,14 +89,8 @@ def figures_of(row):
         return None
     if any(isinstance(n, bool) or not isinstance(n, int) or n < 0 for n in counts) or sum(counts) == 0:
         return None
-    if not isinstance(when, str):
-        return None
-    for form in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
-        try:
-            return sum(counts), f"{datetime.datetime.strptime(when, form):%Y-%m-%dT%H:%M:%SZ}"
-        except ValueError:
-            continue
-    return None
+    made = stamp(when)
+    return None if made is None else (sum(counts), made)
 
 
 def percent(tokens, window):
@@ -111,3 +117,27 @@ def context_of(store, transcripts, session, window, warn, block=BLOCK):
     tokens, as_of = found
     share = percent(tokens, window)
     return {"tokens": tokens, "window": window, "percent": share, "as_of": as_of, "warn": share >= warn}
+
+
+def reply_of(transcripts, transcript_id, block=BLOCK):
+    """The model, the effort and the time of the newest reply in the transcript of that name: what a session
+    alive on the Mac is running on, and when it last answered. The name is the session's id as `claude
+    agents --json` gives it. Each is None when it cannot be told: no such transcript (or two), no reply yet,
+    or a reply that does not hold it as text."""
+    known = {"model": None, "effort": None, "last_reply": None}
+    if not isinstance(transcript_id, str) or not TRANSCRIPT_ID.fullmatch(transcript_id):
+        return known
+    found = glob.glob(os.path.join(glob.escape(transcripts), "*", transcript_id + ".jsonl"))
+    if len(found) != 1:
+        return known
+    try:
+        row = newest_reply(found[0], block)
+    except OSError:
+        return known
+    if row is None:
+        return known
+    message = row.get("message")
+    model = message.get("model") if isinstance(message, dict) else None
+    effort = row.get("effort")
+    return {"model": model if isinstance(model, str) else None,
+            "effort": effort if isinstance(effort, str) else None, "last_reply": stamp(row.get("timestamp"))}

@@ -95,7 +95,19 @@ def of(found, folder):
             "started": newest["started"], "pid": newest["pid"], "count": len(alive)}
     if len(alive) > 1:
         said["names"] = [label(session) for session in alive]
+    said["id"] = newest["id"]
     return said
+
+
+def elsewhere(found, folders):
+    """The sessions alive in none of these folders, oldest first, each with the folder it was opened in:
+    what conduct status --json lists beside the mailboxes, so that a session opened in the wrong folder
+    can be seen."""
+    taken = {os.path.realpath(folder) for folder in folders}
+    away = [{"folder": folder, "name": session["name"], "status": session["status"], "kind": session["kind"],
+             "started": session["started"], "pid": session["pid"]}
+            for folder, sessions_there in found.items() if folder not in taken for session in sessions_there]
+    return sorted(away, key=lambda session: (session["started"] or "", session["folder"]))
 
 
 def note(state, duty, handover_waiting, count):

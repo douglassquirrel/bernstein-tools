@@ -339,3 +339,75 @@ def test_no_word_of_the_conversation_leaves_the_transcript(tmp_path):
     got = asked(found)
     assert sorted(got) == ["as_of", "percent", "tokens", "warn", "window"]
     assert PRIVATE not in json.dumps(got) and "invented-model" not in json.dumps(got)
+
+
+# --- the model, effort and time of a live session's newest reply (Request 28) ---
+
+NOT_KNOWN = {"model": None, "effort": None, "last_reply": None}
+
+
+def test_the_newest_reply_of_a_transcript_named_by_its_id_gives_the_model_the_effort_and_its_time(tmp_path):
+    _store, transcripts, _path = world(tmp_path, [
+        reply(when="2026-10-18T09:00:00.000Z", effort="low"), said(),
+        reply(when="2026-10-18T09:30:07.123Z", effort="xhigh", perTurnEffort="max", requestedModel="another"),
+        said("after"), {"type": "last-prompt"}])
+    assert context.reply_of(transcripts, CLI) == {"model": "invented-model", "effort": "xhigh",
+                                                  "last_reply": "2026-10-18T09:30:07Z"}
+
+
+def test_a_sub_agent_s_reply_is_not_the_session_s(tmp_path):
+    _store, transcripts, _path = world(tmp_path, [
+        reply(when="2026-10-18T09:00:00.000Z", effort="high"),
+        reply(when="2026-10-18T09:50:00.000Z", side=True, effort="low")])
+    assert context.reply_of(transcripts, CLI)["last_reply"] == "2026-10-18T09:00:00Z"
+    assert context.reply_of(transcripts, CLI)["effort"] == "high"
+
+
+@pytest.mark.parametrize("change, key", [
+    ({"effort": 7}, "effort"), ({"effort": None}, "effort"), ({"effort": ["high"]}, "effort"),
+    ({"timestamp": "yesterday"}, "last_reply"), ({"timestamp": 1792315200}, "last_reply"),
+    ({"message": {"model": 5}}, "model"), ({"message": {}}, "model"), ({"message": "words"}, "model"),
+])
+def test_a_fact_the_reply_does_not_hold_as_expected_is_not_known_and_the_others_still_are(tmp_path, change, key):
+    line = reply(effort="high")
+    line.update(change)
+    _store, transcripts, _path = world(tmp_path, [line])
+    found = context.reply_of(transcripts, CLI)
+    assert found[key] is None
+    assert [k for k, v in found.items() if v is None] == [key]
+
+
+def test_a_reply_with_no_effort_at_all_as_an_older_claude_wrote_it_gives_the_rest(tmp_path):
+    _store, transcripts, _path = world(tmp_path, [reply()])
+    assert context.reply_of(transcripts, CLI) == {"model": "invented-model", "effort": None,
+                                                  "last_reply": "2026-10-18T09:30:07Z"}
+
+
+@pytest.mark.parametrize("ident", [None, 7, "", "*", "../" + CLI, CLI + "/..", SID, CLI.upper(), "a" * 36,
+                                   CLI[:-1] + "?", "[a]aaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"])
+def test_an_id_that_is_not_a_transcript_s_name_finds_nothing(tmp_path, ident):
+    _store, transcripts, _path = world(tmp_path, [reply(effort="high")])
+    assert context.reply_of(transcripts, ident) == NOT_KNOWN
+
+
+def test_no_transcript_two_transcripts_one_with_no_reply_and_one_that_cannot_be_opened_are_not_known(tmp_path):
+    _store, transcripts, _path = world(tmp_path, [said()])
+    assert context.reply_of(transcripts, CLI) == NOT_KNOWN                 # no reply yet
+    assert context.reply_of(transcripts, OTHER) == NOT_KNOWN               # no transcript
+    assert context.reply_of(str(tmp_path / "nowhere"), CLI) == NOT_KNOWN
+    os.makedirs(os.path.join(transcripts, "-another-folder"))
+    with open(os.path.join(transcripts, "-another-folder", CLI + ".jsonl"), "w", encoding="utf-8") as f:
+        f.write(json.dumps(reply(effort="high")) + "\n")
+    assert context.reply_of(transcripts, CLI) == NOT_KNOWN                 # there twice
+    os.makedirs(os.path.join(transcripts, "-a-third", OTHER + ".jsonl"))
+    assert context.reply_of(transcripts, OTHER) == NOT_KNOWN               # a folder of that name
+
+
+def test_no_word_of_the_conversation_is_in_what_is_read_and_the_transcript_is_not_changed(tmp_path):
+    _store, transcripts, path = world(tmp_path, [said(), reply(effort="high"), said("more")])
+    with open(path, "rb") as f:
+        before = f.read()
+    assert PRIVATE not in json.dumps(context.reply_of(transcripts, CLI))
+    with open(path, "rb") as f:
+        assert f.read() == before
+

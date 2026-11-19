@@ -222,7 +222,14 @@ def test_a_row_of_a_project_on_the_mac_says_what_is_alive_in_its_folder_and_a_co
     cowork, tools = conduct.status_rows(boxes, lookup_in(projects), alive=alive, looked=looked)
     assert (cowork["live"], cowork["live_note"]) == (None, None)
     assert tools["live"] == {"name": "recipes-tools · 18 October", "status": "idle", "kind": "interactive",
-                             "started": "2026-10-15T08:00:00Z", "pid": 4242, "count": 1}
+                             "started": "2026-10-15T08:00:00Z", "pid": 4242, "count": 1,
+                             "id": "00000000-0000-4000-8000-000000000000", "model": None, "effort": None,
+                             "last_reply": None}
+    told = {"model": "invented-model", "effort": "max", "last_reply": "2026-10-18T09:12:00Z"}
+    (_cowork, again) = conduct.status_rows(boxes, lookup_in(projects), alive=alive, reply=lambda ident: dict(
+        told, model=told["model"] + " of " + ident))
+    assert {k: again["live"][k] for k in told} == dict(
+        told, model="invented-model of 00000000-0000-4000-8000-000000000000")
     assert tools["live_note"] == "alive, not watching mail"
     assert looked == {"recipes-tools": [ALIVE]}
     assert conduct.status_rows(boxes, lookup_in(projects), alive=alive) == [cowork, tools]   # with nowhere to note them

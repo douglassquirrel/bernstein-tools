@@ -149,7 +149,7 @@ def test_one_session_is_given_with_a_count_of_one(tmp_path):
     folder = os.path.realpath(str(tmp_path))
     assert live.of({folder: [a_session()]}, folder) == {
         "name": "soups-tools · 18 October", "status": "idle", "kind": "interactive",
-        "started": "2026-10-15T08:00:00Z", "pid": 4242, "count": 1}
+        "started": "2026-10-15T08:00:00Z", "pid": 4242, "count": 1, "id": "00000000-0000-4000-8000-000000000000"}
 
 
 def test_the_newest_of_several_is_given_with_every_name_oldest_first(tmp_path):
@@ -158,7 +158,7 @@ def test_the_newest_of_several_is_given_with_every_name_oldest_first(tmp_path):
                       a_session(name="second", started="2026-10-15T09:00:00Z", status="busy", pid=2)]}
     assert live.of(found, folder) == {
         "name": "second", "status": "busy", "kind": "interactive", "started": "2026-10-15T09:00:00Z", "pid": 2,
-        "count": 2, "names": ["first", "second"]}
+        "count": 2, "names": ["first", "second"], "id": "00000000-0000-4000-8000-000000000000"}
 
 
 def test_the_newest_interactive_session_is_the_one_given_before_a_newer_one_of_another_kind(tmp_path):
@@ -167,7 +167,8 @@ def test_the_newest_interactive_session_is_the_one_given_before_a_newer_one_of_a
                       a_session(name="an agent", kind="background", started="2026-10-15T09:00:00Z", pid=2)]}
     assert live.of(found, folder) == {
         "name": "the session", "status": "idle", "kind": "interactive", "started": "2026-10-15T08:00:00Z", "pid": 1,
-        "count": 2, "names": ["the session", "an agent (background)"]}
+        "count": 2, "names": ["the session", "an agent (background)"],
+        "id": "00000000-0000-4000-8000-000000000000"}
     only = {folder: [a_session(name="older", kind=None, started="2026-10-14T08:00:00Z"),
                      a_session(name="an agent", kind="background")]}
     assert live.of(only, folder)["name"] == "an agent"      # none interactive: the newest of them
@@ -188,6 +189,21 @@ def test_the_project_s_folder_matches_through_a_link_and_a_trailing_slash_but_no
     assert live.of(found, str(real) + "/")["count"] == 1
     assert live.of(found, str(real / "soups-tools")) is None
     assert live.of({os.path.realpath(str(real / "soups-tools")): [a_session()]}, str(real)) is None
+
+
+def test_the_sessions_in_no_folder_given_are_elsewhere_oldest_first_each_with_its_folder(tmp_path):
+    found = {"/p/soups": [a_session(name="in a project")],
+             "/q/late": [a_session(name="late", started="2026-10-15T09:00:00Z", pid=2)],
+             "/q/early": [a_session(name="early", started="2026-10-14T09:00:00Z", pid=1, kind="background"),
+                          a_session(name="no start", started=None, pid=None, status=None)]}
+    assert live.elsewhere(found, ["/p/soups", "/p/stews"]) == [
+        {"folder": "/q/early", "name": "no start", "status": None, "kind": "interactive", "started": None, "pid": None},
+        {"folder": "/q/early", "name": "early", "status": "idle", "kind": "background",
+         "started": "2026-10-14T09:00:00Z", "pid": 1},
+        {"folder": "/q/late", "name": "late", "status": "idle", "kind": "interactive",
+         "started": "2026-10-15T09:00:00Z", "pid": 2}]
+    assert live.elsewhere(found, ["/p/soups", "/q/late/", "/q/early"]) == []
+    assert live.elsewhere({}, []) == []
 
 
 # --- where the duty and the listing disagree ---

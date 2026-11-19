@@ -18,7 +18,7 @@ import urllib.parse
 from types import SimpleNamespace
 
 from bernstein import facts, globalfiles, hook, live, waiting
-from bernstein.context import context_of
+from bernstein.context import context_of, reply_of
 from bernstein.render import MONTHS, TemplateRefused
 from bernstein.settings import SettingsRefused, read_settings
 
@@ -845,8 +845,11 @@ def cowork_sessions(store):
     return newest
 
 
+NO_REPLY = {"model": None, "effort": None, "last_reply": None}
+
+
 def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, context=None, alive=None,
-                looked=None):
+                looked=None, reply=None):
     """One row per mailbox in the duty listing, joined with what lookup(name) says of its project.
     lookup gives what find_project gives, or raises ProjectRefused as conduct start would; folder_of
     then gives the folder alone, if there is one. sessions is what app_sessions found, by folder, and
@@ -856,7 +859,7 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, conte
     None when that cannot be told. alive is what live.read found, the sessions alive on the Mac by folder
     (None: the listing was not read): a project that could be read and whose session is a Claude Code
     session on the Mac gets live and live_note from it, and its sessions are added to looked, by mailbox,
-    when a dict is given."""
+    when a dict is given. reply(id) gives the model, effort and time of a live session's newest reply."""
     rows = []
     for name, entry in boxes.items():
         row = {"mailbox": name, "state": state_of(entry), "kind": None, "folder": None, "model": None,
@@ -885,6 +888,8 @@ def status_rows(boxes, lookup, sessions=None, folder_of=None, cowork=None, conte
         if alive is not None and read and not in_cowork:
             there = live.there(alive, row["folder"])
             row["live"] = live.of(alive, row["folder"])
+            if row["live"] is not None:
+                row["live"].update(reply(row["live"]["id"]) if reply else NO_REPLY)
             row["live_note"] = live.note(row["state"], row["duty"], row["handover_waiting"], len(there))
             if looked is not None:
                 looked[name] = there
@@ -1501,13 +1506,15 @@ def status(a, s, env, now, out, err, sleep):
                        cowork=cowork_sessions(s["APP_COWORK_SESSIONS"]),
                        context=lambda session: context_of(s["APP_SESSIONS"], s["APP_TRANSCRIPTS"], session,
                                                           int(s["CONTEXT_WINDOW"]), int(s["CONTEXT_WARN"])),
-                       alive=alive, looked=looked)
+                       alive=alive, looked=looked, reply=lambda ident: reply_of(s["APP_TRANSCRIPTS"], ident))
     if why is not None:
         err.write(f"conduct status: the listing of live sessions could not be read ({why}): nothing is said of "
                   "which sessions are alive.\n")
     if a.json:
         out.write(json.dumps({"root": s["MAIL_ROOT"], "mailboxes": rows, "skipped": skipped,
-                              "live_listing": {"read": why is None, "why": why}}, indent=1) + "\n")
+                              "live_listing": {"read": why is None, "why": why},
+                              "live_elsewhere": None if alive is None else live.elsewhere(
+                                  alive, [r["folder"] for r in rows if r["folder"]])}, indent=1) + "\n")
     elif not rows:
         out.write(f"No mailboxes in {s['MAIL_ROOT']}.\n")
     else:

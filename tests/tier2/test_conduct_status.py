@@ -49,7 +49,7 @@ def test_status_json_joins_each_mailbox_with_its_project(world):
     code, out, err = world.conduct("status", "--json")
     assert (code, err) == (0, "")
     said = json.loads(out)
-    assert sorted(said) == ["live_listing", "mailboxes", "root", "skipped"]
+    assert sorted(said) == ["live_elsewhere", "live_listing", "mailboxes", "root", "skipped"]
     assert (said["root"], said["skipped"]) == (world.mail, ["odd"])
     assert said["mailboxes"] == [
         {"mailbox": "recipes", "state": "running", "kind": "non-code", "folder": nc, "model": "opus",
@@ -94,7 +94,7 @@ def test_status_with_no_mailboxes_says_so_and_exits_0(world):
     assert world.conduct("status") == (0, f"No mailboxes in {world.mail}.\n", "")
     code, out, _err = world.conduct("status", "--json")
     assert code == 0 and json.loads(out) == {"root": world.mail, "mailboxes": [], "skipped": [],
-                                             "live_listing": {"read": True, "why": None}}
+                                             "live_listing": {"read": True, "why": None}, "live_elsewhere": []}
 
 
 def test_status_keeps_an_awkward_reported_status_exactly_in_json(world):

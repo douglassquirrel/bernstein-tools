@@ -767,7 +767,9 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
 
   ```json
   "live": {"name": "recipes-tools · 18 October", "status": "idle", "kind": "interactive",
-           "started": "2026-10-18T07:36:00Z", "pid": 4242, "count": 1},
+           "started": "2026-10-18T07:36:00Z", "pid": 4242, "count": 1,
+           "id": "00000000-0000-4000-8000-000000000000", "model": "claude-opus-4-8", "effort": "high",
+           "last_reply": "2026-10-18T09:12:00Z"},
   "live_note": "alive after its handover: not archived"
   ```
 
@@ -776,9 +778,20 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
     project is not one that is looked at, or when the listing could not be read. `count` is how many
     are alive there; with more than one, `names` lists each, oldest first. `status` is "busy" or "idle"
     as the listing gives it. A fact the listing does not give, or gives as another type, is `null`.
+    `id` is the session's id as the listing gives it, which is the name of its transcript. `model`,
+    `effort` and `last_reply` are what that session is really running on and when it last answered:
+    the model, the effort and the time of the newest reply in that transcript (looked for in the folders
+    of the setting `APP_TRANSCRIPTS`; a sub-agent's reply is not counted), each `null` when the transcript
+    is not there (or is there twice), has no reply yet, or does not hold it as text. The project's own
+    `model` and `effort`, beside `kind`, are what its `lobster.conf` asks for; these are what is in use.
+    Only the end of the transcript is read, it is never written, and no word of a conversation is printed.
   - `live_note` is the sentence of the table where the duty and the listing disagree (and the count,
     with more than one session), or `null`.
   - `live_listing`, beside `root`: `{"read": true, "why": null}`, or `false` with the reason.
+  - `live_elsewhere`, beside `root`: the sessions alive in a folder that is no listed mailbox's folder,
+    oldest first, each `{"folder", "name", "status", "kind", "started", "pid"}`; `[]` when there is none,
+    `null` when the listing could not be read. A session opened in the wrong folder shows here. The text
+    form does not show it, nor the model, effort or reply.
 
   **If the listing cannot be read** (`claude` is not found or cannot be run, it fails, it gives no
   answer in five seconds, or it prints anything but a JSON array), `conduct status` prints exactly what
@@ -1425,6 +1438,11 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
 
 ## Notes for users
 
+- 19 November 2026, later: **`conduct status --json` says what each live session is running on, and which
+  sessions are in no project's folder.** `live` has four more keys: `id` (the session's id, its
+  transcript's name), and `model`, `effort` and `last_reply` from the newest reply in that transcript
+  (`null` when it cannot be read). At the top level, `live_elsewhere` lists the sessions alive in a folder
+  that is no listed mailbox's (`null` when the listing could not be read). The text form has not changed.
 - 19 November 2026: **`conduct status` says whether a session is alive.** It now runs `claude agents
   --json` once (read only, no model) and, for each project whose session is a Claude Code session on the
   Mac, adds one field after the pace: `alive ("NAME", idle)`, `no session alive`, or the sentence where
