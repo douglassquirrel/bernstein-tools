@@ -174,11 +174,11 @@ def test_status_gives_a_ganglion_on_the_mac_its_claude_code_session_before_a_cow
 
 @pytest.mark.parametrize("argv", [("stop", "recipes"), ("stop", "--dry-run", "recipes"), ("dormant", "recipes"),
                                   ("wake", "recipes"), ("dream", "recipes"), ("dream", "recipes", "--then", "stop"),
-                                  ("reset", "--dry-run", "recipes"), ("reset", "recipes"), ("waiting",),
-                                  ("stop", "--all"), ("dormant", "--all")])   # status: test_conduct_live.py
+                                  ("waiting",), ("stop", "--all"), ("dormant", "--all")])
+# status, and reset of a stale duty, say what is alive in its folder: test_conduct_live.py, test_conduct_live_verbs.py
 def test_every_other_verb_does_for_a_ganglion_on_the_mac_what_it_does_for_any_ganglion(world, argv):
     folder = ganglion(world)
-    world.duty({"recipes": "stale" if argv[0] == "reset" else "fresh", "recipes-tools": None})
+    world.duty({"recipes": "fresh", "recipes-tools": None})
     world.repo(folder)
 
     def run():

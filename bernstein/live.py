@@ -84,12 +84,13 @@ def there(found, folder):
 
 
 def of(found, folder):
-    """What conduct status --json says is alive in a project's folder: the newest session there, with
-    how many there are (and each name, when more than one), or None when there is none."""
+    """What conduct status --json says is alive in a project's folder: the newest interactive session
+    there (the newest of any kind, when none is interactive), with how many there are (and each name, when
+    more than one), or None when there is none."""
     alive = there(found, folder)
     if not alive:
         return None
-    newest = alive[-1]
+    newest = next((session for session in reversed(alive) if session["kind"] == "interactive"), alive[-1])
     said = {"name": newest["name"], "status": newest["status"], "kind": newest["kind"],
             "started": newest["started"], "pid": newest["pid"], "count": len(alive)}
     if len(alive) > 1:

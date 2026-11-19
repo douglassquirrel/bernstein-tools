@@ -283,3 +283,10 @@ def test_the_readme_s_example_is_what_status_prints(world):
     assert "  $ ./conduct status\n" + "".join("  " + line + "\n" for line in out.splitlines()) in readme
     assert out.splitlines()[1].endswith(
         'pace normal  alive after its handover: not archived ("recipes-tools · 18 October", idle)')
+
+
+def test_help_says_status_shows_whether_a_session_is_alive(world):
+    code, out, err = world.conduct("--help")
+    assert (code, err) == (0, "")
+    assert "whether a session is alive in its folder" in " ".join(out.split())
+

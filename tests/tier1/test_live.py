@@ -161,6 +161,18 @@ def test_the_newest_of_several_is_given_with_every_name_oldest_first(tmp_path):
         "count": 2, "names": ["first", "second"]}
 
 
+def test_the_newest_interactive_session_is_the_one_given_before_a_newer_one_of_another_kind(tmp_path):
+    folder = os.path.realpath(str(tmp_path))
+    found = {folder: [a_session(name="the session", started="2026-10-15T08:00:00Z", pid=1),
+                      a_session(name="an agent", kind="background", started="2026-10-15T09:00:00Z", pid=2)]}
+    assert live.of(found, folder) == {
+        "name": "the session", "status": "idle", "kind": "interactive", "started": "2026-10-15T08:00:00Z", "pid": 1,
+        "count": 2, "names": ["the session", "an agent (background)"]}
+    only = {folder: [a_session(name="older", kind=None, started="2026-10-14T08:00:00Z"),
+                     a_session(name="an agent", kind="background")]}
+    assert live.of(only, folder)["name"] == "an agent"      # none interactive: the newest of them
+
+
 def test_a_session_that_is_not_interactive_is_named_with_its_kind_and_one_with_no_name_is_said_so(tmp_path):
     folder = os.path.realpath(str(tmp_path))
     found = {folder: [a_session(name="a", kind="background"), a_session(name=None), a_session(name="c", kind=None)]}

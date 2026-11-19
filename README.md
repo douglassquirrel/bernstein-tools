@@ -476,7 +476,13 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
   It refuses (exit 3) while a session is fresh on duty: stop that one with `stop`; if it has just died,
   run `reset` again once its duty has gone stale. A dormant Cowork session, and one at the relaxed pace,
   have a stale duty while they are still open in the app; a dormant session on the Mac has a stale duty
-  only when its quiet watch has ended (the session is gone, or the Mac slept). `reset` says which first and `--dry-run` shows
+  only when its quiet watch has ended (the session is gone, or the Mac slept). `reset` says which first.
+  For a project whose session is a Claude Code session on the Mac it says the fact instead, from the
+  listing of live sessions ("Whether a session is alive", below): "No session is alive in its folder: it
+  ended without a handover, which is what reset is for.", or "A session is alive in its folder ("NAME",
+  idle), not watching mail. Reset is for a session that is gone: speak to that session in the app, or stop
+  it there, before you reset it." **It still resets when you run it for real**: the words change, not
+  what it does. `--dry-run` shows
   everything it would do, the note included, and changes nothing: read it before the real run. With
   nobody on duty, nothing of `conduct`'s waiting and no note given, it does nothing and says so (exit 0).
   A `--handover` file that is missing, empty or not UTF-8 text is exit 2. Nothing is deleted: closed
@@ -500,6 +506,20 @@ at a start (below). Only `reset` acts in a project's mailbox as the project itse
   one left waiting would be carried out whenever Squirrel next typed to that session, and `stop` says so
   ("… reports itself dormant and its duty is stale …: … none was sent. Speak to that session in the app
   first, then stop it."), for the one named or, with `--all`, for each after what was sent. Exit 0.
+  **Any stale duty of a project whose session is a Claude Code session on the Mac** is spoken of with
+  the fact, from the listing of live sessions ("Whether a session is alive", below), in place of
+  "Nobody is on duty for X: nothing to stop." and, with `--all`, where nothing was said before:
+
+  ```
+  $ ./conduct stop soups-tools
+  soups-tools's duty is stale (last beat 2026-10-18T09:30:00Z) and a session is alive in its folder ("soups-tools · 18 October", idle): it is not watching mail, so a Stop would wait until Squirrel next types to it, and none was sent. Speak to that session in the app first, then stop it.
+  $ ./conduct stop stews-tools
+  stews-tools's duty is stale (last beat 2026-10-18T09:30:00Z) and no session is alive in its folder: it ended without a handover, and no Stop was sent. conduct reset stews-tools clears it.
+  ```
+
+  Nothing more is sent or left unsent than before. `claude` is run only when there is such a stale duty
+  to speak of; if the listing cannot be read, or the project runs in Claude Cowork, the words are exactly
+  as they were. `dormant` says the same of a stale duty, with "a Dormant" and "then make it dormant".
 - **`dormant`** puts a running session to sleep without a handover, for a pause such as overnight. Only
   sessions fresh on duty; `--all` is every one but bernstein's. `conduct status` shows a session as
   `dormant` from the moment it reports so. What it is told depends on the kind of session, which
@@ -751,7 +771,8 @@ the end of a turn when relaxed. So a Stop to a relaxed session waits until you n
   "live_note": "alive after its handover: not archived"
   ```
 
-  - `live` is the newest session alive in the project's folder, or `null` when there is none, when the
+  - `live` is the newest interactive session alive in the project's folder (the newest of any kind
+    when none is interactive), or `null` when there is none, when the
     project is not one that is looked at, or when the listing could not be read. `count` is how many
     are alive there; with more than one, `names` lists each, oldest first. `status` is "busy" or "idle"
     as the listing gives it. A fact the listing does not give, or gives as another type, is `null`.
@@ -790,7 +811,12 @@ before. Then the mailboxes whose project `conduct` could not start, each with th
 own, then the conductor's card. Each line has the session's state as a coloured
 badge, the kind of session on duty and how long ago it checked in ("Claude Code" for a session on the Mac,
 whose mail name is `mac`; "Claude Cowork" for one in the app's virtual machine, whose mail name is `device`),
-and the project's model and effort; the pace is
+and the project's model and effort; where `conduct status --json` says what is alive in the project's
+folder (`live` and `live_note`: "Whether a session is alive", above), that too, after who is on duty:
+"alive (recipes-tools · 18 October, idle)", or the sentence where the duty and the listing disagree, such
+as "alive, not watching mail (…)" or "no session alive: it ended without a handover". A project that is
+off with no session alive says nothing of it, like everything usual on the page; so does a Claude Cowork
+project, and every line when the listing could not be read. The pace is
 shown only when it is not normal, and mail waiting or claimed only when there is some. A running session that reports a status shows that in the badge (`dreaming
 until 10:20 UTC`), and `overdue since` once its finish time has passed. The page makes itself again
 every 15 seconds and when you press Refresh, follows your light or dark setting, and works at the
@@ -1409,6 +1435,16 @@ whose `APP_SESSIONS` and `APP_TRANSCRIPTS` are left at the real places, which ar
   changed. One new setting, optional: `CLAUDE`, the command's path (`claude`, as `PATH` finds it). If the
   listing cannot be read, every line is as it was and one line on standard error says why; the exit
   code is still 0. **Anything that reads the text form by its columns should know a field was added.**
+  **`stop`, `dormant` and `reset` use the same fact in their words, and do nothing differently.** Of a
+  stale duty of a project on the Mac, `stop NAME` and `dormant NAME` now say "NAME's duty is stale (last
+  beat …) and a session is alive in its folder ("…", idle): it is not watching mail, so a Stop would wait
+  … none was sent", or "… and no session is alive in its folder: it ended without a handover, and no Stop
+  was sent. conduct reset NAME clears it.", where they said "Nobody is on duty for NAME: nothing to
+  stop."; with `--all` they say it for each stale duty passed over, after what was sent, where they said
+  nothing. `reset` of a stale duty says the fact first, in its dry run too, and still resets. These
+  three run `claude agents --json` only when they have such a duty to speak of; with the listing unread,
+  or for a Cowork project, their words are exactly as before. `wake`, `dream` and `finish` have not
+  changed. **podium** shows the fact on each line: restart it to see it.
 - 16 November 2026, late: **podium shows each tools project once.** A tools project that two or more
   non-code projects use, and any further claw, is no longer drawn on each of their cards: it has one line,
   with its buttons, in a section "Claws" (which takes the place of "Lone claws"), saying who uses it, and

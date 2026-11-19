@@ -673,7 +673,8 @@ def parser():
     r.add_argument("--then", choices=("dormant", "stop"), default="dormant",
                    help="what the session does after: go dormant (default) or hand over and stop")
     r.add_argument("--dry-run", action="store_true", help="show the message; send nothing")
-    u = verbs.add_parser("status", help="show every mailbox's session: what it is doing, its project and its mail")
+    u = verbs.add_parser("status", help="show every mailbox's session: what it is doing, its project, its mail, and "
+                         "for a project on the Mac whether a session is alive in its folder")
     u.add_argument("--json", action="store_true", help="print the rows as JSON")
     g = verbs.add_parser("waiting", help="show what is waiting in every project: commits not pushed, files "
                          "uncommitted, and bernstein's mail not dealt with; it reads only")
@@ -1105,28 +1106,81 @@ def not_watching(name, entry):
             "to that session in the app first, then stop it.\n")
 
 
+class Alive:
+    """The sessions alive on the Mac, for the verbs that only speak of them: the listing is read once, and
+    only when a project is asked about whose session it could show."""
+
+    def __init__(self, s, env):
+        self.s, self.env, self.read = s, env, None
+
+    def there(self, name):
+        """The sessions alive in a project's folder; None when that cannot be said: the project cannot be
+        read, its session is not a Claude Code session on the Mac, or the listing could not be read."""
+        try:
+            project = find_project(name, self.s["NON_CODE_DIR"], self.s["CODE_DIR"], self.env["HOME"])
+        except ProjectRefused:
+            return None
+        if project.session == "cowork":
+            return None
+        if self.read is None:
+            self.read = live.read(self.s["CLAUDE"], self.env)
+        found = self.read[0]
+        return None if found is None else live.there(found, project.folder)
+
+
+def stale(entry):
+    return entry.get("duty") is not None and not fresh(entry)
+
+
+def sessions_alive(there):
+    """"a session is alive in its folder (...)", or "N sessions are alive in its folder (...)"."""
+    return ("a session is alive" if len(there) == 1 else f"{len(there)} sessions are alive") + (
+        " in its folder ({})".format("; ".join(live.shown(session) for session in there)))
+
+
+def stale_words(name, entry, there, message, then):
+    """What stop and dormant say of a stale duty once the sessions alive in the project's folder are known:
+    nothing is sent, and the words say why and what to do. message is the message's name, then what to do
+    after speaking to the session."""
+    lead = (f"{name} reports itself dormant and its duty is stale" if state_of(entry) == "dormant"
+            else f"{name}'s duty is stale") + f" (last beat {entry['duty'].get('last_beat')})"
+    if not there:
+        return (f"{lead} and no session is alive in its folder: it ended without a handover, and no {message} was "
+                f"sent. conduct reset {name} clears it.\n")
+    speak = f"Speak to that session in the app first, then {then}." if len(there) == 1 else (
+        "Speak to them in the app first.")
+    return (f"{lead} and {sessions_alive(there)}: it is not watching mail, so a {message} would wait until "
+            f"Squirrel next types to it, and none was sent. {speak}\n")
+
+
 def stop(a, s, env, today, out, err, sleep):
     if a.all == (a.project is not None):
         raise Stop(2, "name one project, or give --all")
     boxes = listing(s, env, sleep)
+    alive = Alive(s, env)
 
     def asleep(entry):
-        return entry.get("duty") is not None and not fresh(entry) and state_of(entry) == "dormant"
+        return stale(entry) and state_of(entry) == "dormant"
+
+    def passed_over(name, entry):
+        """What is said of a duty that is stale: with what is alive there, where that is known."""
+        there = alive.there(name)
+        if there is not None:
+            return stale_words(name, entry, there, "Stop", "stop it")
+        return not_watching(name, entry) if asleep(entry) else None
 
     if a.all:
         targets = [n for n, m in boxes.items() if not own(n, s) and fresh(m)]
-        passed = "".join(not_watching(n, m) for n, m in boxes.items() if not own(n, s) and asleep(m))
+        passed = "".join(passed_over(n, m) or "" for n, m in boxes.items() if not own(n, s) and stale(m))
         if not targets:
             out.write(passed + "Nobody is on duty anywhere but bernstein: nothing to stop.\n")
             return
     else:
         if a.project not in boxes:
             raise Stop(3, f"there is no mailbox {a.project} in {s['MAIL_ROOT']}")
-        if asleep(boxes[a.project]):
-            out.write(not_watching(a.project, boxes[a.project]))
-            return
         if not fresh(boxes[a.project]):
-            out.write(f"Nobody is on duty for {a.project}: nothing to stop.\n")
+            said = passed_over(a.project, boxes[a.project]) if stale(boxes[a.project]) else None
+            out.write(said or f"Nobody is on duty for {a.project}: nothing to stop.\n")
             return
         targets, passed = [a.project], ""
     body = stop_message(today)
@@ -1181,7 +1235,17 @@ def reset(a, s, env, today, out, err, sleep):
     else:
         out.write(f"{a.project}: {duty['holder']} is on duty but stale (last beat {duty['last_beat']}).")
         state = state_of(boxes[a.project])
-        if state == "dormant" and duty.get("holder") == ON_THE_MAC:
+        there = Alive(s, env).there(a.project)
+        if there:
+            one, words = len(there) == 1, sessions_alive(there)
+            out.write(f" {words[0].upper()}{words[1:]}, not "
+                      "watching mail. Reset is for a session that is gone: speak to "
+                      f"{'that session' if one else 'them'} in the app, or stop {'it' if one else 'them'} there, "
+                      "before you reset it.")
+        elif there is not None:
+            out.write(" No session is alive in its folder: it ended without a handover, which is what reset is "
+                      "for.")
+        elif state == "dormant" and duty.get("holder") == ON_THE_MAC:
             out.write(" It reported itself dormant. A dormant session on the Mac keeps a quiet watch that keeps "
                       "its duty fresh, so a stale duty means that watch has ended: the session is gone, the Mac "
                       "slept, or it was made dormant before 16 November 2026. Look at it in the app, and reset it "
@@ -1313,8 +1377,19 @@ def dormant(a, s, env, today, out, err, sleep):
     bernstein's mail, and its pace is left alone (a pace that changes ends a running watch); any other
     session is told to stop watching, and its pace is set to relaxed."""
     found, nothing, boxes = targets_for(a, s, env, sleep, "make dormant")
+    alive = Alive(s, env)
+
+    def passed_over(name):
+        """What is said of a duty that is stale, where what is alive in its project's folder is known."""
+        there = alive.there(name) if stale(boxes[name]) else None
+        return "" if there is None else stale_words(name, boxes[name], there, "Dormant", "make it dormant")
+
+    if a.all:
+        passed = "".join(passed_over(n) for n in boxes if not own(n, s))
+    else:
+        passed, nothing = "", (passed_over(a.project) or nothing) if nothing else None
     if nothing:
-        out.write(nothing)
+        out.write(passed + nothing)
         return
     if a.dry_run:
         for name in found:
@@ -1325,7 +1400,7 @@ def dormant(a, s, env, today, out, err, sleep):
                 out.write(f"Would leave the pace of {name} as it is: a session on the Mac keeps a quiet watch.\n")
             else:
                 out.write(f"Would set the pace of {name} to relaxed.{other_session(boxes[name], would=True)}\n")
-        out.write("Dry run: nothing was sent or set.\n")
+        out.write("Dry run: nothing was sent or set.\n" + passed)
         return
     for name in found:
         watch = watch_of(name, boxes[name], s)
@@ -1337,6 +1412,7 @@ def dormant(a, s, env, today, out, err, sleep):
         else:
             pace(s, env, name, "relaxed")
             out.write(f"Sent the Dormant message to {name} and set its pace to relaxed.{other_session(boxes[name])}\n")
+    out.write(passed)
 
 
 def wake(a, s, env, today, out, err, sleep):

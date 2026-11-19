@@ -230,6 +230,23 @@ def context_item(row, now):
             f'<span aria-hidden="true">{found["percent"]}%</span></li>')
 
 
+def live_item(row):
+    """What conduct status says is alive in the project's folder, as one of the row's facts: its note where
+    the duty and the listing disagree, or "alive", then the session's name and status. Nothing where it says
+    neither (a Claude Cowork project, a listing unread, an older conduct, or a project that is off with no
+    session, which is the usual and goes unsaid); nothing is worked out here."""
+    found = row.get("live") if isinstance(row.get("live"), dict) else None
+    note = row.get("live_note") if isinstance(row.get("live_note"), str) else None
+    if found is None and note is None:
+        return ""
+    said = note or "alive"
+    if found is not None:
+        name = found.get("name") if isinstance(found.get("name"), str) else "a session with no name"
+        status = found.get("status") if isinstance(found.get("status"), str) else "status not known"
+        said += f" ({name}, {status})"
+    return f'<li class="live">{e(said)}</li>'
+
+
 def label_html(row, what, now):
     """A project a card names but does not draw in full: its name, what it is to the card and its state, in the
     words and tone of its own badge, as a link to its one full line on the page. A screen reader is told the
@@ -262,6 +279,8 @@ def row_html(row, now, label=None, claw=False, anchor=False):
     facts = []      # only what is not the usual: nobody on duty, normal pace and no mail go unsaid
     if duty:
         facts.append(f"<li>{e(session_name(duty.get('holder')))}, {ago(duty.get('minutes'))}</li>")
+    if live_item(row):
+        facts.append(live_item(row))
     if row["pace"] != "normal":
         facts.append(f"<li>pace {e(row['pace'])}</li>")
     if row["new"]:
